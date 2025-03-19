@@ -1,0 +1,164 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 07/12] x86: expose CBM length and COS number
+	information
+Date: Thu,  9 Apr 2015 17:18:20 +0800
+Message-ID: <1428571105-3604-8-git-send-email-chao.p.peng@linux.intel.com>
+References: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+General CAT information such as maximum COS and CBM length are exposed to
+user space by a SYSCTL hypercall, to help user space to construct the CBM.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+ xen/arch/x86/psr.c          | 31 +++++++++++++++++++++++++++++++
+ xen/arch/x86/sysctl.c       | 18 ++++++++++++++++++
+ xen/include/asm-x86/psr.h   |  3 +++
+ xen/include/public/sysctl.h | 16 ++++++++++++++++
+ 4 files changed, 68 insertions(+)
+
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 51faa70..e390fd9 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -221,6 +221,37 @@ void psr_ctxt_switch_to(struct domain *d)
+     }
+ }
+ 
++static int get_cat_socket_info(unsigned int socket,
++                               struct psr_cat_socket_info **info)
++{
++    if ( !cat_socket_info )
++        return -ENODEV;
++
++    if ( socket >= nr_sockets )
++        return -EBADSLT;
++
++    if ( !cat_socket_info[socket].enabled )
++        return -ENOENT;
++
++    *info = cat_socket_info + socket;
++    return 0;
++}
++
++int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
++                        uint32_t *cos_max)
++{
++    struct psr_cat_socket_info *info;
++    int ret = get_cat_socket_info(socket, &info);
++
++    if ( ret )
++        return ret;
++
++    *cbm_len = info->cbm_len;
++    *cos_max = info->cos_max;
++
++    return 0;
++}
++
+ /* Called with domain lock held, no psr specific lock needed */
+ static void psr_free_cos(struct domain *d)
+ {
+diff --git a/xen/arch/x86/sysctl.c b/xen/arch/x86/sysctl.c
+index 611a291..8a9e120 100644
+--- a/xen/arch/x86/sysctl.c
++++ b/xen/arch/x86/sysctl.c
+@@ -171,6 +171,24 @@ long arch_do_sysctl(
+ 
+         break;
+ 
++    case XEN_SYSCTL_psr_cat_op:
++        switch ( sysctl->u.psr_cat_op.cmd )
++        {
++        case XEN_SYSCTL_PSR_CAT_get_l3_info:
++            ret = psr_get_cat_l3_info(sysctl->u.psr_cat_op.target,
++                                      &sysctl->u.psr_cat_op.u.l3_info.cbm_len,
++                                      &sysctl->u.psr_cat_op.u.l3_info.cos_max);
++
++            if ( !ret && __copy_to_guest(u_sysctl, sysctl, 1) )
++                ret = -EFAULT;
++
++            break;
++        default:
++            ret = -EOPNOTSUPP;
++            break;
++        }
++        break;
++
+     default:
+         ret = -ENOSYS;
+         break;
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index 45392bf..3a8a406 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -52,6 +52,9 @@ void psr_free_rmid(struct domain *d);
+ 
+ void psr_ctxt_switch_to(struct domain *d);
+ 
++int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
++                        uint32_t *cos_max);
++
+ int psr_domain_init(struct domain *d);
+ void psr_domain_free(struct domain *d);
+ 
+diff --git a/xen/include/public/sysctl.h b/xen/include/public/sysctl.h
+index 8552dc6..91d90b8 100644
+--- a/xen/include/public/sysctl.h
++++ b/xen/include/public/sysctl.h
+@@ -656,6 +656,20 @@ struct xen_sysctl_psr_cmt_op {
+ typedef struct xen_sysctl_psr_cmt_op xen_sysctl_psr_cmt_op_t;
+ DEFINE_XEN_GUEST_HANDLE(xen_sysctl_psr_cmt_op_t);
+ 
++#define XEN_SYSCTL_PSR_CAT_get_l3_info               0
++struct xen_sysctl_psr_cat_op {
++    uint32_t cmd;       /* IN: XEN_SYSCTL_PSR_CAT_* */
++    uint32_t target;    /* IN: socket to be operated on */
++    union {
++        struct {
++            uint32_t cbm_len;   /* OUT: CBM length */
++            uint32_t cos_max;   /* OUT: Maximum COS */
++        } l3_info;
++    } u;
++};
++typedef struct xen_sysctl_psr_cat_op xen_sysctl_psr_cat_op_t;
++DEFINE_XEN_GUEST_HANDLE(xen_sysctl_psr_cat_op_t);
++
+ struct xen_sysctl {
+     uint32_t cmd;
+ #define XEN_SYSCTL_readconsole                    1
+@@ -678,6 +692,7 @@ struct xen_sysctl {
+ #define XEN_SYSCTL_scheduler_op                  19
+ #define XEN_SYSCTL_coverage_op                   20
+ #define XEN_SYSCTL_psr_cmt_op                    21
++#define XEN_SYSCTL_psr_cat_op                    22
+     uint32_t interface_version; /* XEN_SYSCTL_INTERFACE_VERSION */
+     union {
+         struct xen_sysctl_readconsole       readconsole;
+@@ -700,6 +715,7 @@ struct xen_sysctl {
+         struct xen_sysctl_scheduler_op      scheduler_op;
+         struct xen_sysctl_coverage_op       coverage_op;
+         struct xen_sysctl_psr_cmt_op        psr_cmt_op;
++        struct xen_sysctl_psr_cat_op        psr_cat_op;
+         uint8_t                             pad[128];
+     } u;
+ };
+-- 
+1.9.1
+

@@ -1,0 +1,198 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 02/12] x86: improve psr scheduling code
+Date: Thu,  9 Apr 2015 17:18:15 +0800
+Message-ID: <1428571105-3604-3-git-send-email-chao.p.peng@linux.intel.com>
+References: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Switching RMID from previous vcpu to next vcpu only needs to write
+MSR_IA32_PSR_ASSOC once. Write it with the value of next vcpu is enough,
+no need to write '0' first. Idle domain has RMID set to 0 and because MSR
+is already updated lazily, so just switch it as it does.
+
+Also move the initialization of per-CPU variable which used for lazy
+update from context switch to CPU starting.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+Changes in v4:
+* Move psr_assoc_reg_read/psr_assoc_reg_write into psr_ctxt_switch_to.
+* Use 0 instead of smp_processor_id() for boot cpu.
+* add cpu parameter to psr_assoc_init.
+Changes in v2:
+* Move initialization for psr_assoc from context switch to CPU_STARTING.
+---
+ xen/arch/x86/domain.c     |  7 ++---
+ xen/arch/x86/psr.c        | 75 ++++++++++++++++++++++++++++++++++-------------
+ xen/include/asm-x86/psr.h |  3 +-
+ 3 files changed, 59 insertions(+), 26 deletions(-)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index 04c1898..695a2eb 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -1444,8 +1444,6 @@ static void __context_switch(void)
+     {
+         memcpy(&p->arch.user_regs, stack_regs, CTXT_SWITCH_STACK_BYTES);
+         vcpu_save_fpu(p);
+-        if ( psr_cmt_enabled() )
+-            psr_assoc_rmid(0);
+         p->arch.ctxt_switch_from(p);
+     }
+ 
+@@ -1470,11 +1468,10 @@ static void __context_switch(void)
+         }
+         vcpu_restore_fpu_eager(n);
+         n->arch.ctxt_switch_to(n);
+-
+-        if ( psr_cmt_enabled() && n->domain->arch.psr_rmid > 0 )
+-            psr_assoc_rmid(n->domain->arch.psr_rmid);
+     }
+ 
++    psr_ctxt_switch_to(n->domain);
++
+     gdt = !is_pv_32on64_vcpu(n) ? per_cpu(gdt_table, cpu) :
+                                   per_cpu(compat_gdt_table, cpu);
+     if ( need_full_gdt(n) )
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 344de3c..6119c6e 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -22,7 +22,6 @@
+ 
+ struct psr_assoc {
+     uint64_t val;
+-    bool_t initialized;
+ };
+ 
+ struct psr_cmt *__read_mostly psr_cmt;
+@@ -122,14 +121,6 @@ static void __init init_psr_cmt(unsigned int rmid_max)
+     printk(XENLOG_INFO "Cache Monitoring Technology enabled\n");
+ }
+ 
+-static int __init init_psr(void)
+-{
+-    if ( (opt_psr & PSR_CMT) && opt_rmid_max )
+-        init_psr_cmt(opt_rmid_max);
+-    return 0;
+-}
+-__initcall(init_psr);
+-
+ /* Called with domain lock held, no psr specific lock needed */
+ int psr_alloc_rmid(struct domain *d)
+ {
+@@ -175,26 +166,70 @@ void psr_free_rmid(struct domain *d)
+     d->arch.psr_rmid = 0;
+ }
+ 
+-void psr_assoc_rmid(unsigned int rmid)
++static inline void psr_assoc_init(unsigned int cpu)
++{
++    struct psr_assoc *psra = &per_cpu(psr_assoc, cpu);
++
++    if ( psr_cmt_enabled() )
++        rdmsrl(MSR_IA32_PSR_ASSOC, psra->val);
++}
++
++static inline void psr_assoc_rmid(uint64_t *reg, unsigned int rmid)
++{
++    *reg = (*reg & ~rmid_mask) | (rmid & rmid_mask);
++}
++
++void psr_ctxt_switch_to(struct domain *d)
+ {
+-    uint64_t val;
+-    uint64_t new_val;
+     struct psr_assoc *psra = &this_cpu(psr_assoc);
++    uint64_t reg = psra->val;
++
++    if ( psr_cmt_enabled() )
++        psr_assoc_rmid(&reg, d->arch.psr_rmid);
+ 
+-    if ( !psra->initialized )
++    if ( reg != psra->val )
+     {
+-        rdmsrl(MSR_IA32_PSR_ASSOC, psra->val);
+-        psra->initialized = 1;
++        wrmsrl(MSR_IA32_PSR_ASSOC, reg);
++        psra->val = reg;
+     }
+-    val = psra->val;
++}
+ 
+-    new_val = (val & ~rmid_mask) | (rmid & rmid_mask);
+-    if ( val != new_val )
++static void psr_cpu_init(unsigned int cpu)
++{
++    psr_assoc_init(cpu);
++}
++
++static int cpu_callback(
++    struct notifier_block *nfb, unsigned long action, void *hcpu)
++{
++    unsigned int cpu = (unsigned long)hcpu;
++
++    switch ( action )
+     {
+-        wrmsrl(MSR_IA32_PSR_ASSOC, new_val);
+-        psra->val = new_val;
++    case CPU_STARTING:
++        psr_cpu_init(cpu);
++        break;
+     }
++
++    return NOTIFY_DONE;
++}
++
++static struct notifier_block cpu_nfb = {
++    .notifier_call = cpu_callback
++};
++
++static int __init psr_presmp_init(void)
++{
++    if ( (opt_psr & PSR_CMT) && opt_rmid_max )
++        init_psr_cmt(opt_rmid_max);
++
++    psr_cpu_init(0);
++    if ( psr_cmt_enabled() )
++        register_cpu_notifier(&cpu_nfb);
++
++    return 0;
+ }
++presmp_initcall(psr_presmp_init);
+ 
+ /*
+  * Local variables:
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index c6076e9..585350c 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -46,7 +46,8 @@ static inline bool_t psr_cmt_enabled(void)
+ 
+ int psr_alloc_rmid(struct domain *d);
+ void psr_free_rmid(struct domain *d);
+-void psr_assoc_rmid(unsigned int rmid);
++
++void psr_ctxt_switch_to(struct domain *d);
+ 
+ #endif /* __ASM_PSR_H__ */
+ 
+-- 
+1.9.1
+

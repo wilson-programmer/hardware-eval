@@ -1,0 +1,267 @@
+From patchwork Sat Sep 30 01:39:19 2017
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+X-Patchwork-Submitter: Yi Sun <yi.y.sun@linux.intel.com>
+X-Patchwork-Id: 9979015
+Return-Path: <xen-devel-bounces@lists.xen.org>
+Received: from mail.wl.linuxfoundation.org (pdx-wl-mail.web.codeaurora.org
+	[172.30.200.125])
+	by pdx-korg-patchwork.web.codeaurora.org (Postfix) with ESMTP id
+	AACC760311 for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:34 +0000 (UTC)
+Received: from mail.wl.linuxfoundation.org (localhost [127.0.0.1])
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTP id 98EDA298AA
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:34 +0000 (UTC)
+Received: by mail.wl.linuxfoundation.org (Postfix, from userid 486)
+	id 8DA49298C5; Sat, 30 Sep 2017 02:01:34 +0000 (UTC)
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	pdx-wl-mail.web.codeaurora.org
+X-Spam-Level: 
+X-Spam-Status: No, score=-4.2 required=2.0 tests=BAYES_00, RCVD_IN_DNSWL_MED
+	autolearn=ham version=3.3.1
+Received: from lists.xenproject.org (lists.xenproject.org [192.237.175.120])
+	(using TLSv1.2 with cipher AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTPS id 068D9298AA
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:34 +0000 (UTC)
+Received: from localhost ([127.0.0.1] helo=lists.xenproject.org)
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <xen-devel-bounces@lists.xen.org>)
+	id 1dy73x-0004Y6-MS; Sat, 30 Sep 2017 01:59:29 +0000
+Received: from mail6.bemta6.messagelabs.com ([193.109.254.103])
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <yi.y.sun@linux.intel.com>) id 1dy73v-0004WZ-R7
+	for xen-devel@lists.xenproject.org; Sat, 30 Sep 2017 01:59:27 +0000
+Received: from [193.109.254.147] by server-11.bemta-6.messagelabs.com id
+	A7/30-03616-F7AFEC95; Sat, 30 Sep 2017 01:59:27 +0000
+X-Brightmail-Tracker: H4sIAAAAAAAAA+NgFtrHIsWRWlGSWpSXmKPExsXS1taRolv361y
+	kQeMfEYvvWyYzOTB6HP5whSWAMYo1My8pvyKBNWPGaY6CRzoVX6Y0sjUwnlbsYuTkEBKokFjx
+	5SwLiC0hwCtxZNkMVgg7QKJ15xwgmwuopoFRYvWmf2BFbALqEo+/9jCB2CICShL3Vk0Gs5kFr
+	jNK9MyNBbGFBWIl5h7YBDaIRUBVYmrbAsYuRg4OXgEPictrNCHmy0mcPDYZrIQTKHytp4kN4h
+	53iSstaxlBbF4BQYmTM5+wgLQyA61dP08IYpO8RPPW2cwTGAVmIamahVA1C0nVAkbmVYwaxal
+	FZalFukZGeklFmekZJbmJmTm6hgZmermpxcWJ6ak5iUnFesn5uZsYgWHJAAQ7GNfMDzzEKMnB
+	pCTKu/zbuUghvqT8lMqMxOKM+KLSnNTiQ4wyHBxKErwRP4FygkWp6akVaZk5wAiBSUtw8CiJ8
+	NqCpHmLCxJzizPTIVKnGHU5Om7e/cMkxJKXn5cqJc5bAFIkAFKUUZoHNwIWrZcYZaWEeRmBjh
+	LiKUgtys0sQZV/xSjOwagkzFsLMoUnM68EbtMroCOYgI6YPPEMyBEliQgpqQbGzM2yW1y3yCU
+	H6c1f4c/zuPKdS+6L5ddXl//66vG6m8dV98/C6Zuen11i/TFjEcurouydXlwd7UyzDoRYcrb+
+	m9a4avMlrczlSsaWT296zra4N+XYIfPJn3blz+9t1bvRt1tdZ8qOhgaWZfdWc0xq1W89o9IQM
+	e8tQ5u83O6fW/ZlvPqpPkO/WImlOCPRUIu5qDgRANm3y+HRAgAA
+X-Env-Sender: yi.y.sun@linux.intel.com
+X-Msg-Ref: server-15.tower-27.messagelabs.com!1506736764!66398328!1
+X-Originating-IP: [134.134.136.100]
+X-SpamReason: No, hits=0.0 required=7.0 tests=
+X-StarScan-Received: 
+X-StarScan-Version: 9.4.45; banners=-,-,-
+X-VirusChecked: Checked
+Received: (qmail 35714 invoked from network); 30 Sep 2017 01:59:25 -0000
+Received: from mga07.intel.com (HELO mga07.intel.com) (134.134.136.100)
+	by server-15.tower-27.messagelabs.com with DHE-RSA-AES256-GCM-SHA384
+	encrypted SMTP; 30 Sep 2017 01:59:25 -0000
+Received: from orsmga003.jf.intel.com ([10.7.209.27])
+	by orsmga105.jf.intel.com with ESMTP; 29 Sep 2017 18:59:23 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos; i="5.42,455,1500966000"; d="scan'208";
+	a="1020039062"
+Received: from vmmmba-s2600wft.bj.intel.com ([10.240.193.75])
+	by orsmga003.jf.intel.com with ESMTP; 29 Sep 2017 18:59:21 -0700
+From: Yi Sun <yi.y.sun@linux.intel.com>
+To: xen-devel@lists.xenproject.org
+Date: Sat, 30 Sep 2017 09:39:19 +0800
+Message-Id: <1506735566-5706-10-git-send-email-yi.y.sun@linux.intel.com>
+X-Mailer: git-send-email 1.9.1
+In-Reply-To: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+References: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+MIME-Version: 1.0
+Cc: Wei Liu <wei.liu2@citrix.com>, Chao Peng <chao.p.peng@linux.intel.com>,
+	Yi Sun <yi.y.sun@linux.intel.com>,
+	Ian Jackson <ian.jackson@eu.citrix.com>,
+	=?UTF-8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Subject: [Xen-devel] [PATCH v5 09/16] tools: create general interfaces to
+	support psr allocation features
+X-BeenThere: xen-devel@lists.xen.org
+X-Mailman-Version: 2.1.18
+Precedence: list
+List-Id: Xen developer discussion <xen-devel.lists.xen.org>
+List-Unsubscribe: <https://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <https://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Errors-To: xen-devel-bounces@lists.xen.org
+Sender: "Xen-devel" <xen-devel-bounces@lists.xen.org>
+X-Virus-Scanned: ClamAV using ClamSMTP
+
+This patch creates general interfaces in libxl to support all psr
+allocation features.
+
+Add 'LIBXL_HAVE_PSR_GENERIC' to indicate interface change.
+
+Please note, the functionality cannot work until later patches
+are applied.
+
+Signed-off-by: Yi Sun <yi.y.sun@linux.intel.com>
+Acked-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Roger Pau Monné <roger.pau@citrix.com>
+---
+CC: Wei Liu <wei.liu2@citrix.com>
+CC: Ian Jackson <ian.jackson@eu.citrix.com>
+CC: Roger Pau Monné <roger.pau@citrix.com>
+CC: Chao Peng <chao.p.peng@linux.intel.com>
+
+v5:
+    - adjust parameters position in 'libxl_psr_get_hw_info'.
+      (suggested by Roger Pau Monné)
+v4:
+    - add description for LIBXL_HAVE_PSR_GENERIC to mention newly added
+      public functions.
+      (suggested by Roger Pau Monné)
+v3:
+    - change 'LIBXL_HAVE_PSR_MBA' to 'LIBXL_HAVE_PSR_GENERIC'.
+      (suggested by Roger Pau Monné)
+    - 'typedef enum libxl_psr_cbm_type libxl_psr_type;' in libxl.h.
+      (suggested by Roger Pau Monné and Wei Liu)
+    - change 'libxl_psr_cbm_type' to 'libxl_psr_type' in newly defined
+      interfaces.
+      (suggested by Roger Pau Monné)
+v2:
+    - remove '_INFO' in 'libxl_psr_feat_type' and make corresponding
+      changes in 'libxl_psr_hw_info'.
+      (suggested by Chao Peng)
+---
+ tools/libxl/libxl.h         | 37 +++++++++++++++++++++++++++++++++++++
+ tools/libxl/libxl_psr.c     | 25 +++++++++++++++++++++++++
+ tools/libxl/libxl_types.idl | 22 ++++++++++++++++++++++
+ 3 files changed, 84 insertions(+)
+
+diff --git a/tools/libxl/libxl.h b/tools/libxl/libxl.h
+index 91408b4..69efcfc 100644
+--- a/tools/libxl/libxl.h
++++ b/tools/libxl/libxl.h
+@@ -936,6 +936,17 @@ void libxl_mac_copy(libxl_ctx *ctx, libxl_mac *dst, const libxl_mac *src);
+ #define LIBXL_HAVE_PSR_L2_CAT 1
+ 
+ /*
++ * LIBXL_HAVE_PSR_GENERIC
++ *
++ * If this is defined, the Memory Bandwidth Allocation feature is supported.
++ * The following public functions are available:
++ *   libxl_psr_{set/get}_val
++ *   libxl_psr_get_hw_info
++ *   libxl_psr_hw_info_list_free
++ */
++#define LIBXL_HAVE_PSR_GENERIC 1
++
++/*
+  * LIBXL_HAVE_MCA_CAPS
+  *
+  * If this is defined, setting MCA capabilities for HVM domain is supported.
+@@ -2228,6 +2239,32 @@ int libxl_psr_cat_get_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
+ int libxl_psr_cat_get_l3_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
+                               int *nr);
+ void libxl_psr_cat_info_list_free(libxl_psr_cat_info *list, int nr);
++
++typedef enum libxl_psr_cbm_type libxl_psr_type;
++
++/*
++ * Function to set a domain's value. It operates on a single or multiple
++ * target(s) defined in 'target_map'. 'target_map' specifies all the sockets
++ * to be operated on.
++ */
++int libxl_psr_set_val(libxl_ctx *ctx, uint32_t domid,
++                      libxl_psr_type type, libxl_bitmap *target_map,
++                      uint64_t val);
++/*
++ * Function to get a domain's cbm. It operates on a single 'target'.
++ * 'target' specifies which socket to be operated on.
++ */
++int libxl_psr_get_val(libxl_ctx *ctx, uint32_t domid,
++                      libxl_psr_type type, unsigned int target,
++                      uint64_t *val);
++/*
++ * On success, the function returns an array of elements in 'info',
++ * and the length in 'nr'.
++ */
++int libxl_psr_get_hw_info(libxl_ctx *ctx, libxl_psr_feat_type type,
++                          unsigned int lvl, unsigned int *nr,
++                          libxl_psr_hw_info **info);
++void libxl_psr_hw_info_list_free(libxl_psr_hw_info *list, unsigned int nr);
+ #endif
+ 
+ /* misc */
+diff --git a/tools/libxl/libxl_psr.c b/tools/libxl/libxl_psr.c
+index 197505a..d4f5f67 100644
+--- a/tools/libxl/libxl_psr.c
++++ b/tools/libxl/libxl_psr.c
+@@ -428,6 +428,31 @@ void libxl_psr_cat_info_list_free(libxl_psr_cat_info *list, int nr)
+     free(list);
+ }
+ 
++int libxl_psr_set_val(libxl_ctx *ctx, uint32_t domid,
++                      libxl_psr_type type, libxl_bitmap *target_map,
++                      uint64_t val)
++{
++    return ERROR_FAIL;
++}
++
++int libxl_psr_get_val(libxl_ctx *ctx, uint32_t domid,
++                      libxl_psr_type type, unsigned int target,
++                      uint64_t *val)
++{
++    return ERROR_FAIL;
++}
++
++int libxl_psr_get_hw_info(libxl_ctx *ctx, libxl_psr_feat_type type,
++                          unsigned int lvl, unsigned int *nr,
++                          libxl_psr_hw_info **info)
++{
++    return ERROR_FAIL;
++}
++
++void libxl_psr_hw_info_list_free(libxl_psr_hw_info *list, unsigned int nr)
++{
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libxl/libxl_types.idl b/tools/libxl/libxl_types.idl
+index 173d70a..cfe8367 100644
+--- a/tools/libxl/libxl_types.idl
++++ b/tools/libxl/libxl_types.idl
+@@ -977,6 +977,7 @@ libxl_psr_cbm_type = Enumeration("psr_cbm_type", [
+     (2, "L3_CBM_CODE"),
+     (3, "L3_CBM_DATA"),
+     (4, "L2_CBM"),
++    (5, "MBA_THRTL"),
+     ])
+ 
+ libxl_psr_cat_info = Struct("psr_cat_info", [
+@@ -985,3 +986,24 @@ libxl_psr_cat_info = Struct("psr_cat_info", [
+     ("cbm_len", uint32),
+     ("cdp_enabled", bool),
+     ])
++
++libxl_psr_feat_type = Enumeration("psr_feat_type", [
++    (1, "CAT"),
++    (2, "MBA"),
++    ])
++
++libxl_psr_hw_info = Struct("psr_hw_info", [
++    ("id", uint32),
++    ("u", KeyedUnion(None, libxl_psr_feat_type, "type",
++          [("cat", Struct(None, [
++                                    ("cos_max",     uint32),
++                                    ("cbm_len",     uint32),
++                                    ("cdp_enabled", bool),
++                               ])),
++           ("mba", Struct(None, [
++                                    ("cos_max",     uint32),
++                                    ("thrtl_max",   uint32),
++                                    ("linear",      bool),
++                               ])),
++          ]))
++    ], dir=DIR_OUT)

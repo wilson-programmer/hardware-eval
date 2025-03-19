@@ -1,0 +1,231 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v2 4/5] tools: code refactoring for MBM
+Date: Wed,  7 Jan 2015 19:12:04 +0800
+Message-ID: <1420629125-17725-5-git-send-email-chao.p.peng@linux.intel.com>
+References: <1420629125-17725-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1420629125-17725-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: wei.liu2@citrix.com, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+Make some internal routines common so that total/local memory bandwidth
+monitoring in the next patch can make use of them.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+ tools/libxl/libxl_psr.c  |   51 ++++++++++++++++++++++++++-----------------
+ tools/libxl/xl_cmdimpl.c |   54 +++++++++++++++++++++++++++-------------------
+ 2 files changed, 63 insertions(+), 42 deletions(-)
+
+diff --git a/tools/libxl/libxl_psr.c b/tools/libxl/libxl_psr.c
+index 0f2c7e0..42e74d2 100644
+--- a/tools/libxl/libxl_psr.c
++++ b/tools/libxl/libxl_psr.c
+@@ -179,42 +179,53 @@ out:
+     return rc;
+ }
+ 
+-int libxl_psr_cmt_get_cache_occupancy(libxl_ctx *ctx,
+-                                      uint32_t domid,
+-                                      uint32_t socketid,
+-                                      uint32_t *l3_cache_occupancy)
++static int libxl__psr_cmt_get_l3_monitoring_data(libxl__gc *gc,
++                                                 uint32_t domid,
++                                                 xc_psr_cmt_type type,
++                                                 uint32_t socketid,
++                                                 uint64_t *data)
+ {
+-    GC_INIT(ctx);
+-
+     unsigned int rmid;
+-    uint32_t upscaling_factor;
+-    uint64_t monitor_data;
+     int cpu, rc;
+-    xc_psr_cmt_type type;
+ 
+-    rc = xc_psr_cmt_get_domain_rmid(ctx->xch, domid, &rmid);
++    rc = xc_psr_cmt_get_domain_rmid(CTX->xch, domid, &rmid);
+     if (rc < 0 || rmid == 0) {
+         LOGE(ERROR, "fail to get the domain rmid, "
+             "or domain is not attached with platform QoS monitoring service");
+-        rc = ERROR_FAIL;
+-        goto out;
++        return ERROR_FAIL;
+     }
+ 
+     cpu = libxl__pick_socket_cpu(gc, socketid);
+     if (cpu < 0) {
+         LOGE(ERROR, "failed to get socket cpu");
+-        rc = ERROR_FAIL;
+-        goto out;
++        return ERROR_FAIL;
+     }
+ 
+-    type = XC_PSR_CMT_L3_OCCUPANCY;
+-    rc = xc_psr_cmt_get_data(ctx->xch, rmid, cpu, type, &monitor_data);
++    rc = xc_psr_cmt_get_data(CTX->xch, rmid, cpu, type, data);
+     if (rc < 0) {
+         LOGE(ERROR, "failed to get monitoring data");
+-        rc = ERROR_FAIL;
+-        goto out;
++        return ERROR_FAIL;
+     }
+ 
++    return rc;
++}
++
++int libxl_psr_cmt_get_cache_occupancy(libxl_ctx *ctx,
++                                      uint32_t domid,
++                                      uint32_t socketid,
++                                      uint32_t *l3_cache_occupancy)
++{
++    GC_INIT(ctx);
++    uint64_t data;
++    uint32_t upscaling_factor;
++    int rc;
++
++    rc= libxl__psr_cmt_get_l3_monitoring_data(gc, domid,
++                                              XC_PSR_CMT_L3_OCCUPANCY,
++                                              socketid, &data);
++    if (rc < 0)
++            goto out;
++
+     rc = xc_psr_cmt_get_l3_upscaling_factor(ctx->xch, &upscaling_factor);
+     if (rc < 0) {
+         LOGE(ERROR, "failed to get L3 upscaling factor");
+@@ -222,8 +233,8 @@ int libxl_psr_cmt_get_cache_occupancy(libxl_ctx *ctx,
+         goto out;
+     }
+ 
+-    *l3_cache_occupancy = upscaling_factor * monitor_data / 1024;
+-    rc = 0;
++    *l3_cache_occupancy = upscaling_factor * data / 1024;
++
+ out:
+     GC_FREE;
+     return rc;
+diff --git a/tools/libxl/xl_cmdimpl.c b/tools/libxl/xl_cmdimpl.c
+index 24f3c8d..09ca73e 100644
+--- a/tools/libxl/xl_cmdimpl.c
++++ b/tools/libxl/xl_cmdimpl.c
+@@ -7846,12 +7846,13 @@ out:
+ }
+ 
+ #ifdef LIBXL_HAVE_PSR_CMT
+-static void psr_cmt_print_domain_cache_occupancy(libxl_dominfo *dominfo,
+-                                                 uint32_t nr_sockets)
++static void psr_cmt_print_domain_l3_info(libxl_dominfo *dominfo,
++                                         libxl_psr_cmt_type type,
++                                         uint32_t nr_sockets)
+ {
+     char *domain_name;
+     uint32_t socketid;
+-    uint32_t l3_cache_occupancy;
++    uint32_t data;
+ 
+     if (!libxl_psr_cmt_domain_attached(ctx, dominfo->domid))
+         return;
+@@ -7861,15 +7862,21 @@ static void psr_cmt_print_domain_cache_occupancy(libxl_dominfo *dominfo,
+     free(domain_name);
+ 
+     for (socketid = 0; socketid < nr_sockets; socketid++) {
+-        if (!libxl_psr_cmt_get_cache_occupancy(ctx, dominfo->domid, socketid,
+-                                               &l3_cache_occupancy))
+-            printf("%13u KB", l3_cache_occupancy);
++        switch (type) {
++        case LIBXL_PSR_CMT_TYPE_CACHE_OCCUPANCY:
++            if (!libxl_psr_cmt_get_cache_occupancy(ctx, dominfo->domid,
++                                                   socketid, &data))
++                printf("%13u KB", data);
++            break;
++        default:
++            return;
++        }
+     }
+ 
+     printf("\n");
+ }
+ 
+-static int psr_cmt_show_cache_occupancy(uint32_t domid)
++static int psr_cmt_show_l3_info(libxl_psr_cmt_type type, uint32_t domid)
+ {
+     uint32_t i, socketid, nr_sockets, total_rmid;
+     uint32_t l3_cache_size;
+@@ -7905,19 +7912,22 @@ static int psr_cmt_show_cache_occupancy(uint32_t domid)
+         printf("%14s %d", "Socket", socketid);
+     printf("\n");
+ 
+-    /* Total L3 cache size */
+-    printf("%-46s", "Total L3 Cache Size");
+-    for (socketid = 0; socketid < nr_sockets; socketid++) {
+-        rc = libxl_psr_cmt_get_l3_cache_size(ctx, socketid, &l3_cache_size);
+-        if (rc < 0) {
+-            fprintf(stderr,
+-                    "Failed to get system l3 cache size for socket:%d\n",
+-                    socketid);
+-            return -1;
+-        }
+-        printf("%13u KB", l3_cache_size);
++    if (type == LIBXL_PSR_CMT_TYPE_CACHE_OCCUPANCY) {
++            /* Total L3 cache size */
++            printf("%-46s", "Total L3 Cache Size");
++            for (socketid = 0; socketid < nr_sockets; socketid++) {
++                rc = libxl_psr_cmt_get_l3_cache_size(ctx, socketid,
++                                                     &l3_cache_size);
++                if (rc < 0) {
++                    fprintf(stderr,
++                            "Failed to get system l3 cache size for socket:%d\n",
++                            socketid);
++                    return -1;
++                }
++                printf("%13u KB", l3_cache_size);
++            }
++            printf("\n");
+     }
+-    printf("\n");
+ 
+     /* Each domain */
+     if (domid != INVALID_DOMID) {
+@@ -7926,7 +7936,7 @@ static int psr_cmt_show_cache_occupancy(uint32_t domid)
+             fprintf(stderr, "Failed to get domain info for %d\n", domid);
+             return -1;
+         }
+-        psr_cmt_print_domain_cache_occupancy(&dominfo, nr_sockets);
++        psr_cmt_print_domain_l3_info(&dominfo, type, nr_sockets);
+     }
+     else
+     {
+@@ -7936,7 +7946,7 @@ static int psr_cmt_show_cache_occupancy(uint32_t domid)
+             return -1;
+         }
+         for (i = 0; i < nr_domains; i++)
+-            psr_cmt_print_domain_cache_occupancy(list + i, nr_sockets);
++            psr_cmt_print_domain_l3_info(list + i, type, nr_sockets);
+         libxl_dominfo_list_free(list, nr_domains);
+     }
+     return 0;
+@@ -7995,7 +8005,7 @@ int main_psr_cmt_show(int argc, char **argv)
+ 
+     switch (type) {
+     case LIBXL_PSR_CMT_TYPE_CACHE_OCCUPANCY:
+-        ret = psr_cmt_show_cache_occupancy(domid);
++        ret = psr_cmt_show_l3_info(type, domid);
+         break;
+     default:
+         help("psr-cmt-show");
+-- 
+1.7.9.5
+

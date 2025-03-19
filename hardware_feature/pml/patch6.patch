@@ -1,0 +1,244 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Kai Huang <kai.huang@linux.intel.com>
+Subject: [v2 06/11] vmx: add help functions to support PML
+Date: Wed, 15 Apr 2015 15:03:48 +0800
+Message-ID: <1429081433-9600-7-git-send-email-kai.huang@linux.intel.com>
+References: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: andrew.cooper3@citrix.com, tim@xen.org, jbeulich@suse.com, kevin.tian@intel.com, xen-devel@lists.xen.org
+Cc: Kai Huang <kai.huang@linux.intel.com>
+List-Id: xen-devel@lists.xenproject.org
+
+This patch adds help functions to enable/disable PML, and flush PML buffer for
+single vcpu and particular domain for further use.
+
+Signed-off-by: Kai Huang <kai.huang@linux.intel.com>
+---
+ xen/arch/x86/hvm/vmx/vmcs.c        | 178 +++++++++++++++++++++++++++++++++++++
+ xen/include/asm-x86/hvm/vmx/vmcs.h |   9 ++
+ 2 files changed, 187 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmcs.c b/xen/arch/x86/hvm/vmx/vmcs.c
+index d120370..d3cb50f 100644
+--- a/xen/arch/x86/hvm/vmx/vmcs.c
++++ b/xen/arch/x86/hvm/vmx/vmcs.c
+@@ -1328,6 +1328,184 @@ void vmx_clear_eoi_exit_bitmap(struct vcpu *v, u8 vector)
+                 &v->arch.hvm_vmx.eoi_exitmap_changed);
+ }
+ 
++bool_t vmx_vcpu_pml_enabled(const struct vcpu *v)
++{
++    return !!(v->arch.hvm_vmx.secondary_exec_control &
++              SECONDARY_EXEC_ENABLE_PML);
++}
++
++int vmx_vcpu_enable_pml(struct vcpu *v)
++{
++    struct domain *d = v->domain;
++
++    if ( vmx_vcpu_pml_enabled(v) )
++        return 0;
++
++    v->arch.hvm_vmx.pml_pg = d->arch.paging.alloc_page(d);
++    if ( !v->arch.hvm_vmx.pml_pg )
++        return -ENOMEM;
++
++    vmx_vmcs_enter(v);
++
++    __vmwrite(PML_ADDRESS, page_to_mfn(v->arch.hvm_vmx.pml_pg) << PAGE_SHIFT);
++    __vmwrite(GUEST_PML_INDEX, NR_PML_ENTRIES - 1);
++
++    v->arch.hvm_vmx.secondary_exec_control |= SECONDARY_EXEC_ENABLE_PML;
++
++    __vmwrite(SECONDARY_VM_EXEC_CONTROL,
++              v->arch.hvm_vmx.secondary_exec_control);
++
++    vmx_vmcs_exit(v);
++
++    return 0;
++}
++
++void vmx_vcpu_disable_pml(struct vcpu *v)
++{
++    if ( !vmx_vcpu_pml_enabled(v) )
++        return;
++
++    /* Make sure we don't lose any logged GPAs */
++    vmx_vcpu_flush_pml_buffer(v);
++
++    vmx_vmcs_enter(v);
++
++    v->arch.hvm_vmx.secondary_exec_control &= ~SECONDARY_EXEC_ENABLE_PML;
++    __vmwrite(SECONDARY_VM_EXEC_CONTROL,
++              v->arch.hvm_vmx.secondary_exec_control);
++
++    vmx_vmcs_exit(v);
++
++    v->domain->arch.paging.free_page(v->domain, v->arch.hvm_vmx.pml_pg);
++    v->arch.hvm_vmx.pml_pg = NULL;
++}
++
++void vmx_vcpu_flush_pml_buffer(struct vcpu *v)
++{
++    uint64_t *pml_buf;
++    unsigned long pml_idx;
++
++    ASSERT(vmx_vcpu_pml_enabled(v));
++
++    vmx_vmcs_enter(v);
++
++    __vmread(GUEST_PML_INDEX, &pml_idx);
++
++    /* Do nothing if PML buffer is empty */
++    if ( pml_idx == (NR_PML_ENTRIES - 1) )
++        goto out;
++
++    pml_buf = __map_domain_page(v->arch.hvm_vmx.pml_pg);
++
++    /*
++     * PML index can be either 2^16-1 (buffer is full), or 0~511 (buffer is not
++     * full), and in latter case PML index always points to next available
++     * entity.
++     */
++    if (pml_idx >= NR_PML_ENTRIES)
++        pml_idx = 0;
++    else
++        pml_idx++;
++
++    for ( ; pml_idx < NR_PML_ENTRIES; pml_idx++ )
++    {
++        unsigned long gfn = pml_buf[pml_idx] >> PAGE_SHIFT;
++        /*
++         * Need to change type from log-dirty to normal memory for logged GFN.
++         * hap_track_dirty_vram depends on it to work. And we really only need
++         * to mark GFNs which hve been successfully changed from log-dirty to
++         * normal memory to be dirty.
++         */
++        if ( !p2m_change_type_one(v->domain, gfn, p2m_ram_logdirty,
++                    p2m_ram_rw) )
++            paging_mark_gfn_dirty(v->domain, gfn);
++    }
++
++    unmap_domain_page(pml_buf);
++
++    /* Reset PML index */
++    __vmwrite(GUEST_PML_INDEX, NR_PML_ENTRIES - 1);
++
++out:
++    vmx_vmcs_exit(v);
++}
++
++bool_t vmx_domain_pml_enabled(const struct domain *d)
++{
++    return !!(d->arch.hvm_domain.vmx.status & VMX_DOMAIN_PML_ENABLED);
++}
++
++/*
++ * This function enables PML for particular domain. It should be called when
++ * domain is paused.
++ *
++ * PML needs to be enabled globally for all vcpus of the domain, as PML buffer
++ * and PML index are pre-vcpu, but EPT table is shared by vcpus, therefore
++ * enabling PML on partial vcpus won't work.
++ */
++int vmx_domain_enable_pml(struct domain *d)
++{
++    struct vcpu *v;
++    int rc;
++
++    ASSERT(atomic_read(&d->pause_count));
++
++    if ( vmx_domain_pml_enabled(d) )
++        return 0;
++
++    for_each_vcpu( d, v )
++        if ( (rc = vmx_vcpu_enable_pml(v)) != 0 )
++            goto error;
++
++    d->arch.hvm_domain.vmx.status |= VMX_DOMAIN_PML_ENABLED;
++
++    return 0;
++
++error:
++    for_each_vcpu( d, v )
++        if ( vmx_vcpu_pml_enabled(v) )
++            vmx_vcpu_disable_pml(v);
++    return rc;
++}
++
++/*
++ * Disable PML for particular domain. Called when domain is paused.
++ *
++ * The same as enabling PML for domain, disabling PML should be done for all
++ * vcpus at once.
++ */
++void vmx_domain_disable_pml(struct domain *d)
++{
++    struct vcpu *v;
++
++    ASSERT(atomic_read(&d->pause_count));
++
++    if ( !vmx_domain_pml_enabled(d) )
++        return;
++
++    for_each_vcpu( d, v )
++        vmx_vcpu_disable_pml(v);
++
++    d->arch.hvm_domain.vmx.status &= ~VMX_DOMAIN_PML_ENABLED;
++}
++
++/*
++ * Flush PML buffer of all vcpus, and update the logged dirty pages to log-dirty
++ * radix tree. Called when domain is paused.
++ */
++void vmx_domain_flush_pml_buffers(struct domain *d)
++{
++    struct vcpu *v;
++
++    ASSERT(atomic_read(&d->pause_count));
++
++    if ( !vmx_domain_pml_enabled(d) )
++        return;
++
++    for_each_vcpu( d, v )
++        vmx_vcpu_flush_pml_buffer(v);
++}
++
+ int vmx_create_vmcs(struct vcpu *v)
+ {
+     struct arch_vmx_struct *arch_vmx = &v->arch.hvm_vmx;
+diff --git a/xen/include/asm-x86/hvm/vmx/vmcs.h b/xen/include/asm-x86/hvm/vmx/vmcs.h
+index 2c679ac..ceb09bf 100644
+--- a/xen/include/asm-x86/hvm/vmx/vmcs.h
++++ b/xen/include/asm-x86/hvm/vmx/vmcs.h
+@@ -498,6 +498,15 @@ static inline int vmx_add_host_load_msr(u32 msr)
+ 
+ DECLARE_PER_CPU(bool_t, vmxon);
+ 
++bool_t vmx_vcpu_pml_enabled(const struct vcpu *v);
++int vmx_vcpu_enable_pml(struct vcpu *v);
++void vmx_vcpu_disable_pml(struct vcpu *v);
++void vmx_vcpu_flush_pml_buffer(struct vcpu *v);
++bool_t vmx_domain_pml_enabled(const struct domain *d);
++int vmx_domain_enable_pml(struct domain *d);
++void vmx_domain_disable_pml(struct domain *d);
++void vmx_domain_flush_pml_buffers(struct domain *d);
++
+ #endif /* ASM_X86_HVM_VMX_VMCS_H__ */
+ 
+ /*
+-- 
+2.1.0
+

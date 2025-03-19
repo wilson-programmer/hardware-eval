@@ -1,0 +1,292 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 04/10] x86: detect and initialize Cache
+	Monitoring Technology feature
+Date: Tue, 30 Sep 2014 18:49:06 +0800
+Message-ID: <1412074152-2955-5-git-send-email-chao.p.peng@linux.intel.com>
+References: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Detect Cache Monitoring Technology(CMT) feature and enumerate the
+resource types, one of which is to monitor the L3 cache occupancy.
+
+Also introduce a Xen command line parameter to control the Platform
+Shared Resource such as CMT.
+
+Signed-off-by: Dongxiao Xu <dongxiao.xu@intel.com>
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+---
+ docs/misc/xen-command-line.markdown |   21 +++++++
+ xen/arch/x86/Makefile               |    1 +
+ xen/arch/x86/psr.c                  |  114 +++++++++++++++++++++++++++++++++++
+ xen/arch/x86/setup.c                |    1 +
+ xen/include/asm-x86/cpufeature.h    |    1 +
+ xen/include/asm-x86/psr.h           |   51 ++++++++++++++++
+ 6 files changed, 189 insertions(+)
+ create mode 100644 xen/arch/x86/psr.c
+ create mode 100644 xen/include/asm-x86/psr.h
+
+diff --git a/docs/misc/xen-command-line.markdown b/docs/misc/xen-command-line.markdown
+index af93e17..5514431 100644
+--- a/docs/misc/xen-command-line.markdown
++++ b/docs/misc/xen-command-line.markdown
+@@ -1005,6 +1005,27 @@ This option can be specified more than once (up to 8 times at present).
+ ### ple\_window
+ > `= <integer>`
+ 
++### psr (Intel)
++> `= List of ( cmt:<boolean> | rmid_max:<integer> )`
++
++> Default: `psr=cmt:0,rmid_max:255`
++
++Platform Shared Resource(PSR) Services.  Intel Haswell and later server
++platforms offer information about the sharing of resources.
++
++To use the PSR monitoring service for a certain domain, a Resource
++Monitoring ID(RMID) is used to bind the domain to corresponding shared
++resource.  RMID is a hardware-provided layer of abstraction between software
++and logical processors.
++
++The following resources are available:
++* Cache Monitoring Technology (Haswell and later).  Information
++regarding the L3 cache occupancy.
++
++`cmt` instructs Xen to enable/disable Cache Monitoring Technology.
++
++`rmid_max` indicates the max value for rmid.
++
+ ### reboot
+ > `= t[riple] | k[bd] | a[cpi] | p[ci] | n[o] [, [w]arm | [c]old]`
+ 
+diff --git a/xen/arch/x86/Makefile b/xen/arch/x86/Makefile
+index c1e244d..86ca5f8 100644
+--- a/xen/arch/x86/Makefile
++++ b/xen/arch/x86/Makefile
+@@ -42,6 +42,7 @@ obj-y += numa.o
+ obj-y += pci.o
+ obj-y += percpu.o
+ obj-y += physdev.o
++obj-y += psr.o
+ obj-y += setup.o
+ obj-y += shutdown.o
+ obj-y += smp.o
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+new file mode 100644
+index 0000000..a4cbc0a
+--- /dev/null
++++ b/xen/arch/x86/psr.c
+@@ -0,0 +1,114 @@
++/*
++ * pqos.c: Platform Shared Resource related service for guest.
++ *
++ * Copyright (c) 2014, Intel Corporation
++ * Author: Dongxiao Xu <dongxiao.xu@intel.com>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ */
++#include <xen/init.h>
++#include <xen/cpu.h>
++#include <asm/psr.h>
++
++#define PSR_CMT        (1<<0)
++
++struct psr_cmt *__read_mostly psr_cmt;
++static bool_t __initdata opt_psr;
++static unsigned int __initdata opt_rmid_max = 255;
++
++static void __init parse_psr_param(char *s)
++{
++    char *ss, *val_str;
++
++    do {
++        ss = strchr(s, ',');
++        if ( ss )
++            *ss = '\0';
++
++        val_str = strchr(s, ':');
++        if ( val_str )
++            *val_str++ = '\0';
++
++        if ( !strcmp(s, "cmt") && ( !val_str || parse_bool(val_str) == 1 ) )
++            opt_psr |= PSR_CMT;
++        else if ( val_str && !strcmp(s, "rmid_max") )
++            opt_rmid_max = simple_strtoul(val_str, NULL, 0);
++
++        s = ss + 1;
++    } while ( ss );
++}
++custom_param("psr", parse_psr_param);
++
++static void __init init_psr_cmt(unsigned int rmid_max)
++{
++    unsigned int eax, ebx, ecx, edx;
++    unsigned int rmid;
++
++    if ( !boot_cpu_has(X86_FEATURE_CMT) )
++        return;
++
++    cpuid_count(0xf, 0, &eax, &ebx, &ecx, &edx);
++    if ( !edx )
++        return;
++
++    psr_cmt = xzalloc(struct psr_cmt);
++    if ( !psr_cmt )
++        return;
++
++    psr_cmt->features = edx;
++    psr_cmt->rmid_mask = ~(~0ull << get_count_order(ebx));
++    psr_cmt->rmid_max = min(rmid_max, ebx);
++
++    if ( psr_cmt->features & PSR_RESOURCE_TYPE_L3 )
++    {
++        cpuid_count(0xf, 1, &eax, &ebx, &ecx, &edx);
++        psr_cmt->l3.upscaling_factor = ebx;
++        psr_cmt->l3.rmid_max = ecx;
++        psr_cmt->l3.features = edx;
++    }
++
++    psr_cmt->rmid_max = min(rmid_max, psr_cmt->l3.rmid_max);
++    psr_cmt->rmid_to_dom = xmalloc_array(domid_t, psr_cmt->rmid_max + 1);
++    if ( !psr_cmt->rmid_to_dom )
++    {
++        xfree(psr_cmt);
++        psr_cmt = NULL;
++        return;
++    }
++
++    /*
++     * Once CMT is enabled each CPU will always require a RMID to associate
++     * with it. To reduce the waste of RMID, reserve RMID 0 for all CPUs that
++     * have no domain being monitored.
++     */
++    psr_cmt->rmid_to_dom[0] = DOMID_XEN;
++    for ( rmid = 1; rmid <= psr_cmt->rmid_max; rmid++ )
++        psr_cmt->rmid_to_dom[rmid] = DOMID_INVALID;
++
++    printk(XENLOG_INFO "Cache Monitoring Technology enabled\n");
++}
++
++static int __init init_psr(void)
++{
++    if ( opt_psr & PSR_CMT && opt_rmid_max )
++        init_psr_cmt(opt_rmid_max);
++    return 0;
++}
++__initcall(init_psr);
++
++/*
++ * Local variables:
++ * mode: C
++ * c-file-style: "BSD"
++ * c-basic-offset: 4
++ * tab-width: 4
++ * indent-tabs-mode: nil
++ * End:
++ */
+diff --git a/xen/arch/x86/setup.c b/xen/arch/x86/setup.c
+index 8c8b91f..3856fcc 100644
+--- a/xen/arch/x86/setup.c
++++ b/xen/arch/x86/setup.c
+@@ -49,6 +49,7 @@
+ #include <xen/cpu.h>
+ #include <asm/nmi.h>
+ #include <asm/alternative.h>
++#include <asm/psr.h>
+ 
+ /* opt_nosmp: If true, secondary processors are ignored. */
+ static bool_t __initdata opt_nosmp;
+diff --git a/xen/include/asm-x86/cpufeature.h b/xen/include/asm-x86/cpufeature.h
+index 8014241..137d75c 100644
+--- a/xen/include/asm-x86/cpufeature.h
++++ b/xen/include/asm-x86/cpufeature.h
+@@ -148,6 +148,7 @@
+ #define X86_FEATURE_ERMS	(7*32+ 9) /* Enhanced REP MOVSB/STOSB */
+ #define X86_FEATURE_INVPCID	(7*32+10) /* Invalidate Process Context ID */
+ #define X86_FEATURE_RTM 	(7*32+11) /* Restricted Transactional Memory */
++#define X86_FEATURE_CMT 	(7*32+12) /* Cache Monitoring Technology */
+ #define X86_FEATURE_NO_FPU_SEL 	(7*32+13) /* FPU CS/DS stored as zero */
+ #define X86_FEATURE_MPX		(7*32+14) /* Memory Protection Extensions */
+ #define X86_FEATURE_RDSEED	(7*32+18) /* RDSEED instruction */
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+new file mode 100644
+index 0000000..8a3803c
+--- /dev/null
++++ b/xen/include/asm-x86/psr.h
+@@ -0,0 +1,51 @@
++/*
++ * psr.h: Platform Shared Resource related service for guest.
++ *
++ * Copyright (c) 2014, Intel Corporation
++ * Author: Dongxiao Xu <dongxiao.xu@intel.com>
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ */
++#ifndef __ASM_PSR_H__
++#define __ASM_PSR_H__
++
++/* Resource Type Enumeration */
++#define PSR_RESOURCE_TYPE_L3            0x2
++
++/* L3 Monitoring Features */
++#define PSR_CMT_L3_OCCUPANCY           0x1
++
++struct psr_cmt_l3 {
++    unsigned int features;
++    unsigned int upscaling_factor;
++    unsigned int rmid_max;
++};
++
++struct psr_cmt {
++    unsigned long rmid_mask;
++    unsigned int rmid_max;
++    unsigned int features;
++    domid_t *rmid_to_dom;
++    struct psr_cmt_l3 l3;
++};
++
++extern struct psr_cmt *psr_cmt;
++
++#endif /* __ASM_PSR_H__ */
++
++/*
++ * Local variables:
++ * mode: C
++ * c-file-style: "BSD"
++ * c-basic-offset: 4
++ * tab-width: 4
++ * indent-tabs-mode: nil
++ * End:
++ */
+-- 
+1.7.9.5
+

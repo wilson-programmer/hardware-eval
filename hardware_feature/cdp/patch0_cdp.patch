@@ -1,0 +1,79 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: He Chen <he.chen@linux.intel.com>
+Subject: [PATCH 0/5] Intel Code/Data Prioritization(CDP) feature
+	enabling
+Date: Wed,  2 Sep 2015 16:27:57 +0800
+Message-ID: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+Received: from mail6.bemta5.messagelabs.com ([195.245.231.135])
+	by lists.xen.org with esmtp (Exim 4.72)
+	(envelope-from <he.chen@linux.intel.com>) id 1ZX3PZ-0003kT-K6
+	for xen-devel@lists.xenproject.org; Wed, 02 Sep 2015 08:28:53 +0000
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xenproject.org
+Cc: wei.liu2@citrix.com, ian.campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, He Chen <he.chen@linux.intel.com>, ian.jackson@eu.citrix.com, jbeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+Hi all,
+
+Code/Data Prioritization(CDP) is offered in Intel Broadwell and later server
+platforms, which is an extension of CAT. CDP enables isolation and separate
+prioritization of code and data fetches to the L3 cache in a software
+configurable manner, which can enable workload prioritization and tuning of
+cache capacity to the characteristics of the workload. CDP extends Cache
+Allocation Technology (CAT) by providing separate code and data capacity bit
+masks(CBM) per Class of Service (COS). CDP is used on VM basis in the Xen
+implementation.
+
+More information about CDP, please refer to Intel SDM, Volumn 3, section 17.16
+http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-manual-325462.pdf
+
+This patch series enables CDP feature in Xen based on CAT code, including
+extending CBM operation functions and introducing new commands to enable/disable
+CDP dynamically. For all the changes, please see in each patch.
+
+This patchset has been tested on Intel Broadwell server platform.
+
+To make this patchset better, any comment or suggestion is welcomed, I would
+really appreciate it.
+
+Thanks
+
+He Chen (5):
+  x86: detect Intel CDP feature
+  x86: Support enable/disable CDP dynamically and get CDP status
+  x86: add domctl cmd to set/get CDP code/data CBM
+  tools: add tools support for Intel CDP
+  docs: add document to introduce CDP command
+
+ docs/man/xl.pod.1             |  22 +++
+ docs/misc/xl-psr.markdown     |  56 +++++++-
+ tools/libxc/include/xenctrl.h |  10 +-
+ tools/libxc/xc_psr.c          |  42 +++++-
+ tools/libxl/libxl.h           |  12 ++
+ tools/libxl/libxl_psr.c       |  64 ++++++++-
+ tools/libxl/libxl_types.idl   |   3 +
+ tools/libxl/xl.h              |   4 +
+ tools/libxl/xl_cmdimpl.c      |  81 +++++++++--
+ tools/libxl/xl_cmdtable.c     |  15 ++
+ xen/arch/x86/domctl.c         |  33 ++++-
+ xen/arch/x86/psr.c            | 309 ++++++++++++++++++++++++++++++++++++------
+ xen/arch/x86/sysctl.c         |   9 +-
+ xen/include/asm-x86/psr.h     |  26 +++-
+ xen/include/public/domctl.h   |   4 +
+ xen/include/public/sysctl.h   |   5 +
+ 16 files changed, 625 insertions(+), 70 deletions(-)
+
+-- 
+1.9.1
+

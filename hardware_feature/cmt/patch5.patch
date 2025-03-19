@@ -1,0 +1,257 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 05/10] x86: dynamically attach/detach CMT
+	service for a guest
+Date: Tue, 30 Sep 2014 18:49:07 +0800
+Message-ID: <1412074152-2955-6-git-send-email-chao.p.peng@linux.intel.com>
+References: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Add hypervisor side support for dynamically attach and detach
+Cache Monitoring Technology(CMT) services for a certain guest.
+
+When attach CMT service for a guest, system will allocate an
+RMID for it. When detach or guest is shutdown, the RMID will be
+recycled for future use.
+
+Signed-off-by: Dongxiao Xu <dongxiao.xu@intel.com>
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+---
+ xen/arch/x86/domain.c        |    3 +++
+ xen/arch/x86/domctl.c        |   29 ++++++++++++++++++++++++++
+ xen/arch/x86/psr.c           |   46 ++++++++++++++++++++++++++++++++++++++++++
+ xen/include/asm-x86/domain.h |    2 ++
+ xen/include/asm-x86/psr.h    |   10 +++++++++
+ xen/include/public/domctl.h  |   12 +++++++++++
+ 6 files changed, 102 insertions(+)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index 7b1dfe6..3cfd8f4 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -60,6 +60,7 @@
+ #include <xen/numa.h>
+ #include <xen/iommu.h>
+ #include <compat/vcpu.h>
++#include <asm/psr.h>
+ 
+ DEFINE_PER_CPU(struct vcpu *, curr_vcpu);
+ DEFINE_PER_CPU(unsigned long, cr4);
+@@ -647,6 +648,8 @@ void arch_domain_destroy(struct domain *d)
+ 
+     free_xenheap_page(d->shared_info);
+     cleanup_domain_irq_mapping(d);
++
++    psr_free_rmid(d);
+ }
+ 
+ unsigned long pv_guest_cr4_fixup(const struct vcpu *v, unsigned long guest_cr4)
+diff --git a/xen/arch/x86/domctl.c b/xen/arch/x86/domctl.c
+index 7a5de43..6ed480a 100644
+--- a/xen/arch/x86/domctl.c
++++ b/xen/arch/x86/domctl.c
+@@ -35,6 +35,7 @@
+ #include <asm/mem_sharing.h>
+ #include <asm/xstate.h>
+ #include <asm/debugger.h>
++#include <asm/psr.h>
+ 
+ static int gdbsx_guest_mem_io(
+     domid_t domid, struct xen_domctl_gdbsx_memio *iop)
+@@ -1319,6 +1320,34 @@ long arch_do_domctl(
+     }
+     break;
+ 
++    case XEN_DOMCTL_psr_cmt_op:
++        if ( !psr_cmt_enabled() )
++        {
++            ret = -ENODEV;
++            break;
++        }
++
++        switch ( domctl->u.psr_cmt_op.cmd )
++        {
++        case XEN_DOMCTL_PSR_CMT_OP_ATTACH:
++            ret = psr_alloc_rmid(d);
++            break;
++        case XEN_DOMCTL_PSR_CMT_OP_DETACH:
++            if ( d->arch.psr_rmid > 0 )
++                psr_free_rmid(d);
++            else
++                ret = -ENOENT;
++            break;
++        case XEN_DOMCTL_PSR_CMT_OP_QUERY_RMID:
++            domctl->u.psr_cmt_op.data = d->arch.psr_rmid;
++            copyback = 1;
++            break;
++        default:
++            ret = -ENOSYS;
++            break;
++        }
++        break;
++
+     default:
+         ret = iommu_do_domctl(domctl, d, u_domctl);
+         break;
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index a4cbc0a..4b4a4cf 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -15,6 +15,7 @@
+  */
+ #include <xen/init.h>
+ #include <xen/cpu.h>
++#include <xen/sched.h>
+ #include <asm/psr.h>
+ 
+ #define PSR_CMT        (1<<0)
+@@ -103,6 +104,51 @@ static int __init init_psr(void)
+ }
+ __initcall(init_psr);
+ 
++/* Called with domain lock held, no psr specific lock needed */
++int psr_alloc_rmid(struct domain *d)
++{
++    unsigned int rmid;
++
++    ASSERT(psr_cmt_enabled());
++
++    if ( d->arch.psr_rmid > 0 )
++        return -EEXIST;
++
++    for ( rmid = 1; rmid <= psr_cmt->rmid_max; rmid++ )
++    {
++        if ( psr_cmt->rmid_to_dom[rmid] != DOMID_INVALID )
++            continue;
++
++        psr_cmt->rmid_to_dom[rmid] = d->domain_id;
++        break;
++    }
++
++    /* No RMID available, assign RMID=0 by default. */
++    if ( rmid > psr_cmt->rmid_max )
++    {
++        d->arch.psr_rmid = 0;
++        return -EUSERS;
++    }
++
++    d->arch.psr_rmid = rmid;
++
++    return 0;
++}
++
++/* Called with domain lock held, no psr specific lock needed */
++void psr_free_rmid(struct domain *d)
++{
++    unsigned int rmid;
++
++    rmid = d->arch.psr_rmid;
++    /* We do not free system reserved "RMID=0". */
++    if ( rmid == 0 )
++        return;
++
++    psr_cmt->rmid_to_dom[rmid] = DOMID_INVALID;
++    d->arch.psr_rmid = 0;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/xen/include/asm-x86/domain.h b/xen/include/asm-x86/domain.h
+index 7abe1b3..2be1d1e 100644
+--- a/xen/include/asm-x86/domain.h
++++ b/xen/include/asm-x86/domain.h
+@@ -314,6 +314,8 @@ struct arch_domain
+     /* Shared page for notifying that explicit PIRQ EOI is required. */
+     unsigned long *pirq_eoi_map;
+     unsigned long pirq_eoi_map_mfn;
++
++    unsigned int psr_rmid; /* RMID assigned to the domain for CMT */
+ } __cacheline_aligned;
+ 
+ #define has_arch_pdevs(d)    (!list_empty(&(d)->arch.pdev_list))
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index 8a3803c..98cfa6d 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -16,6 +16,8 @@
+ #ifndef __ASM_PSR_H__
+ #define __ASM_PSR_H__
+ 
++#include <xen/types.h>
++
+ /* Resource Type Enumeration */
+ #define PSR_RESOURCE_TYPE_L3            0x2
+ 
+@@ -38,6 +40,14 @@ struct psr_cmt {
+ 
+ extern struct psr_cmt *psr_cmt;
+ 
++static inline bool_t psr_cmt_enabled(void)
++{
++    return !!psr_cmt;
++}
++
++int psr_alloc_rmid(struct domain *d);
++void psr_free_rmid(struct domain *d);
++
+ #endif /* __ASM_PSR_H__ */
+ 
+ /*
+diff --git a/xen/include/public/domctl.h b/xen/include/public/domctl.h
+index cfa39b3..59220ed 100644
+--- a/xen/include/public/domctl.h
++++ b/xen/include/public/domctl.h
+@@ -965,6 +965,16 @@ struct xen_domctl_vnuma {
+ typedef struct xen_domctl_vnuma xen_domctl_vnuma_t;
+ DEFINE_XEN_GUEST_HANDLE(xen_domctl_vnuma_t);
+ 
++struct xen_domctl_psr_cmt_op {
++#define XEN_DOMCTL_PSR_CMT_OP_DETACH         0
++#define XEN_DOMCTL_PSR_CMT_OP_ATTACH         1
++#define XEN_DOMCTL_PSR_CMT_OP_QUERY_RMID     2
++    uint32_t cmd;
++    uint32_t data;
++};
++typedef struct xen_domctl_psr_cmt_op xen_domctl_psr_cmt_op_t;
++DEFINE_XEN_GUEST_HANDLE(xen_domctl_psr_cmt_op_t);
++
+ struct xen_domctl {
+     uint32_t cmd;
+ #define XEN_DOMCTL_createdomain                   1
+@@ -1038,6 +1048,7 @@ struct xen_domctl {
+ #define XEN_DOMCTL_get_vcpu_msrs                 72
+ #define XEN_DOMCTL_set_vcpu_msrs                 73
+ #define XEN_DOMCTL_setvnumainfo                  74
++#define XEN_DOMCTL_psr_cmt_op                    75
+ #define XEN_DOMCTL_gdbsx_guestmemio            1000
+ #define XEN_DOMCTL_gdbsx_pausevcpu             1001
+ #define XEN_DOMCTL_gdbsx_unpausevcpu           1002
+@@ -1099,6 +1110,7 @@ struct xen_domctl {
+         struct xen_domctl_gdbsx_pauseunp_vcpu gdbsx_pauseunp_vcpu;
+         struct xen_domctl_gdbsx_domstatus   gdbsx_domstatus;
+         struct xen_domctl_vnuma             vnuma;
++        struct xen_domctl_psr_cmt_op        psr_cmt_op;
+         uint8_t                             pad[128];
+     } u;
+ };
+-- 
+1.7.9.5
+

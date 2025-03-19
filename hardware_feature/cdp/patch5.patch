@@ -1,0 +1,180 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: He Chen <he.chen@linux.intel.com>
+Subject: [PATCH 5/5] docs: add document to introduce CDP command
+Date: Wed,  2 Sep 2015 16:28:02 +0800
+Message-ID: <1441182482-7688-6-git-send-email-he.chen@linux.intel.com>
+References: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+Received: from mail6.bemta5.messagelabs.com ([195.245.231.135])
+	by lists.xen.org with esmtp (Exim 4.72)
+	(envelope-from <he.chen@linux.intel.com>) id 1ZX3Py-0003uq-LH
+	for xen-devel@lists.xenproject.org; Wed, 02 Sep 2015 08:29:18 +0000
+In-Reply-To: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xenproject.org
+Cc: wei.liu2@citrix.com, ian.campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, He Chen <he.chen@linux.intel.com>, ian.jackson@eu.citrix.com, jbeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+Add CDP command in xl interface man page and add description of CDP
+in xl-psr.markdown.
+
+Signed-off-by: He Chen <he.chen@linux.intel.com>
+---
+ docs/man/xl.pod.1         | 22 +++++++++++++++++++
+ docs/misc/xl-psr.markdown | 56 ++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 73 insertions(+), 5 deletions(-)
+
+diff --git a/docs/man/xl.pod.1 b/docs/man/xl.pod.1
+index f22c3f3..3d7bde6 100644
+--- a/docs/man/xl.pod.1
++++ b/docs/man/xl.pod.1
+@@ -1530,6 +1530,12 @@ applications. In the Xen implementation, CAT is used to control cache allocation
+ on VM basis. To enforce cache on a specific domain, just set capacity bitmasks
+ (CBM) for the domain.
+ 
++Intel Broadwell and later server platforms also offer Code/Data Prioritization
++(CDP) for cache allocation, which support specify code or data cache for
++applications. CDP is used on VM basis in the Xen implementation. To specify
++code or data CBM for the domain, CDP feature must be enabled and CBM type
++options need to be specified when setting CBM.
++
+ =over 4
+ 
+ =item B<psr-cat-cbm-set> [I<OPTIONS>] I<domain-id> I<cbm>
+@@ -1545,12 +1551,28 @@ B<OPTIONS>
+ 
+ Specify the socket to process, otherwise all sockets are processed.
+ 
++=item B<-c>, B<--code>
++
++Set code CBM with CDP enabled.
++
++=item B<-d>, B<--data>
++
++Set data CBM with CDP enabled.
++
+ =back
+ 
+ =item B<psr-cat-show> [I<domain-id>]
+ 
+ Show CAT settings for a certain domain or all domains.
+ 
++=item B<psr-cat-cdp-enable>
++
++Enable Code/Data Prioritization.
++
++=item B<psr-cat-cdp-disable>
++
++Disable Code/Data Prioritization.
++
+ =back
+ 
+ =head1 TO BE DOCUMENTED
+diff --git a/docs/misc/xl-psr.markdown b/docs/misc/xl-psr.markdown
+index 3545912..a3728a9 100644
+--- a/docs/misc/xl-psr.markdown
++++ b/docs/misc/xl-psr.markdown
+@@ -14,7 +14,7 @@ tracks cache utilization of memory accesses according to the RMID and reports
+ monitored data via a counter register.
+ 
+ For more detailed information please refer to Intel SDM chapter
+-"17.14 - Platform Shared Resource Monitoring: Cache Monitoring Technology".
++"17.15 - Platform Shared Resource Monitoring: Cache Monitoring Technology".
+ 
+ In Xen's implementation, each domain in the system can be assigned a RMID
+ independently, while RMID=0 is reserved for monitoring domains that don't
+@@ -91,17 +91,48 @@ For example, assuming a system with 8 portions and 3 domains:
+    first domain exclusive access to half the cache, and the other two exclusive
+    access to one quarter each.
+ 
+-For more detailed information please refer to Intel SDM chapter
+-"17.15 - Platform Shared Resource Control: Cache Allocation Technology".
+-
+ In Xen's implementation, CBM can be configured with libxl/xl interfaces but
+ COS is maintained in hypervisor only. The cache partition granularity is per
+ domain, each domain has COS=0 assigned by default, the corresponding CBM is
+ all-ones, which means all the cache resource can be used by default.
+ 
++Code/Data Prioritization (CDP) Technology is an extension of CAT, which is
++available on Intel Broadwell and later server platforms. CDP enables isolation
++and separate prioritization of code and data fetches to the L3 cache in a
++software configurable manner, which can enable workload prioritization and
++tuning of cache capacity to the characteristics of the workload. CDP extends
++Cache Allocation Technology (CAT) by providing separate code and data masks
++per Class of Service (COS).
++
++CDP is disabled on the processor by default. If the CAT MSRs are used without
++enabling CDP, the processor operates in a traditional CAT-only mode.
++
++When CDP is enabled,
++
++ * the CAT mask MSRs are re-mapped into interleaved pairs of mask MSRs for
++   data or code fetches.
++
++ * the range of COS for CAT is re-indexed, with the lower-half of the COS
++   range available for CDP.
++
++CDP allows OS or
++Hypervisor to partition cache allocation more fine-grained, code cache and
++data cache can be specified respectively. To enable CDP on platform, all
++sockets in the platform must have CDP either enabled or disabled, not a mix.
++With CDP enabled, one COS corresponds to two CBMs(code CBM & data CBM),
++which means the number of available COS will reduce to half when CDP on.
++
++Further more, if enabling/disabling CDP dynamically on runtime, all domains
++are reset to COS[0] with fully access to L3 cache before enabling or disabling
++CDP.
++
++For more detailed information please refer to Intel SDM chapter
++"17.16 - Platform Shared Resource Control: Cache Allocation Technology".
++
+ ### xl interfaces
+ 
+-System CAT information such as maximum COS and CBM length can be obtained by:
++System CAT information such as maximum COS, CBM length and CDP status can be
++obtained by:
+ 
+ `xl psr-hwinfo --cat`
+ 
+@@ -119,6 +150,13 @@ A cbm is valid only when:
+ In a multi-socket system, the same cbm will be set on each socket by default.
+ Per socket cbm can be specified with the `--socket SOCKET` option.
+ 
++To specify code CBM for the domain, `-c` or `--code` option is needed.
++
++To specify data CBM for the domain, `-d` or `--data` option is needed.
++
++If neither `-c` nor `-d` option is specified when CDP is on, the same code CBM
++and data CBM will be set for the domain.
++
+ Setting the CBM may not be successful if insufficient COS is available. In
+ such case unused COS(es) may be freed by setting CBM of all related domains to
+ its default value(all-ones).
+@@ -127,6 +165,14 @@ Per domain CBM settings can be shown by:
+ 
+ `xl psr-cat-show`
+ 
++To enable CDP on the platform:
++
++`xl psr-cat-cdp-enable`
++
++To disable CDP on the platform:
++
++`xl psr-cat-cdp-disable`
++
+ ## Reference
+ 
+ [1] Intel SDM
+-- 
+1.9.1
+

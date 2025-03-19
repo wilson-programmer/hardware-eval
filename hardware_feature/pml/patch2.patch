@@ -1,0 +1,59 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Kai Huang <kai.huang@linux.intel.com>
+Subject: [v2 02/11] doc: add description for new PML boot
+	parameter
+Date: Wed, 15 Apr 2015 15:03:44 +0800
+Message-ID: <1429081433-9600-3-git-send-email-kai.huang@linux.intel.com>
+References: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: andrew.cooper3@citrix.com, tim@xen.org, jbeulich@suse.com, kevin.tian@intel.com, xen-devel@lists.xen.org
+Cc: Kai Huang <kai.huang@linux.intel.com>
+List-Id: xen-devel@lists.xenproject.org
+
+This patch adds doc description for new boot parameter 'ept=pml'.
+
+Signed-off-by: Kai Huang <kai.huang@linux.intel.com>
+---
+ docs/misc/xen-command-line.markdown | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/docs/misc/xen-command-line.markdown b/docs/misc/xen-command-line.markdown
+index 1dda1f0..ae30d02 100644
+--- a/docs/misc/xen-command-line.markdown
++++ b/docs/misc/xen-command-line.markdown
+@@ -685,6 +685,20 @@ requirement can be relaxed.  This option is particularly useful for nested
+ virtualization, to allow the L1 hypervisor to use EPT even if the L0 hypervisor
+ does not provide VM\_ENTRY\_LOAD\_GUEST\_PAT.
+ 
++### ept (Intel)
++> `= List of [ pml ]`
++
++> Sub-options:
++
++> `pml`
++
++> This sub-option is boolean type and can be prefixed with `no-` to effect the
++> inverse meaning.
++
++> Default: `false`
++
++>> Control the use of Page Modification Logging for log-dirty.
++
+ ### gdb
+ > `= <baud>[/<clock_hz>][,DPS[,<io-base>[,<irq>[,<port-bdf>[,<bridge-bdf>]]]] | pci | amt ] `
+ 
+-- 
+2.1.0
+

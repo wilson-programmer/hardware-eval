@@ -1,0 +1,515 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: He Chen <he.chen@linux.intel.com>
+Subject: [PATCH 4/5] tools: add tools support for Intel CDP
+Date: Wed,  2 Sep 2015 16:28:01 +0800
+Message-ID: <1441182482-7688-5-git-send-email-he.chen@linux.intel.com>
+References: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+Received: from mail6.bemta5.messagelabs.com ([195.245.231.135])
+	by lists.xen.org with esmtp (Exim 4.72)
+	(envelope-from <he.chen@linux.intel.com>) id 1ZX3Q1-0003wh-Px
+	for xen-devel@lists.xenproject.org; Wed, 02 Sep 2015 08:29:21 +0000
+In-Reply-To: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xenproject.org
+Cc: wei.liu2@citrix.com, ian.campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, He Chen <he.chen@linux.intel.com>, ian.jackson@eu.citrix.com, jbeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+This is the xc/xl changes to support Intel Code/Data Prioritization.
+Two new xl commands are introduced to enable/disable CDP dynamically,
+and CAT xl commands to set/get CBMs are extended to support CDP.
+
+Signed-off-by: He Chen <he.chen@linux.intel.com>
+---
+ tools/libxc/include/xenctrl.h | 10 ++++--
+ tools/libxc/xc_psr.c          | 42 +++++++++++++++++++++-
+ tools/libxl/libxl.h           | 12 +++++++
+ tools/libxl/libxl_psr.c       | 64 +++++++++++++++++++++++++++++++++-
+ tools/libxl/libxl_types.idl   |  3 ++
+ tools/libxl/xl.h              |  4 +++
+ tools/libxl/xl_cmdimpl.c      | 81 +++++++++++++++++++++++++++++++++++++------
+ tools/libxl/xl_cmdtable.c     | 15 ++++++++
+ 8 files changed, 217 insertions(+), 14 deletions(-)
+
+diff --git a/tools/libxc/include/xenctrl.h b/tools/libxc/include/xenctrl.h
+index de3c0ad..665e6bd 100644
+--- a/tools/libxc/include/xenctrl.h
++++ b/tools/libxc/include/xenctrl.h
+@@ -2798,7 +2798,10 @@ enum xc_psr_cmt_type {
+ typedef enum xc_psr_cmt_type xc_psr_cmt_type;
+ 
+ enum xc_psr_cat_type {
+-    XC_PSR_CAT_L3_CBM = 1,
++    XC_PSR_CAT_L3_CBM  = 1,
++    XC_PSR_CAT_L3_CODE = 2,
++    XC_PSR_CAT_L3_DATA = 3,
++
+ };
+ typedef enum xc_psr_cat_type xc_psr_cat_type;
+ 
+@@ -2824,7 +2827,10 @@ int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
+                                xc_psr_cat_type type, uint32_t target,
+                                uint64_t *data);
+ int xc_psr_cat_get_l3_info(xc_interface *xch, uint32_t socket,
+-                           uint32_t *cos_max, uint32_t *cbm_len);
++                           uint32_t *cos_max, uint32_t *cbm_len,
++                           uint8_t *cdp_enabled);
++int xc_psr_cat_enable_cdp(xc_interface *xch);
++int xc_psr_cat_disable_cdp(xc_interface *xch);
+ #endif
+ 
+ #endif /* XENCTRL_H */
+diff --git a/tools/libxc/xc_psr.c b/tools/libxc/xc_psr.c
+index d8b3a51..d4ff6f6 100644
+--- a/tools/libxc/xc_psr.c
++++ b/tools/libxc/xc_psr.c
+@@ -260,6 +260,12 @@ int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
+     case XC_PSR_CAT_L3_CBM:
+         cmd = XEN_DOMCTL_PSR_CAT_OP_SET_L3_CBM;
+         break;
++    case XC_PSR_CAT_L3_CODE:
++        cmd = XEN_DOMCTL_PSR_CAT_OP_SET_L3_CODE;
++        break;
++    case XC_PSR_CAT_L3_DATA:
++        cmd = XEN_DOMCTL_PSR_CAT_OP_SET_L3_DATA;
++        break;
+     default:
+         errno = EINVAL;
+         return -1;
+@@ -287,6 +293,12 @@ int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
+     case XC_PSR_CAT_L3_CBM:
+         cmd = XEN_DOMCTL_PSR_CAT_OP_GET_L3_CBM;
+         break;
++    case XC_PSR_CAT_L3_CODE:
++        cmd = XEN_DOMCTL_PSR_CAT_OP_GET_L3_CODE;
++        break;
++    case XC_PSR_CAT_L3_DATA:
++        cmd = XEN_DOMCTL_PSR_CAT_OP_GET_L3_DATA;
++        break;
+     default:
+         errno = EINVAL;
+         return -1;
+@@ -306,7 +318,8 @@ int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
+ }
+ 
+ int xc_psr_cat_get_l3_info(xc_interface *xch, uint32_t socket,
+-                           uint32_t *cos_max, uint32_t *cbm_len)
++                           uint32_t *cos_max, uint32_t *cbm_len,
++                           uint8_t *cdp_enabled)
+ {
+     int rc;
+     DECLARE_SYSCTL;
+@@ -320,11 +333,38 @@ int xc_psr_cat_get_l3_info(xc_interface *xch, uint32_t socket,
+     {
+         *cos_max = sysctl.u.psr_cat_op.u.l3_info.cos_max;
+         *cbm_len = sysctl.u.psr_cat_op.u.l3_info.cbm_len;
++        *cdp_enabled = sysctl.u.psr_cat_op.u.l3_info.cdp_enabled;
+     }
+ 
+     return rc;
+ }
+ 
++int xc_psr_cat_enable_cdp(xc_interface *xch)
++{
++    int rc;
++    DECLARE_SYSCTL;
++
++    sysctl.cmd = XEN_SYSCTL_psr_cat_op;
++    sysctl.u.psr_cat_op.cmd = XEN_SYSCTL_PSR_CAT_enable_cdp;
++
++    rc = do_sysctl(xch, &sysctl);
++
++    return rc;
++}
++
++int xc_psr_cat_disable_cdp(xc_interface *xch)
++{
++    int rc;
++    DECLARE_SYSCTL;
++
++    sysctl.cmd = XEN_SYSCTL_psr_cat_op;
++    sysctl.u.psr_cat_op.cmd = XEN_SYSCTL_PSR_CAT_disable_cdp;
++
++    rc = do_sysctl(xch, &sysctl);
++
++    return rc;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libxl/libxl.h b/tools/libxl/libxl.h
+index 5f9047c..68c14fb 100644
+--- a/tools/libxl/libxl.h
++++ b/tools/libxl/libxl.h
+@@ -796,6 +796,13 @@ void libxl_mac_copy(libxl_ctx *ctx, libxl_mac *dst, libxl_mac *src);
+  * If this is defined, the Cache Allocation Technology feature is supported.
+  */
+ #define LIBXL_HAVE_PSR_CAT 1
++
++/*
++ * LIBXL_HAVE_PSR_CDP
++ *
++ * If this is defined, the Code/Data Prioritization feature is supported.
++ */
++#define LIBXL_HAVE_PSR_CDP 1
+ #endif
+ 
+ /*
+@@ -1729,6 +1736,11 @@ int libxl_psr_cat_get_l3_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
+ void libxl_psr_cat_info_list_free(libxl_psr_cat_info *list, int nr);
+ #endif
+ 
++#ifdef LIBXL_HAVE_PSR_CDP
++int libxl_psr_cat_enable_cdp(libxl_ctx *ctx);
++int libxl_psr_cat_disable_cdp(libxl_ctx *ctx);
++#endif
++
+ /* misc */
+ 
+ /* Each of these sets or clears the flag according to whether the
+diff --git a/tools/libxl/libxl_psr.c b/tools/libxl/libxl_psr.c
+index 3378239..4dae5e5 100644
+--- a/tools/libxl/libxl_psr.c
++++ b/tools/libxl/libxl_psr.c
+@@ -297,6 +297,7 @@ int libxl_psr_cat_set_cbm(libxl_ctx *ctx, uint32_t domid,
+     GC_INIT(ctx);
+     int rc;
+     int socketid, nr_sockets;
++    libxl_psr_cat_info *info;
+ 
+     rc = libxl__count_physical_sockets(gc, &nr_sockets);
+     if (rc) {
+@@ -304,6 +305,22 @@ int libxl_psr_cat_set_cbm(libxl_ctx *ctx, uint32_t domid,
+         goto out;
+     }
+ 
++    rc = libxl_psr_cat_get_l3_info(ctx, &info, &nr_sockets);
++    if (rc) {
++        LOGE(ERROR, "Failed to get cat info");
++        goto out;
++    }
++
++    if (!info->cdp_enabled) {
++        if (type == LIBXL_PSR_CBM_TYPE_L3_CODE ||
++            type == LIBXL_PSR_CBM_TYPE_L3_DATA)
++        {
++            LOGE(ERROR, "Unable to set Code/Data CBM with CDP disabled");
++            rc = EINVAL;
++            goto out;
++        }
++    }
++
+     libxl_for_each_set_bit(socketid, *target_map) {
+         if (socketid >= nr_sockets)
+             break;
+@@ -352,7 +369,7 @@ int libxl_psr_cat_get_l3_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
+ 
+     for (i = 0; i < nr_sockets; i++) {
+         if (xc_psr_cat_get_l3_info(ctx->xch, i, &ptr[i].cos_max,
+-                                                &ptr[i].cbm_len)) {
++                                   &ptr[i].cbm_len, &ptr[i].cdp_enabled)) {
+             libxl__psr_cat_log_err_msg(gc, errno);
+             rc = ERROR_FAIL;
+             free(ptr);
+@@ -376,6 +393,51 @@ void libxl_psr_cat_info_list_free(libxl_psr_cat_info *list, int nr)
+     free(list);
+ }
+ 
++static void libxl__psr_cdp_log_err_msg(libxl__gc *gc, int err)
++{
++    char *msg;
++
++    switch (err) {
++    case ENODEV:
++        msg = "CDP is not supported in this system";
++        break;
++
++    default:
++        libxl__psr_log_err_msg(gc, err);
++        return;
++    }
++
++    LOGE(ERROR, "%s", msg);
++}
++
++int libxl_psr_cat_enable_cdp(libxl_ctx *ctx)
++{
++    GC_INIT(ctx);
++    int rc = 0;
++
++    if (xc_psr_cat_enable_cdp(ctx->xch)) {
++        libxl__psr_cdp_log_err_msg(gc, errno);
++        rc = ERROR_FAIL;
++    }
++
++    GC_FREE;
++    return rc;
++}
++
++int libxl_psr_cat_disable_cdp(libxl_ctx *ctx)
++{
++    GC_INIT(ctx);
++
++    int rc = 0;
++    if (xc_psr_cat_disable_cdp(ctx->xch)) {
++        libxl__psr_cdp_log_err_msg(gc, errno);
++        rc = ERROR_FAIL;
++    }
++
++    GC_FREE;
++    return rc;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libxl/libxl_types.idl b/tools/libxl/libxl_types.idl
+index ef346e7..afed626 100644
+--- a/tools/libxl/libxl_types.idl
++++ b/tools/libxl/libxl_types.idl
+@@ -787,9 +787,12 @@ libxl_psr_cmt_type = Enumeration("psr_cmt_type", [
+ libxl_psr_cbm_type = Enumeration("psr_cbm_type", [
+     (0, "UNKNOWN"),
+     (1, "L3_CBM"),
++    (2, "L3_CODE"),
++    (3, "L3_DATA"),
+     ])
+ 
+ libxl_psr_cat_info = Struct("psr_cat_info", [
+     ("cos_max", uint32),
+     ("cbm_len", uint32),
++    ("cdp_enabled", uint8),
+     ])
+diff --git a/tools/libxl/xl.h b/tools/libxl/xl.h
+index 13bccba..e8bb774 100644
+--- a/tools/libxl/xl.h
++++ b/tools/libxl/xl.h
+@@ -121,6 +121,10 @@ int main_psr_cmt_show(int argc, char **argv);
+ int main_psr_cat_cbm_set(int argc, char **argv);
+ int main_psr_cat_show(int argc, char **argv);
+ #endif
++#ifdef LIBXL_HAVE_PSR_CDP
++int main_psr_cat_cdp_enable(int argc, char **argv);
++int main_psr_cat_cdp_disable(int argc, char **argv);
++#endif
+ 
+ void help(const char *command);
+ 
+diff --git a/tools/libxl/xl_cmdimpl.c b/tools/libxl/xl_cmdimpl.c
+index ebbb9a5..825d707 100644
+--- a/tools/libxl/xl_cmdimpl.c
++++ b/tools/libxl/xl_cmdimpl.c
+@@ -8366,6 +8366,15 @@ int main_psr_cmt_show(int argc, char **argv)
+ #endif
+ 
+ #ifdef LIBXL_HAVE_PSR_CAT
++static void psr_cat_print_cdp_status(uint8_t status)
++{
++    if (status == 0)
++        printf("%-16s: Disabled\n", "CDP Status");
++    else
++        printf("%-16s: Enabled\n", "CDP Status");
++}
++
++
+ static int psr_cat_hwinfo(void)
+ {
+     int rc;
+@@ -8390,6 +8399,7 @@ static int psr_cat_hwinfo(void)
+         }
+         printf("%-16s: %u\n", "Socket ID", socketid);
+         printf("%-16s: %uKB\n", "L3 Cache", l3_cache_size);
++        psr_cat_print_cdp_status(info->cdp_enabled);
+         printf("%-16s: %u\n", "Maximum COS", info->cos_max);
+         printf("%-16s: %u\n", "CBM length", info->cbm_len);
+         printf("%-16s: %#llx\n", "Default CBM",
+@@ -8401,7 +8411,8 @@ out:
+     return rc;
+ }
+ 
+-static void psr_cat_print_one_domain_cbm(uint32_t domid, uint32_t socketid)
++static void psr_cat_print_one_domain_cbm(uint32_t domid, uint32_t socketid,
++                                         uint8_t cdp_enabled)
+ {
+     char *domain_name;
+     uint64_t cbm;
+@@ -8410,20 +8421,29 @@ static void psr_cat_print_one_domain_cbm(uint32_t domid, uint32_t socketid)
+     printf("%5d%25s", domid, domain_name);
+     free(domain_name);
+ 
+-    if (!libxl_psr_cat_get_cbm(ctx, domid, LIBXL_PSR_CBM_TYPE_L3_CBM,
+-                               socketid, &cbm))
+-         printf("%#16"PRIx64, cbm);
+-
++    if (!cdp_enabled) {
++        if (!libxl_psr_cat_get_cbm(ctx, domid, LIBXL_PSR_CBM_TYPE_L3_CBM,
++                                   socketid, &cbm))
++            printf("%#16"PRIx64, cbm);
++    } else {
++        if (!libxl_psr_cat_get_cbm(ctx, domid, LIBXL_PSR_CBM_TYPE_L3_CODE,
++                                   socketid, &cbm))
++            printf("%10s%#8"PRIx64, "code:", cbm);
++        if (!libxl_psr_cat_get_cbm(ctx, domid, LIBXL_PSR_CBM_TYPE_L3_DATA,
++                                   socketid, &cbm))
++            printf("%10s%#8"PRIx64, "data:", cbm);
++    }
+     printf("\n");
+ }
+ 
+-static int psr_cat_print_domain_cbm(uint32_t domid, uint32_t socketid)
++static int psr_cat_print_domain_cbm(uint32_t domid, uint32_t socketid,
++                                    uint8_t cdp_enabled)
+ {
+     int i, nr_domains;
+     libxl_dominfo *list;
+ 
+     if (domid != INVALID_DOMID) {
+-        psr_cat_print_one_domain_cbm(domid, socketid);
++        psr_cat_print_one_domain_cbm(domid, socketid, cdp_enabled);
+         return 0;
+     }
+ 
+@@ -8433,7 +8453,7 @@ static int psr_cat_print_domain_cbm(uint32_t domid, uint32_t socketid)
+     }
+ 
+     for (i = 0; i < nr_domains; i++)
+-        psr_cat_print_one_domain_cbm(list[i].domid, socketid);
++        psr_cat_print_one_domain_cbm(list[i].domid, socketid, cdp_enabled);
+     libxl_dominfo_list_free(list, nr_domains);
+ 
+     return 0;
+@@ -8457,7 +8477,7 @@ static int psr_cat_print_socket(uint32_t domid, uint32_t socketid,
+     printf("%-16s: %#llx\n", "Default CBM", (1ull << info->cbm_len) - 1);
+     printf("%5s%25s%16s\n", "ID", "NAME", "CBM");
+ 
+-    return psr_cat_print_domain_cbm(domid, socketid);
++    return psr_cat_print_domain_cbm(domid, socketid, info->cdp_enabled);
+ }
+ 
+ static int psr_cat_show(uint32_t domid)
+@@ -8489,6 +8509,8 @@ int main_psr_cat_cbm_set(int argc, char **argv)
+     libxl_psr_cbm_type type = LIBXL_PSR_CBM_TYPE_L3_CBM;
+     uint64_t cbm;
+     int ret, opt = 0;
++    int opt_data = 0;
++    int opt_code = 0;
+     libxl_bitmap target_map;
+     char *value;
+     libxl_string_list socket_list;
+@@ -8497,13 +8519,15 @@ int main_psr_cat_cbm_set(int argc, char **argv)
+ 
+     static struct option opts[] = {
+         {"socket", 1, 0, 's'},
++        {"data", 0, 0, 'd'},
++        {"code", 0, 0, 'c'},
+         COMMON_LONG_OPTS
+     };
+ 
+     libxl_socket_bitmap_alloc(ctx, &target_map, 0);
+     libxl_bitmap_set_none(&target_map);
+ 
+-    SWITCH_FOREACH_OPT(opt, "s:", opts, "psr-cat-cbm-set", 2) {
++    SWITCH_FOREACH_OPT(opt, "s:cd", opts, "psr-cat-cbm-set", 2) {
+     case 's':
+         trim(isspace, optarg, &value);
+         split_string_into_string_list(value, ",", &socket_list);
+@@ -8517,8 +8541,19 @@ int main_psr_cat_cbm_set(int argc, char **argv)
+         libxl_string_list_dispose(&socket_list);
+         free(value);
+         break;
++    case 'd':
++        type = LIBXL_PSR_CBM_TYPE_L3_DATA;
++        opt_data = 1;
++        break;
++    case 'c':
++        type = LIBXL_PSR_CBM_TYPE_L3_CODE;
++        opt_code = 1;
++        break;
+     }
+ 
++    if (opt_data && opt_code)
++        type = LIBXL_PSR_CBM_TYPE_L3_CBM;
++
+     if (libxl_bitmap_is_empty(&target_map))
+         libxl_bitmap_set_any(&target_map);
+ 
+@@ -8585,6 +8620,32 @@ int main_psr_hwinfo(int argc, char **argv)
+     return ret;
+ }
+ 
++#ifdef LIBXL_HAVE_PSR_CDP
++int main_psr_cat_cdp_enable(int argc, char **argv)
++{
++    int ret;
++
++    ret = libxl_psr_cat_enable_cdp(ctx);
++    if (ret)
++        return ret;
++    printf("CDP is enabled\n");
++
++    return 0;
++}
++
++int main_psr_cat_cdp_disable(int argc, char **argv)
++{
++    int ret;
++
++    ret = libxl_psr_cat_disable_cdp(ctx);
++    if (ret)
++        return ret;
++    printf("CDP is disabled\n");
++
++    return 0;
++}
++#endif
++
+ #endif
+ 
+ /*
+diff --git a/tools/libxl/xl_cmdtable.c b/tools/libxl/xl_cmdtable.c
+index 0071f12..2065195 100644
+--- a/tools/libxl/xl_cmdtable.c
++++ b/tools/libxl/xl_cmdtable.c
+@@ -543,6 +543,8 @@ struct cmd_spec cmd_table[] = {
+       "Set cache capacity bitmasks(CBM) for a domain",
+       "[options] <Domain> <CBM>",
+       "-s <socket>       Specify the socket to process, otherwise all sockets are processed\n"
++      "-c                Set code CBM if CDP is supported\n"
++      "-d                Set data CBM if CDP is supported\n"
+     },
+     { "psr-cat-show",
+       &main_psr_cat_show, 0, 1,
+@@ -551,6 +553,19 @@ struct cmd_spec cmd_table[] = {
+     },
+ 
+ #endif
++
++#ifdef LIBXL_HAVE_PSR_CDP
++    { "psr-cat-cdp-enable",
++      &main_psr_cat_cdp_enable, 0, 1,
++      "Enable Code/Data Prioritization",
++      "",
++    },
++    { "psr-cat-cdp-disable",
++      &main_psr_cat_cdp_disable, 0, 1,
++      "Disable Code/Data Prioritization",
++      "",
++    },
++#endif
+ };
+ 
+ int cmdtable_len = sizeof(cmd_table)/sizeof(struct cmd_spec);
+-- 
+1.9.1
+

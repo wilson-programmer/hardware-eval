@@ -1,0 +1,110 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Kai Huang <kai.huang@linux.intel.com>
+Subject: [v2 03/11] log-dirty: add new paging_mark_gfn_dirty
+Date: Wed, 15 Apr 2015 15:03:45 +0800
+Message-ID: <1429081433-9600-4-git-send-email-kai.huang@linux.intel.com>
+References: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: andrew.cooper3@citrix.com, tim@xen.org, jbeulich@suse.com, kevin.tian@intel.com, xen-devel@lists.xen.org
+Cc: Kai Huang <kai.huang@linux.intel.com>
+List-Id: xen-devel@lists.xenproject.org
+
+PML logs GPA in PML buffer. Original paging_mark_dirty takes MFN as parameter
+but it gets guest pfn internally and use guest pfn to as index for looking up
+radix log-dirty tree. In flushing PML buffer, calling paging_mark_dirty directly
+introduces redundant p2m lookups (gfn->mfn->gfn), therefore we introduce
+paging_mark_gfn_dirty which is bulk of paging_mark_dirty but takes guest pfn as
+parameter, and in flushing PML buffer we call paging_mark_gfn_dirty directly.
+Original paging_mark_dirty then simply is a wrapper of paging_mark_gfn_dirty.
+
+Signed-off-by: Kai Huang <kai.huang@linux.intel.com>
+---
+ xen/arch/x86/mm/paging.c     | 31 +++++++++++++++++++++----------
+ xen/include/asm-x86/paging.h |  2 ++
+ 2 files changed, 23 insertions(+), 10 deletions(-)
+
+diff --git a/xen/arch/x86/mm/paging.c b/xen/arch/x86/mm/paging.c
+index b54d76a..77c929b 100644
+--- a/xen/arch/x86/mm/paging.c
++++ b/xen/arch/x86/mm/paging.c
+@@ -266,24 +266,17 @@ static int paging_log_dirty_disable(struct domain *d, bool_t resuming)
+     return ret;
+ }
+ 
+-/* Mark a page as dirty */
+-void paging_mark_dirty(struct domain *d, unsigned long guest_mfn)
++/* Mark a page as dirty, with taking guest pfn as parameter */
++void paging_mark_gfn_dirty(struct domain *d, unsigned long pfn)
+ {
+-    unsigned long pfn;
+-    mfn_t gmfn;
+     int changed;
+     mfn_t mfn, *l4, *l3, *l2;
+     unsigned long *l1;
+     int i1, i2, i3, i4;
+ 
+-    gmfn = _mfn(guest_mfn);
+-
+-    if ( !paging_mode_log_dirty(d) || !mfn_valid(gmfn) ||
+-         page_get_owner(mfn_to_page(gmfn)) != d )
++    if ( !paging_mode_log_dirty(d) )
+         return;
+ 
+-    /* We /really/ mean PFN here, even for non-translated guests. */
+-    pfn = get_gpfn_from_mfn(mfn_x(gmfn));
+     /* Shared MFNs should NEVER be marked dirty */
+     BUG_ON(SHARED_M2P(pfn));
+ 
+@@ -351,6 +344,24 @@ out:
+     return;
+ }
+ 
++/* Mark a page as dirty */
++void paging_mark_dirty(struct domain *d, unsigned long guest_mfn)
++{
++    unsigned long pfn;
++    mfn_t gmfn;
++
++    gmfn = _mfn(guest_mfn);
++
++    if ( !paging_mode_log_dirty(d) || !mfn_valid(gmfn) ||
++         page_get_owner(mfn_to_page(gmfn)) != d )
++        return;
++
++    /* We /really/ mean PFN here, even for non-translated guests. */
++    pfn = get_gpfn_from_mfn(mfn_x(gmfn));
++
++    paging_mark_gfn_dirty(d, pfn);
++}
++
+ 
+ /* Is this guest page dirty? */
+ int paging_mfn_is_dirty(struct domain *d, mfn_t gmfn)
+diff --git a/xen/include/asm-x86/paging.h b/xen/include/asm-x86/paging.h
+index 53de715..c99324c 100644
+--- a/xen/include/asm-x86/paging.h
++++ b/xen/include/asm-x86/paging.h
+@@ -156,6 +156,8 @@ void paging_log_dirty_init(struct domain *d,
+ 
+ /* mark a page as dirty */
+ void paging_mark_dirty(struct domain *d, unsigned long guest_mfn);
++/* mark a page as dirty with taking guest pfn as parameter */
++void paging_mark_gfn_dirty(struct domain *d, unsigned long pfn);
+ 
+ /* is this guest page dirty? 
+  * This is called from inside paging code, with the paging lock held. */
+-- 
+2.1.0
+

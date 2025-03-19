@@ -1,0 +1,305 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 01/10] x86: add generic resource (e.g. MSR)
+	access hypercall
+Date: Tue, 30 Sep 2014 18:49:03 +0800
+Message-ID: <1412074152-2955-2-git-send-email-chao.p.peng@linux.intel.com>
+References: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Add a generic resource access hypercall for tool stack or other
+components, e.g., accessing MSR, port I/O, etc.
+
+The resource is abstracted as a resource address/value pair.
+The resource access can be any type of XEN_RESOURCE_OP_*(current
+only support MSR and it's white-listed). The resource operations
+are always runs on cpu that caller specified. If caller does not
+care this, it should use current cpu to eliminate the IPI overhead.
+
+Batch resource operations in one call are also supported but the
+max number currently is limited to 2. The operations in a batch are
+non-preemptible and execute in their original order. If preemptible
+batch is desirable, then multicall mechanism can be used.
+
+Signed-off-by: Dongxiao Xu <dongxiao.xu@intel.com>
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+ xen/arch/x86/platform_hypercall.c        |  157 ++++++++++++++++++++++++++++++
+ xen/arch/x86/x86_64/platform_hypercall.c |    4 +
+ xen/include/public/platform.h            |   35 +++++++
+ xen/include/xlat.lst                     |    1 +
+ 4 files changed, 197 insertions(+)
+
+diff --git a/xen/arch/x86/platform_hypercall.c b/xen/arch/x86/platform_hypercall.c
+index 2162811..3d873b5 100644
+--- a/xen/arch/x86/platform_hypercall.c
++++ b/xen/arch/x86/platform_hypercall.c
+@@ -61,6 +61,94 @@ long cpu_down_helper(void *data);
+ long core_parking_helper(void *data);
+ uint32_t get_cur_idle_nums(void);
+ 
++#define RESOURCE_ACCESS_MAX_ENTRIES 2
++struct xen_resource_access {
++    unsigned int ret;
++    unsigned int nr_entries;
++    xenpf_resource_entry_t *entries;
++};
++
++static bool_t allow_access_msr(unsigned int msr)
++{
++    return 0;
++}
++
++static unsigned int check_resource_access(struct xen_resource_access *ra)
++{
++    xenpf_resource_entry_t *entry;
++    int ret = 0;
++    unsigned int i;
++
++    for ( i = 0; i < ra->nr_entries; i++ )
++    {
++        entry = ra->entries + i;
++
++        if ( entry->rsvd )
++        {
++            entry->u.ret = -EINVAL;
++            break;
++        }
++
++        switch ( entry->u.cmd )
++        {
++        case XEN_RESOURCE_OP_MSR_READ:
++        case XEN_RESOURCE_OP_MSR_WRITE:
++            if ( entry->idx >> 32 )
++                ret = -EINVAL;
++            else if ( !allow_access_msr(entry->idx) )
++                ret = -EACCES;
++            break;
++        default:
++            ret = -EINVAL;
++            break;
++        }
++
++        if ( ret )
++        {
++           entry->u.ret = ret;
++           break;
++        }
++    }
++
++    /* Return the number of successes. */
++    return i;
++}
++
++static void resource_access(void *info)
++{
++    struct xen_resource_access *ra = info;
++    xenpf_resource_entry_t *entry;
++    int ret;
++    unsigned int i;
++
++    for ( i = 0; i < ra->nr_entries; i++ )
++    {
++        entry = ra->entries + i;
++
++        switch ( entry->u.cmd )
++        {
++        case XEN_RESOURCE_OP_MSR_READ:
++            ret = rdmsr_safe(entry->idx, entry->val);
++            break;
++        case XEN_RESOURCE_OP_MSR_WRITE:
++            ret = wrmsr_safe(entry->idx, entry->val);
++            break;
++        default:
++            ret = -EINVAL;
++            break;
++        }
++
++        if ( ret )
++        {
++           entry->u.ret = ret;
++           break;
++        }
++    }
++
++    /* Return the number of successes. */
++    ra->ret = i;
++}
++
+ ret_t do_platform_op(XEN_GUEST_HANDLE_PARAM(xen_platform_op_t) u_xenpf_op)
+ {
+     ret_t ret = 0;
+@@ -601,6 +689,75 @@ ret_t do_platform_op(XEN_GUEST_HANDLE_PARAM(xen_platform_op_t) u_xenpf_op)
+     }
+     break;
+ 
++    case XENPF_resource_op:
++    {
++        struct xen_resource_access ra;
++        uint32_t cpu;
++        XEN_GUEST_HANDLE(xenpf_resource_entry_t) guest_entries;
++
++        ra.nr_entries = op->u.resource_op.nr_entries;
++        if ( ra.nr_entries == 0 || ra.nr_entries > RESOURCE_ACCESS_MAX_ENTRIES )
++        {
++            ret = -EINVAL;
++            break;
++        }
++
++        ra.entries = xmalloc_array(xenpf_resource_entry_t, ra.nr_entries);
++        if ( !ra.entries )
++        {
++            ret = -ENOMEM;
++            break;
++        }
++
++        guest_from_compat_handle(guest_entries, op->u.resource_op.entries);
++
++        if ( copy_from_guest(ra.entries, guest_entries, ra.nr_entries) )
++        {
++            xfree(ra.entries);
++            ret = -EFAULT;
++            break;
++        }
++
++        /* Do sanity check earlier to omit the potential IPI overhead. */
++        if ( check_resource_access(&ra) < ra.nr_entries )
++        {
++            /* Copy the return value for failed entry. */
++            if ( __copy_to_guest_offset(guest_entries, ret,
++                                        ra.entries + ret, 1) )
++                ret = -EFAULT;
++            else
++                ret = 0;
++
++            xfree(ra.entries);
++            break;
++        }
++
++        cpu = op->u.resource_op.cpu;
++        if ( cpu == smp_processor_id() )
++            resource_access(&ra);
++        else if ( cpu_online(cpu) )
++            on_selected_cpus(cpumask_of(cpu), resource_access, &ra, 1);
++        else
++        {
++            xfree(ra.entries);
++            ret = -ENODEV;
++            break;
++        }
++
++        /* Copy all if succeeded or up to the failed entry. */
++        if ( __copy_to_guest_offset(guest_entries, 0, ra.entries,
++                                    min(ra.nr_entries, ra.ret + 1)) )
++        {
++            xfree(ra.entries);
++            ret = -EFAULT;
++            break;
++        }
++
++        ret = ra.ret;
++        xfree(ra.entries);
++    }
++    break;
++
+     default:
+         ret = -ENOSYS;
+         break;
+diff --git a/xen/arch/x86/x86_64/platform_hypercall.c b/xen/arch/x86/x86_64/platform_hypercall.c
+index b6f380e..ccfd30d 100644
+--- a/xen/arch/x86/x86_64/platform_hypercall.c
++++ b/xen/arch/x86/x86_64/platform_hypercall.c
+@@ -32,6 +32,10 @@ CHECK_pf_pcpu_version;
+ CHECK_pf_enter_acpi_sleep;
+ #undef xen_pf_enter_acpi_sleep
+ 
++#define xen_pf_resource_entry xenpf_resource_entry
++CHECK_pf_resource_entry;
++#undef xen_pf_resource_entry
++
+ #define COMPAT
+ #define _XEN_GUEST_HANDLE(t) XEN_GUEST_HANDLE(t)
+ #define _XEN_GUEST_HANDLE_PARAM(t) XEN_GUEST_HANDLE_PARAM(t)
+diff --git a/xen/include/public/platform.h b/xen/include/public/platform.h
+index 053b9fa..abf916c 100644
+--- a/xen/include/public/platform.h
++++ b/xen/include/public/platform.h
+@@ -528,6 +528,40 @@ typedef struct xenpf_core_parking xenpf_core_parking_t;
+ DEFINE_XEN_GUEST_HANDLE(xenpf_core_parking_t);
+ 
+ /*
++ * Access generic platform resources(e.g., accessing MSR, port I/O, etc)
++ * in unified way. Batch resource operations in one call are supported and
++ * thay are always non-preemptible and executed in their original order.
++ * The batch itself returns a negative integer for general errors, or a
++ * non-negative integer for the number of successful operations. For latter
++ * case, the @ret in the failed entry(if have) indicates the exact error and
++ * it's meaningful only when it has a negative value.
++ */
++#define XENPF_resource_op   61
++
++#define XEN_RESOURCE_OP_MSR_READ  0
++#define XEN_RESOURCE_OP_MSR_WRITE 1
++
++struct xenpf_resource_entry {
++    union {
++        uint32_t cmd;   /* IN: XEN_RESOURCE_OP_* */
++        int32_t  ret;   /* OUT: return value for this entry */
++    } u;
++    uint32_t rsvd;      /* IN: padding and must be zero */
++    uint64_t idx;       /* IN: resource address to access */
++    uint64_t val;       /* IN/OUT: resource value to set/get */
++};
++typedef struct xenpf_resource_entry xenpf_resource_entry_t;
++DEFINE_XEN_GUEST_HANDLE(xenpf_resource_entry_t);
++
++struct xenpf_resource_op {
++    uint32_t nr_entries;    /* number of resource entry */
++    uint32_t cpu;           /* which cpu to run */
++    XEN_GUEST_HANDLE(xenpf_resource_entry_t) entries;
++};
++typedef struct xenpf_resource_op xenpf_resource_op_t;
++DEFINE_XEN_GUEST_HANDLE(xenpf_resource_op_t);
++
++/*
+  * ` enum neg_errnoval
+  * ` HYPERVISOR_platform_op(const struct xen_platform_op*);
+  */
+@@ -553,6 +587,7 @@ struct xen_platform_op {
+         struct xenpf_cpu_hotadd        cpu_add;
+         struct xenpf_mem_hotadd        mem_add;
+         struct xenpf_core_parking      core_parking;
++        struct xenpf_resource_op       resource_op;
+         uint8_t                        pad[128];
+     } u;
+ };
+diff --git a/xen/include/xlat.lst b/xen/include/xlat.lst
+index 9a35dd7..234b668 100644
+--- a/xen/include/xlat.lst
++++ b/xen/include/xlat.lst
+@@ -88,6 +88,7 @@
+ ?	xenpf_enter_acpi_sleep		platform.h
+ ?	xenpf_pcpuinfo			platform.h
+ ?	xenpf_pcpu_version		platform.h
++?	xenpf_resource_entry		platform.h
+ !	sched_poll			sched.h
+ ?	sched_remote_shutdown		sched.h
+ ?	sched_shutdown			sched.h
+-- 
+1.7.9.5
+

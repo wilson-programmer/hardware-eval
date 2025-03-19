@@ -1,0 +1,118 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 09/10] xsm: add CMT related xsm policies
+Date: Tue, 30 Sep 2014 18:49:11 +0800
+Message-ID: <1412074152-2955-10-git-send-email-chao.p.peng@linux.intel.com>
+References: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Add xsm policies for CMT related hypercalls.
+
+Signed-off-by: Dongxiao Xu <dongxiao.xu@intel.com>
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Acked-by: Daniel De Graaf <dgdegra@tycho.nsa.gov>
+---
+ tools/flask/policy/policy/modules/xen/xen.if |    2 +-
+ tools/flask/policy/policy/modules/xen/xen.te |    3 ++-
+ xen/xsm/flask/hooks.c                        |    6 ++++++
+ xen/xsm/flask/policy/access_vectors          |    4 ++++
+ 4 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/tools/flask/policy/policy/modules/xen/xen.if b/tools/flask/policy/policy/modules/xen/xen.if
+index 32b51b6..641c797 100644
+--- a/tools/flask/policy/policy/modules/xen/xen.if
++++ b/tools/flask/policy/policy/modules/xen/xen.if
+@@ -49,7 +49,7 @@ define(`create_domain_common', `
+ 			getdomaininfo hypercall setvcpucontext setextvcpucontext
+ 			getscheduler getvcpuinfo getvcpuextstate getaddrsize
+ 			getaffinity setaffinity };
+-	allow $1 $2:domain2 { set_cpuid settsc setscheduler setclaim set_max_evtchn set_vnumainfo get_vnumainfo };
++	allow $1 $2:domain2 { set_cpuid settsc setscheduler setclaim set_max_evtchn set_vnumainfo get_vnumainfo psr_cmt_op };
+ 	allow $1 $2:security check_context;
+ 	allow $1 $2:shadow enable;
+ 	allow $1 $2:mmu { map_read map_write adjust memorymap physmap pinpage mmuext_op };
+diff --git a/tools/flask/policy/policy/modules/xen/xen.te b/tools/flask/policy/policy/modules/xen/xen.te
+index 6cecf97..d214470 100644
+--- a/tools/flask/policy/policy/modules/xen/xen.te
++++ b/tools/flask/policy/policy/modules/xen/xen.te
+@@ -66,6 +66,7 @@ allow dom0_t xen_t:xen {
+ };
+ allow dom0_t xen_t:xen2 {
+     resource_op
++    psr_cmt_op
+ };
+ allow dom0_t xen_t:mmu memorymap;
+ 
+@@ -79,7 +80,7 @@ allow dom0_t dom0_t:domain {
+ 	getpodtarget setpodtarget set_misc_info set_virq_handler
+ };
+ allow dom0_t dom0_t:domain2 {
+-	set_cpuid gettsc settsc setscheduler set_max_evtchn set_vnumainfo get_vnumainfo
++	set_cpuid gettsc settsc setscheduler set_max_evtchn set_vnumainfo get_vnumainfo psr_cmt_op
+ };
+ allow dom0_t dom0_t:resource { add remove };
+ 
+diff --git a/xen/xsm/flask/hooks.c b/xen/xsm/flask/hooks.c
+index 9f36503..1bb3c00 100644
+--- a/xen/xsm/flask/hooks.c
++++ b/xen/xsm/flask/hooks.c
+@@ -722,6 +722,8 @@ static int flask_domctl(struct domain *d, int cmd)
+ 
+     case XEN_DOMCTL_setvnumainfo:
+         return current_has_perm(d, SECCLASS_DOMAIN, DOMAIN2__SET_VNUMAINFO);
++    case XEN_DOMCTL_psr_cmt_op:
++        return current_has_perm(d, SECCLASS_DOMAIN2, DOMAIN2__PSR_CMT_OP);
+ 
+     default:
+         printk("flask_domctl: Unknown op %d\n", cmd);
+@@ -778,6 +780,10 @@ static int flask_sysctl(int cmd)
+     case XEN_SYSCTL_numainfo:
+         return domain_has_xen(current->domain, XEN__PHYSINFO);
+ 
++    case XEN_SYSCTL_psr_cmt_op:
++        return avc_current_has_perm(SECINITSID_XEN, SECCLASS_XEN2,
++                                    XEN2__PSR_CMT_OP, NULL);
++
+     default:
+         printk("flask_sysctl: Unknown op %d\n", cmd);
+         return -EPERM;
+diff --git a/xen/xsm/flask/policy/access_vectors b/xen/xsm/flask/policy/access_vectors
+index daf0de5..de0c707 100644
+--- a/xen/xsm/flask/policy/access_vectors
++++ b/xen/xsm/flask/policy/access_vectors
+@@ -81,6 +81,8 @@ class xen2
+ {
+ # XENPF_resource_op
+     resource_op
++# XEN_SYSCTL_psr_cmt_op
++    psr_cmt_op
+ }
+ 
+ # Classes domain and domain2 consist of operations that a domain performs on
+@@ -212,6 +214,8 @@ class domain2
+     set_vnumainfo
+ # XENMEM_getvnumainfo
+     get_vnumainfo
++# XEN_DOMCTL_psr_cmt_op
++    psr_cmt_op
+ }
+ 
+ # Similar to class domain, but primarily contains domctls related to HVM domains
+-- 
+1.7.9.5
+

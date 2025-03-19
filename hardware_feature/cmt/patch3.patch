@@ -1,0 +1,317 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 03/10] tools: provide interface for generic
+	resource access
+Date: Tue, 30 Sep 2014 18:49:05 +0800
+Message-ID: <1412074152-2955-4-git-send-email-chao.p.peng@linux.intel.com>
+References: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Xen added a new platform_op hypercall for generic MSR access, and this
+is the the tool side change to wrapper the hypercall into xc APIs.
+
+For non-preemptible batch resource operations, group them in entries of
+xc_resource_op structure. For preemptible ones, use multiple
+xc_resource_op structure instead.
+
+Signed-off-by: Dongxiao Xu <dongxiao.xu@intel.com>
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Acked-by: Ian Campbell <ian.campbell@citrix.com>
+---
+ tools/libxc/Makefile      |    1 +
+ tools/libxc/xc_private.h  |   51 +++++++++++++++
+ tools/libxc/xc_resource.c |  150 +++++++++++++++++++++++++++++++++++++++++++++
+ tools/libxc/xenctrl.h     |   17 +++++
+ 4 files changed, 219 insertions(+)
+ create mode 100644 tools/libxc/xc_resource.c
+
+diff --git a/tools/libxc/Makefile b/tools/libxc/Makefile
+index 3b04027..dde6109 100644
+--- a/tools/libxc/Makefile
++++ b/tools/libxc/Makefile
+@@ -34,6 +34,7 @@ CTRL_SRCS-y       += xc_foreign_memory.c
+ CTRL_SRCS-y       += xc_kexec.c
+ CTRL_SRCS-y       += xtl_core.c
+ CTRL_SRCS-y       += xtl_logger_stdio.c
++CTRL_SRCS-y       += xc_resource.c
+ CTRL_SRCS-$(CONFIG_X86) += xc_pagetab.c
+ CTRL_SRCS-$(CONFIG_Linux) += xc_linux.c xc_linux_osdep.c
+ CTRL_SRCS-$(CONFIG_FreeBSD) += xc_freebsd.c xc_freebsd_osdep.c
+diff --git a/tools/libxc/xc_private.h b/tools/libxc/xc_private.h
+index 94df688..3fd5324 100644
+--- a/tools/libxc/xc_private.h
++++ b/tools/libxc/xc_private.h
+@@ -46,6 +46,7 @@
+ #define DECLARE_SYSCTL struct xen_sysctl sysctl
+ #define DECLARE_PHYSDEV_OP struct physdev_op physdev_op
+ #define DECLARE_FLASK_OP struct xen_flask_op op
++#define DECLARE_PLATFORM_OP struct xen_platform_op platform_op
+ 
+ #undef PAGE_SHIFT
+ #undef PAGE_SIZE
+@@ -310,6 +311,56 @@ static inline int do_sysctl(xc_interface *xch, struct xen_sysctl *sysctl)
+     return ret;
+ }
+ 
++static inline int do_platform_op(xc_interface *xch,
++                                 struct xen_platform_op *platform_op)
++{
++    int ret = -1;
++    DECLARE_HYPERCALL;
++    DECLARE_HYPERCALL_BOUNCE(platform_op, sizeof(*platform_op),
++                             XC_HYPERCALL_BUFFER_BOUNCE_BOTH);
++
++    platform_op->interface_version = XENPF_INTERFACE_VERSION;
++
++    if ( xc_hypercall_bounce_pre(xch, platform_op) )
++    {
++        PERROR("Could not bounce buffer for platform_op hypercall");
++        return -1;
++    }
++
++    hypercall.op     = __HYPERVISOR_platform_op;
++    hypercall.arg[0] = HYPERCALL_BUFFER_AS_ARG(platform_op);
++    if ( (ret = do_xen_hypercall(xch, &hypercall)) < 0 )
++    {
++        if ( errno == EACCES )
++            DPRINTF("platform operation failed -- need to"
++                    " rebuild the user-space tool set?\n");
++    }
++
++    xc_hypercall_bounce_post(xch, platform_op);
++    return ret;
++}
++
++static inline int do_multicall_op(xc_interface *xch,
++                                  xc_hypercall_buffer_t *call_list,
++                                  uint32_t nr_calls)
++{
++    int ret = -1;
++    DECLARE_HYPERCALL;
++    DECLARE_HYPERCALL_BUFFER_ARGUMENT(call_list);
++
++    hypercall.op     = __HYPERVISOR_multicall;
++    hypercall.arg[0] = HYPERCALL_BUFFER_AS_ARG(call_list);
++    hypercall.arg[1] = nr_calls;
++    if ( (ret = do_xen_hypercall(xch, &hypercall)) < 0 )
++    {
++        if ( errno == EACCES )
++            DPRINTF("multicall operation failed -- need to"
++                    " rebuild the user-space tool set?\n");
++    }
++
++    return ret;
++}
++
+ int do_memory_op(xc_interface *xch, int cmd, void *arg, size_t len);
+ 
+ void *xc_map_foreign_ranges(xc_interface *xch, uint32_t dom,
+diff --git a/tools/libxc/xc_resource.c b/tools/libxc/xc_resource.c
+new file mode 100644
+index 0000000..3abadbd
+--- /dev/null
++++ b/tools/libxc/xc_resource.c
+@@ -0,0 +1,150 @@
++/*
++ * xc_resource.c
++ *
++ * Generic resource access API
++ *
++ * Copyright (C) 2014      Intel Corporation
++ * Author Dongxiao Xu <dongxiao.xu@intel.com>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU Lesser General Public License as published
++ * by the Free Software Foundation; version 2.1 only. with the special
++ * exception on linking described in file LICENSE.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU Lesser General Public License for more details.
++ */
++
++#include "xc_private.h"
++
++static int xc_resource_op_one(xc_interface *xch, xc_resource_op_t *op)
++{
++    int rc;
++    DECLARE_PLATFORM_OP;
++    DECLARE_NAMED_HYPERCALL_BOUNCE(entries, op->entries,
++                                op->nr_entries * sizeof(*op->entries),
++                                XC_HYPERCALL_BUFFER_BOUNCE_BOTH);
++
++    if ( xc_hypercall_bounce_pre(xch, entries) )
++        return -1;
++
++    platform_op.cmd = XENPF_resource_op;
++    platform_op.u.resource_op.nr_entries = op->nr_entries;
++    platform_op.u.resource_op.cpu = op->cpu;
++    set_xen_guest_handle(platform_op.u.resource_op.entries, entries);
++
++    rc = do_platform_op(xch, &platform_op);
++    op->result = rc;
++
++    xc_hypercall_bounce_post(xch, entries);
++
++    return rc;
++}
++
++static int xc_resource_op_multi(xc_interface *xch, uint32_t nr_ops, xc_resource_op_t *ops)
++{
++    int rc, i, entries_size;
++    xc_resource_op_t *op;
++    multicall_entry_t *call;
++    DECLARE_HYPERCALL_BUFFER(multicall_entry_t, call_list);
++    xc_hypercall_buffer_array_t *platform_ops, *entries_list = NULL;
++
++    call_list = xc_hypercall_buffer_alloc(xch, call_list,
++                                          sizeof(*call_list) * nr_ops);
++    if ( !call_list )
++        return -1;
++
++    platform_ops = xc_hypercall_buffer_array_create(xch, nr_ops);
++    if ( !platform_ops )
++    {
++        rc = -1;
++        goto out;
++    }
++
++    entries_list = xc_hypercall_buffer_array_create(xch, nr_ops);
++    if ( !entries_list )
++    {
++        rc = -1;
++        goto out;
++    }
++
++    for ( i = 0; i < nr_ops; i++ )
++    {
++        DECLARE_HYPERCALL_BUFFER(xen_platform_op_t, platform_op);
++        DECLARE_HYPERCALL_BUFFER(xc_resource_entry_t, entries);
++
++        op = ops + i;
++
++        platform_op = xc_hypercall_buffer_array_alloc(xch, platform_ops, i,
++                        platform_op, sizeof(xen_platform_op_t));
++        if ( !platform_op )
++        {
++            rc = -1;
++            goto out;
++        }
++
++        entries_size = sizeof(xc_resource_entry_t) * op->nr_entries;
++        entries = xc_hypercall_buffer_array_alloc(xch, entries_list, i,
++                   entries, entries_size);
++        if ( !entries)
++        {
++            rc = -1;
++            goto out;
++        }
++        memcpy(entries, op->entries, entries_size);
++
++        call = call_list + i;
++        call->op = __HYPERVISOR_platform_op;
++        call->args[0] = HYPERCALL_BUFFER_AS_ARG(platform_op);
++
++        platform_op->interface_version = XENPF_INTERFACE_VERSION;
++        platform_op->cmd = XENPF_resource_op;
++        platform_op->u.resource_op.cpu = op->cpu;
++        platform_op->u.resource_op.nr_entries = op->nr_entries;
++        set_xen_guest_handle(platform_op->u.resource_op.entries, entries);
++    }
++
++    rc = do_multicall_op(xch, HYPERCALL_BUFFER(call_list), nr_ops);
++
++    for ( i = 0; i < nr_ops; i++ )
++    {
++        DECLARE_HYPERCALL_BUFFER(xc_resource_entry_t, entries);
++        op = ops + i;
++
++        call = call_list + i;
++        op->result = call->result;
++
++        entries_size = sizeof(xc_resource_entry_t) * op->nr_entries;
++        entries = xc_hypercall_buffer_array_get(xch, entries_list, i,
++                   entries, entries_size);
++        memcpy(op->entries, entries, entries_size);
++    }
++
++out:
++    xc_hypercall_buffer_array_destroy(xch, entries_list);
++    xc_hypercall_buffer_array_destroy(xch, platform_ops);
++    xc_hypercall_buffer_free(xch, call_list);
++    return rc;
++}
++
++int xc_resource_op(xc_interface *xch, uint32_t nr_ops, xc_resource_op_t *ops)
++{
++    if ( nr_ops == 1 )
++        return xc_resource_op_one(xch, ops);
++    else if ( nr_ops > 1 )
++        return xc_resource_op_multi(xch, nr_ops, ops);
++    else
++        return -1;
++}
++
++/*
++ * Local variables:
++ * mode: C
++ * c-file-style: "BSD"
++ * c-basic-offset: 4
++ * tab-width: 4
++ * indent-tabs-mode: nil
++ * End:
++ */
+diff --git a/tools/libxc/xenctrl.h b/tools/libxc/xenctrl.h
+index 514b241..6edb738 100644
+--- a/tools/libxc/xenctrl.h
++++ b/tools/libxc/xenctrl.h
+@@ -47,6 +47,7 @@
+ #include <xen/xsm/flask_op.h>
+ #include <xen/tmem.h>
+ #include <xen/kexec.h>
++#include <xen/platform.h>
+ 
+ #include "xentoollog.h"
+ 
+@@ -2655,6 +2656,22 @@ int xc_kexec_load(xc_interface *xch, uint8_t type, uint16_t arch,
+  */
+ int xc_kexec_unload(xc_interface *xch, int type);
+ 
++typedef xenpf_resource_entry_t xc_resource_entry_t;
++
++/*
++ * Generic resource operation which contains multiple non-preemptible
++ * resource access entries that passed to xc_resource_op().
++ */
++struct xc_resource_op {
++    uint64_t result;        /* on return, check this field first */
++    uint32_t cpu;           /* which cpu to run */
++    uint32_t nr_entries;    /* number of resource entries */
++    xc_resource_entry_t *entries;
++};
++
++typedef struct xc_resource_op xc_resource_op_t;
++int xc_resource_op(xc_interface *xch, uint32_t nr_ops, xc_resource_op_t *ops);
++
+ #endif /* XENCTRL_H */
+ 
+ /*
+-- 
+1.7.9.5
+

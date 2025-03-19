@@ -1,0 +1,387 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: He Chen <he.chen@linux.intel.com>
+Subject: [PATCH 2/5] x86: Support enable/disable CDP dynamically
+	and get CDP status
+Date: Wed,  2 Sep 2015 16:27:59 +0800
+Message-ID: <1441182482-7688-3-git-send-email-he.chen@linux.intel.com>
+References: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+Received: from mail6.bemta5.messagelabs.com ([195.245.231.135])
+	by lists.xen.org with esmtp (Exim 4.72)
+	(envelope-from <he.chen@linux.intel.com>) id 1ZX3Pe-0003lh-D2
+	for xen-devel@lists.xenproject.org; Wed, 02 Sep 2015 08:28:58 +0000
+In-Reply-To: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xenproject.org
+Cc: wei.liu2@citrix.com, ian.campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, He Chen <he.chen@linux.intel.com>, ian.jackson@eu.citrix.com, jbeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+ cdp_enabled is added to CAT socket info to indicate CDP is on or off on
+ the socket and struct psr_cat_cbm is extended to support CDP operation.
+ IA32_L3_QOS_CFG is a new MSR to enable/disable L3 CDP, when enable or
+ disable CDP, all domains will reset to COS0 with fully access all L3
+ cache.
+
+ Signed-off-by: He Chen <he.chen@linux.intel.com>
+---
+ xen/arch/x86/psr.c          | 164 ++++++++++++++++++++++++++++++++++++++++----
+ xen/arch/x86/sysctl.c       |   9 ++-
+ xen/include/asm-x86/psr.h   |  10 ++-
+ xen/include/public/sysctl.h |   5 ++
+ 4 files changed, 174 insertions(+), 14 deletions(-)
+
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index b357816..26596dd 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -17,13 +17,20 @@
+ #include <xen/cpu.h>
+ #include <xen/err.h>
+ #include <xen/sched.h>
++#include <xen/domain.h>
+ #include <asm/psr.h>
+ 
+ #define PSR_CMT        (1<<0)
+ #define PSR_CAT        (1<<1)
+ 
+ struct psr_cat_cbm {
+-    uint64_t cbm;
++    union {
++        uint64_t cbm;
++        struct {
++            uint64_t code;
++            uint64_t data;
++        }cdp;
++    }u;
+     unsigned int ref;
+ };
+ 
+@@ -32,6 +39,7 @@ struct psr_cat_socket_info {
+     unsigned int cos_max;
+     struct psr_cat_cbm *cos_to_cbm;
+     spinlock_t cbm_lock;
++    bool_t cdp_enabled;
+ };
+ 
+ struct psr_assoc {
+@@ -263,7 +271,7 @@ static struct psr_cat_socket_info *get_cat_socket_info(unsigned int socket)
+ }
+ 
+ int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
+-                        uint32_t *cos_max)
++                        uint32_t *cos_max, uint8_t *cdp_enabled)
+ {
+     struct psr_cat_socket_info *info = get_cat_socket_info(socket);
+ 
+@@ -272,6 +280,7 @@ int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
+ 
+     *cbm_len = info->cbm_len;
+     *cos_max = info->cos_max;
++    *cdp_enabled = (uint8_t)info->cdp_enabled;
+ 
+     return 0;
+ }
+@@ -283,7 +292,7 @@ int psr_get_l3_cbm(struct domain *d, unsigned int socket, uint64_t *cbm)
+     if ( IS_ERR(info) )
+         return PTR_ERR(info);
+ 
+-    *cbm = info->cos_to_cbm[d->arch.psr_cos_ids[socket]].cbm;
++    *cbm = info->cos_to_cbm[d->arch.psr_cos_ids[socket]].u.cbm;
+ 
+     return 0;
+ }
+@@ -314,19 +323,33 @@ static bool_t psr_check_cbm(unsigned int cbm_len, uint64_t cbm)
+ struct cos_cbm_info
+ {
+     unsigned int cos;
+-    uint64_t cbm;
++    uint64_t cbm_code;
++    uint64_t cbm_data;
++    bool_t cdp_mode;
+ };
+ 
+ static void do_write_l3_cbm(void *data)
+ {
+     struct cos_cbm_info *info = data;
+ 
+-    wrmsrl(MSR_IA32_PSR_L3_MASK(info->cos), info->cbm);
++    if ( info->cdp_mode == 0 )
++        wrmsrl(MSR_IA32_PSR_L3_MASK(info->cos), info->cbm_code);
++    else
++    {
++        wrmsrl(MSR_IA32_PSR_L3_MASK(info->cos*2+1), info->cbm_code);
++        wrmsrl(MSR_IA32_PSR_L3_MASK(info->cos*2), info->cbm_data);
++    }
+ }
+ 
+-static int write_l3_cbm(unsigned int socket, unsigned int cos, uint64_t cbm)
++static int write_l3_cbm(unsigned int socket, unsigned int cos,
++                        uint64_t cbm_code, uint64_t cbm_data, bool_t cdp_mode)
+ {
+-    struct cos_cbm_info info = { .cos = cos, .cbm = cbm };
++    struct cos_cbm_info info =
++    { .cos = cos,
++      .cbm_code = cbm_code,
++      .cbm_data = cbm_data,
++      .cdp_mode = cdp_mode,
++    };
+ 
+     if ( socket == cpu_to_socket(smp_processor_id()) )
+         do_write_l3_cbm(&info);
+@@ -364,7 +387,7 @@ int psr_set_l3_cbm(struct domain *d, unsigned int socket, uint64_t cbm)
+         /* If still not found, then keep unused one. */
+         if ( !found && cos != 0 && map[cos].ref == 0 )
+             found = map + cos;
+-        else if ( map[cos].cbm == cbm )
++        else if ( map[cos].u.cbm == cbm )
+         {
+             if ( unlikely(cos == old_cos) )
+             {
+@@ -388,16 +411,16 @@ int psr_set_l3_cbm(struct domain *d, unsigned int socket, uint64_t cbm)
+     }
+ 
+     cos = found - map;
+-    if ( found->cbm != cbm )
++    if ( found->u.cbm != cbm )
+     {
+-        int ret = write_l3_cbm(socket, cos, cbm);
++        int ret = write_l3_cbm(socket, cos, cbm, 0, 0);
+ 
+         if ( ret )
+         {
+             spin_unlock(&info->cbm_lock);
+             return ret;
+         }
+-        found->cbm = cbm;
++        found->u.cbm = cbm;
+     }
+ 
+     found->ref++;
+@@ -491,7 +514,7 @@ static void cat_cpu_init(void)
+         info->cos_to_cbm = temp_cos_to_cbm;
+         temp_cos_to_cbm = NULL;
+         /* cos=0 is reserved as default cbm(all ones). */
+-        info->cos_to_cbm[0].cbm = (1ull << info->cbm_len) - 1;
++        info->cos_to_cbm[0].u.cbm = (1ull << info->cbm_len) - 1;
+ 
+         spin_lock_init(&info->cbm_lock);
+ 
+@@ -556,6 +579,123 @@ static int psr_cpu_prepare(unsigned int cpu)
+     return cat_cpu_prepare(cpu);
+ }
+ 
++static void do_write_l3_config(void *data)
++{
++    uint64_t val;
++    uint64_t *mask = data;
++
++    rdmsrl(PSR_L3_QOS_CFG, val);
++    wrmsrl(PSR_L3_QOS_CFG, val | *mask);
++}
++
++static int config_socket_l3_cdp(unsigned int socket, uint64_t cdp_mask)
++{
++    unsigned int cpu;
++    uint64_t mask = cdp_mask;
++
++    if ( socket == cpu_to_socket(smp_processor_id()) )
++        do_write_l3_config(&mask);
++    else
++    {
++        cpu = get_socket_cpu(socket);
++        if ( cpu >= nr_cpu_ids )
++            return -ENOTSOCK;
++        on_selected_cpus(cpumask_of(cpu), do_write_l3_config, &mask, 1);
++    }
++    return 0;
++}
++
++int psr_cat_enable_cdp(void)
++{
++    int i, ret;
++    struct psr_cat_socket_info *info;
++    unsigned int socket;
++    struct domain *d;
++
++    for_each_set_bit(socket, cat_socket_enable, nr_sockets)
++    {
++        ret = config_socket_l3_cdp(socket, 1 << PSR_L3_QOS_CDP_ENABLE_BIT);
++        if ( ret )
++            return ret;
++
++        info = cat_socket_info + socket;
++        if (info->cdp_enabled)
++            return 0;
++
++        /* Cut half of cos_max when CDP enabled */
++        info->cos_max = info->cos_max / 2;
++
++        spin_lock(&info->cbm_lock);
++
++        /* Reset COS0 code CBM & data CBM for all domain */
++        info->cos_to_cbm[0].u.cdp.code = (1ull << info->cbm_len) - 1;
++        info->cos_to_cbm[0].u.cdp.data = (1ull << info->cbm_len) - 1;
++
++        for ( i = 0; i <= info->cos_max; i++ )
++            info->cos_to_cbm[0].ref = 0;
++
++        /* Only write mask1 since mask0 is always all 1 by CAT. */
++        ret = write_l3_cbm(socket, 1, info->cos_to_cbm[0].u.cdp.code, 0, 0);
++        if ( ret )
++        {
++            spin_unlock(&info->cbm_lock);
++            return ret;
++        }
++
++        /* Reset all domain to COS0 */
++        for_each_domain( d )
++        {
++            d->arch.psr_cos_ids[socket] = 0;
++            info->cos_to_cbm[0].ref++;
++        }
++
++        spin_unlock(&info->cbm_lock);
++        info->cdp_enabled = 1;
++    }
++
++    return 0;
++}
++
++int psr_cat_disable_cdp(void)
++{
++    int i, ret;
++    struct psr_cat_socket_info *info;
++    unsigned int socket;
++    struct domain *d;
++
++    for_each_set_bit(socket, cat_socket_enable, nr_sockets)
++    {
++        ret = config_socket_l3_cdp(socket, 0 << PSR_L3_QOS_CDP_ENABLE_BIT);
++        if ( ret )
++            return ret;
++
++        info = cat_socket_info + socket;
++        if( !info->cdp_enabled )
++            return 0;
++
++        /* Restore CAT cos_max when CDP disabled */
++        info->cos_max = info->cos_max * 2 + 1;
++        spin_lock(&info->cbm_lock);
++
++        /* Reset all CBMs and set fully open COS0 for all domains */
++        info->cos_to_cbm[0].u.cbm = (1ull << info->cbm_len) - 1;
++        for ( i = 0; i <= info->cos_max; i++ )
++            info->cos_to_cbm[i].ref = 0;
++
++        /* Reset all domains to COS0 */
++        for_each_domain( d )
++        {
++            d->arch.psr_cos_ids[socket] = 0;
++            info->cos_to_cbm[0].ref++;
++        }
++
++        spin_unlock(&info->cbm_lock);
++        info->cdp_enabled = 0;
++    }
++
++    return 0;
++}
++
+ static void psr_cpu_init(void)
+ {
+     if ( cat_socket_info )
+diff --git a/xen/arch/x86/sysctl.c b/xen/arch/x86/sysctl.c
+index f36b52f..51b03a4 100644
+--- a/xen/arch/x86/sysctl.c
++++ b/xen/arch/x86/sysctl.c
+@@ -177,12 +177,19 @@ long arch_do_sysctl(
+         case XEN_SYSCTL_PSR_CAT_get_l3_info:
+             ret = psr_get_cat_l3_info(sysctl->u.psr_cat_op.target,
+                                       &sysctl->u.psr_cat_op.u.l3_info.cbm_len,
+-                                      &sysctl->u.psr_cat_op.u.l3_info.cos_max);
++                                      &sysctl->u.psr_cat_op.u.l3_info.cos_max,
++                                      &sysctl->u.psr_cat_op.u.l3_info.cdp_enabled);
+ 
+             if ( !ret && __copy_field_to_guest(u_sysctl, sysctl, u.psr_cat_op) )
+                 ret = -EFAULT;
+ 
+             break;
++        case XEN_SYSCTL_PSR_CAT_enable_cdp:
++            ret = psr_cat_enable_cdp();
++            break;
++        case XEN_SYSCTL_PSR_CAT_disable_cdp:
++            ret = psr_cat_disable_cdp();
++            break;
+         default:
+             ret = -EOPNOTSUPP;
+             break;
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index a6b83df..2b79a92 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -30,6 +30,11 @@
+ /* CDP Capability */
+ #define PSR_CAT_CDP_CAPABILITY       0x4
+ 
++/* L3 QoS Config MSR Address */
++#define PSR_L3_QOS_CFG           0xc81
++
++/* L3 CDP Enable bit*/
++#define PSR_L3_QOS_CDP_ENABLE_BIT       0x0
+ 
+ struct psr_cmt_l3 {
+     unsigned int features;
+@@ -56,13 +61,16 @@ void psr_free_rmid(struct domain *d);
+ void psr_ctxt_switch_to(struct domain *d);
+ 
+ int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
+-                        uint32_t *cos_max);
++                        uint32_t *cos_max, uint8_t *cdp_enabled);
+ int psr_get_l3_cbm(struct domain *d, unsigned int socket, uint64_t *cbm);
+ int psr_set_l3_cbm(struct domain *d, unsigned int socket, uint64_t cbm);
+ 
+ int psr_domain_init(struct domain *d);
+ void psr_domain_free(struct domain *d);
+ 
++int psr_cat_enable_cdp(void);
++int psr_cat_disable_cdp(void);
++
+ #endif /* __ASM_PSR_H__ */
+ 
+ /*
+diff --git a/xen/include/public/sysctl.h b/xen/include/public/sysctl.h
+index 58c9be2..8b97137 100644
+--- a/xen/include/public/sysctl.h
++++ b/xen/include/public/sysctl.h
+@@ -697,6 +697,8 @@ typedef struct xen_sysctl_pcitopoinfo xen_sysctl_pcitopoinfo_t;
+ DEFINE_XEN_GUEST_HANDLE(xen_sysctl_pcitopoinfo_t);
+ 
+ #define XEN_SYSCTL_PSR_CAT_get_l3_info               0
++#define XEN_SYSCTL_PSR_CAT_enable_cdp                1
++#define XEN_SYSCTL_PSR_CAT_disable_cdp               2
+ struct xen_sysctl_psr_cat_op {
+     uint32_t cmd;       /* IN: XEN_SYSCTL_PSR_CAT_* */
+     uint32_t target;    /* IN */
+@@ -704,6 +706,9 @@ struct xen_sysctl_psr_cat_op {
+         struct {
+             uint32_t cbm_len;   /* OUT: CBM length */
+             uint32_t cos_max;   /* OUT: Maximum COS */
++            #define XEN_SYSCTL_PSR_CDP_DISABLED      0
++            #define XEN_SYSCTL_PSR_CDP_ENABLED       1
++            uint8_t cdp_enabled;   /* OUT: CDP status */
+         } l3_info;
+     } u;
+ };
+-- 
+1.9.1
+

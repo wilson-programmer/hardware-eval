@@ -1,0 +1,113 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 02/10] xsm: add resource operation related
+	xsm policy
+Date: Tue, 30 Sep 2014 18:49:04 +0800
+Message-ID: <1412074152-2955-3-git-send-email-chao.p.peng@linux.intel.com>
+References: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Add xsm policies for resource access related hypercall, such as MSR
+access, port I/O read/write, and other related resource operations.
+
+Signed-off-by: Dongxiao Xu <dongxiao.xu@intel.com>
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Acked-by: Daniel De Graaf  <dgdegra@tycho.nsa.gov>
+---
+ tools/flask/policy/policy/modules/xen/xen.te |    3 +++
+ xen/xsm/flask/hooks.c                        |    4 ++++
+ xen/xsm/flask/policy/access_vectors          |   14 +++++++++++---
+ xen/xsm/flask/policy/security_classes        |    1 +
+ 4 files changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/tools/flask/policy/policy/modules/xen/xen.te b/tools/flask/policy/policy/modules/xen/xen.te
+index 1937883..6cecf97 100644
+--- a/tools/flask/policy/policy/modules/xen/xen.te
++++ b/tools/flask/policy/policy/modules/xen/xen.te
+@@ -64,6 +64,9 @@ allow dom0_t xen_t:xen {
+ 	getidle debug getcpuinfo heap pm_op mca_op lockprof cpupool_op tmem_op
+ 	tmem_control getscheduler setscheduler
+ };
++allow dom0_t xen_t:xen2 {
++    resource_op
++};
+ allow dom0_t xen_t:mmu memorymap;
+ 
+ # Allow dom0 to use these domctls on itself. For domctls acting on other
+diff --git a/xen/xsm/flask/hooks.c b/xen/xsm/flask/hooks.c
+index df05566..9f36503 100644
+--- a/xen/xsm/flask/hooks.c
++++ b/xen/xsm/flask/hooks.c
+@@ -1391,6 +1391,10 @@ static int flask_platform_op(uint32_t op)
+     case XENPF_get_cpuinfo:
+         return domain_has_xen(current->domain, XEN__GETCPUINFO);
+ 
++    case XENPF_resource_op:
++        return avc_current_has_perm(SECINITSID_XEN, SECCLASS_XEN2,
++                                    XEN2__RESOURCE_OP, NULL);
++
+     default:
+         printk("flask_platform_op: Unknown op %d\n", op);
+         return -EPERM;
+diff --git a/xen/xsm/flask/policy/access_vectors b/xen/xsm/flask/policy/access_vectors
+index d279841..daf0de5 100644
+--- a/xen/xsm/flask/policy/access_vectors
++++ b/xen/xsm/flask/policy/access_vectors
+@@ -3,9 +3,9 @@
+ #
+ # class class_name { permission_name ... }
+ 
+-# Class xen consists of dom0-only operations dealing with the hypervisor itself.
+-# Unless otherwise specified, the source is the domain executing the hypercall,
+-# and the target is the xen initial sid (type xen_t).
++# Class xen and xen2 consists of dom0-only operations dealing with the
++# hypervisor itself. Unless otherwise specified, the source is the domain
++# executing the hypercall, and the target is the xen initial sid (type xen_t).
+ class xen
+ {
+ # XENPF_settime
+@@ -75,6 +75,14 @@ class xen
+     setscheduler
+ }
+ 
++# This is a continuation of class xen, since only 32 permissions can be
++# defined per class
++class xen2
++{
++# XENPF_resource_op
++    resource_op
++}
++
+ # Classes domain and domain2 consist of operations that a domain performs on
+ # another domain or on itself.  Unless otherwise specified, the source is the
+ # domain executing the hypercall, and the target is the domain being operated on
+diff --git a/xen/xsm/flask/policy/security_classes b/xen/xsm/flask/policy/security_classes
+index ef134a7..ca191db 100644
+--- a/xen/xsm/flask/policy/security_classes
++++ b/xen/xsm/flask/policy/security_classes
+@@ -8,6 +8,7 @@
+ # for userspace object managers
+ 
+ class xen
++class xen2
+ class domain
+ class domain2
+ class hvm
+-- 
+1.7.9.5
+

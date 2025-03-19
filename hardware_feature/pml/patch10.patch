@@ -1,0 +1,210 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Kai Huang <kai.huang@linux.intel.com>
+Subject: [v2 10/11] log-dirty: refine common code to support PML
+Date: Wed, 15 Apr 2015 15:03:52 +0800
+Message-ID: <1429081433-9600-11-git-send-email-kai.huang@linux.intel.com>
+References: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: andrew.cooper3@citrix.com, tim@xen.org, jbeulich@suse.com, kevin.tian@intel.com, xen-devel@lists.xen.org
+Cc: Kai Huang <kai.huang@linux.intel.com>
+List-Id: xen-devel@lists.xenproject.org
+
+Using PML, it's possible there are dirty GPAs logged in vcpus' PML buffers
+when userspace peek/clear dirty pages, therefore we need to flush them befor
+reporting dirty pages to userspace. This applies to both video ram tracking and
+paging_log_dirty_op.
+
+This patch adds new p2m layer functions to enable/disable PML and flush PML
+buffers. The new functions are named to be generic to cover potential futher
+PML-like features for other platforms.
+
+Signed-off-by: Kai Huang <kai.huang@linux.intel.com>
+---
+ xen/arch/x86/mm/hap/hap.c | 29 +++++++++++++++++++++++++----
+ xen/arch/x86/mm/p2m.c     | 36 ++++++++++++++++++++++++++++++++++++
+ xen/arch/x86/mm/paging.c  | 10 ++++++++++
+ xen/include/asm-x86/p2m.h | 11 +++++++++++
+ 4 files changed, 82 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/mm/hap/hap.c b/xen/arch/x86/mm/hap/hap.c
+index 4ecb2e2..1099670 100644
+--- a/xen/arch/x86/mm/hap/hap.c
++++ b/xen/arch/x86/mm/hap/hap.c
+@@ -121,7 +121,10 @@ int hap_track_dirty_vram(struct domain *d,
+                 p2m_change_type_range(d, ostart, oend,
+                                       p2m_ram_logdirty, p2m_ram_rw);
+ 
+-            /* set l1e entries of range within P2M table to be read-only. */
++            /*
++             * switch vram to log dirty mode, either by setting l1e entries of
++             * P2M table to be read-only, or via hardware-assisted log-dirty.
++             */
+             p2m_change_type_range(d, begin_pfn, begin_pfn + nr,
+                                   p2m_ram_rw, p2m_ram_logdirty);
+ 
+@@ -135,6 +138,9 @@ int hap_track_dirty_vram(struct domain *d,
+ 
+             domain_pause(d);
+ 
++            /* flush dirty GFNs potentially cached by hardware */
++            p2m_flush_hardware_cached_dirty(d);
++
+             /* get the bitmap */
+             paging_log_dirty_range(d, begin_pfn, nr, dirty_bitmap);
+ 
+@@ -190,9 +196,15 @@ static int hap_enable_log_dirty(struct domain *d, bool_t log_global)
+     d->arch.paging.mode |= PG_log_dirty;
+     paging_unlock(d);
+ 
++    /* enable hardware-assisted log-dirty if it is supported */
++    p2m_enable_hardware_log_dirty(d);
++
+     if ( log_global )
+     {
+-        /* set l1e entries of P2M table to be read-only. */
++        /*
++         * switch to log dirty mode, either by setting l1e entries of P2M table
++         * to be read-only, or via hardware-assisted log-dirty.
++         */
+         p2m_change_entry_type_global(d, p2m_ram_rw, p2m_ram_logdirty);
+         flush_tlb_mask(d->domain_dirty_cpumask);
+     }
+@@ -205,14 +217,23 @@ static int hap_disable_log_dirty(struct domain *d)
+     d->arch.paging.mode &= ~PG_log_dirty;
+     paging_unlock(d);
+ 
+-    /* set l1e entries of P2M table with normal mode */
++    /* disable hardware-assisted log-dirty if it is supported */
++    p2m_disable_hardware_log_dirty(d);
++
++    /*
++     * switch to normal mode, either by setting l1e entries of P2M table to
++     * normal mode, or via hardware-assisted log-dirty.
++     */
+     p2m_change_entry_type_global(d, p2m_ram_logdirty, p2m_ram_rw);
+     return 0;
+ }
+ 
+ static void hap_clean_dirty_bitmap(struct domain *d)
+ {
+-    /* set l1e entries of P2M table to be read-only. */
++    /*
++     * switch to log-dirty mode, either by setting l1e entries of P2M table to
++     * be read-only, or via hardware-assisted log-dirty.
++     */
+     p2m_change_entry_type_global(d, p2m_ram_rw, p2m_ram_logdirty);
+     flush_tlb_mask(d->domain_dirty_cpumask);
+ }
+diff --git a/xen/arch/x86/mm/p2m.c b/xen/arch/x86/mm/p2m.c
+index 6a06e9f..291a275 100644
+--- a/xen/arch/x86/mm/p2m.c
++++ b/xen/arch/x86/mm/p2m.c
+@@ -239,6 +239,42 @@ void p2m_memory_type_changed(struct domain *d)
+     }
+ }
+ 
++void p2m_enable_hardware_log_dirty(struct domain *d)
++{
++    struct p2m_domain *p2m = p2m_get_hostp2m(d);
++
++    if ( p2m->enable_hardware_log_dirty )
++    {
++        p2m_lock(p2m);
++        p2m->enable_hardware_log_dirty(p2m);
++        p2m_unlock(p2m);
++    }
++}
++
++void p2m_disable_hardware_log_dirty(struct domain *d)
++{
++    struct p2m_domain *p2m = p2m_get_hostp2m(d);
++
++    if ( p2m->disable_hardware_log_dirty )
++    {
++        p2m_lock(p2m);
++        p2m->disable_hardware_log_dirty(p2m);
++        p2m_unlock(p2m);
++    }
++}
++
++void p2m_flush_hardware_cached_dirty(struct domain *d)
++{
++    struct p2m_domain *p2m = p2m_get_hostp2m(d);
++
++    if ( p2m->flush_hardware_cached_dirty )
++    {
++        p2m_lock(p2m);
++        p2m->flush_hardware_cached_dirty(p2m);
++        p2m_unlock(p2m);
++    }
++}
++
+ mfn_t __get_gfn_type_access(struct p2m_domain *p2m, unsigned long gfn,
+                     p2m_type_t *t, p2m_access_t *a, p2m_query_t q,
+                     unsigned int *page_order, bool_t locked)
+diff --git a/xen/arch/x86/mm/paging.c b/xen/arch/x86/mm/paging.c
+index 77c929b..59d4720 100644
+--- a/xen/arch/x86/mm/paging.c
++++ b/xen/arch/x86/mm/paging.c
+@@ -422,7 +422,17 @@ static int paging_log_dirty_op(struct domain *d,
+     int i4, i3, i2;
+ 
+     if ( !resuming )
++    {
+         domain_pause(d);
++
++        /*
++         * Flush dirty GFNs potentially cached by hardware. Only need to flush
++         * when not resuming, as domain was paused in resuming case therefore
++         * it's not possible to have any new dirty pages.
++         */
++        p2m_flush_hardware_cached_dirty(d);
++    }
++
+     paging_lock(d);
+ 
+     if ( !d->arch.paging.preempt.dom )
+diff --git a/xen/include/asm-x86/p2m.h b/xen/include/asm-x86/p2m.h
+index e93c551..91c17a5 100644
+--- a/xen/include/asm-x86/p2m.h
++++ b/xen/include/asm-x86/p2m.h
+@@ -233,6 +233,9 @@ struct p2m_domain {
+                                        p2m_access_t *p2ma,
+                                        p2m_query_t q,
+                                        unsigned int *page_order);
++    void               (*enable_hardware_log_dirty)(struct p2m_domain *p2m);
++    void               (*disable_hardware_log_dirty)(struct p2m_domain *p2m);
++    void               (*flush_hardware_cached_dirty)(struct p2m_domain *p2m);
+     void               (*change_entry_type_global)(struct p2m_domain *p2m,
+                                                    p2m_type_t ot,
+                                                    p2m_type_t nt);
+@@ -507,6 +510,14 @@ void guest_physmap_remove_page(struct domain *d,
+ /* Set a p2m range as populate-on-demand */
+ int guest_physmap_mark_populate_on_demand(struct domain *d, unsigned long gfn,
+                                           unsigned int order);
++/* Enable hardware-assisted log-dirty. */
++void p2m_enable_hardware_log_dirty(struct domain *d);
++
++/* Disable hardware-assisted log-dirty */
++void p2m_disable_hardware_log_dirty(struct domain *d);
++
++/* Flush hardware cached dirty GFNs */
++void p2m_flush_hardware_cached_dirty(struct domain *d);
+ 
+ /* Change types across all p2m entries in a domain */
+ void p2m_change_entry_type_global(struct domain *d, 
+-- 
+2.1.0
+

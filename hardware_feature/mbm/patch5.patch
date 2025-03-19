@@ -1,0 +1,290 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v2 5/5] tools: add total/local memory bandwith
+	monitoring
+Date: Wed,  7 Jan 2015 19:12:05 +0800
+Message-ID: <1420629125-17725-6-git-send-email-chao.p.peng@linux.intel.com>
+References: <1420629125-17725-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1420629125-17725-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: wei.liu2@citrix.com, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+Add Memory Bandwidth Monitoring(MBM) for VMs. Two types of monitoring
+are supported: total and local memory bandwidth monitoring. To use it,
+CMT should be enabled in hypervisor.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+ docs/man/xl.pod.1             |    9 +++++
+ tools/libxc/include/xenctrl.h |    2 ++
+ tools/libxc/xc_psr.c          |    8 +++++
+ tools/libxl/libxl.h           |    8 +++++
+ tools/libxl/libxl_psr.c       |   75 +++++++++++++++++++++++++++++++++++++++++
+ tools/libxl/libxl_types.idl   |    2 ++
+ tools/libxl/xl_cmdimpl.c      |   18 ++++++++++
+ tools/libxl/xl_cmdtable.c     |    4 ++-
+ 8 files changed, 125 insertions(+), 1 deletion(-)
+
+diff --git a/docs/man/xl.pod.1 b/docs/man/xl.pod.1
+index 6b89ba8..0370625 100644
+--- a/docs/man/xl.pod.1
++++ b/docs/man/xl.pod.1
+@@ -1461,6 +1461,13 @@ is domain level. To monitor a specific domain, just attach the domain id with
+ the monitoring service. When the domain doesn't need to be monitored any more,
+ detach the domain id from the monitoring service.
+ 
++Intel Broadwell and later server platforms also offer total/local memory
++bandwidth monitoring. Xen supports per-domain monitoring for these two
++additional monitoring types. Both memory bandwidth monitoring and L3 cache
++occupancy monitoring share the same set of underground monitoring service. Once
++a domain is attached to the monitoring service, monitoring data can be showed
++for any of these monitoring types.
++
+ =over 4
+ 
+ =item B<psr-cmt-attach> [I<domain-id>]
+@@ -1476,6 +1483,8 @@ detach: Detach the platform shared resource monitoring service from a domain.
+ Show monitoring data for a certain domain or all domains. Current supported
+ monitor types are:
+  - "cache-occupancy": showing the L3 cache occupancy.
++ - "total-mem-bandwidth": showing the total memory bandwidth.
++ - "local-mem-bandwidth": showing the local memory bandwidth.
+ 
+ =back
+ 
+diff --git a/tools/libxc/include/xenctrl.h b/tools/libxc/include/xenctrl.h
+index c6e9e3e..06366b5 100644
+--- a/tools/libxc/include/xenctrl.h
++++ b/tools/libxc/include/xenctrl.h
+@@ -2688,6 +2688,8 @@ int xc_resource_op(xc_interface *xch, uint32_t nr_ops, xc_resource_op_t *ops);
+ #if defined(__i386__) || defined(__x86_64__)
+ enum xc_psr_cmt_type {
+     XC_PSR_CMT_L3_OCCUPANCY,
++    XC_PSR_CMT_TOTAL_MEM_BANDWIDTH,
++    XC_PSR_CMT_LOCAL_MEM_BANDWIDTH,
+ };
+ typedef enum xc_psr_cmt_type xc_psr_cmt_type;
+ int xc_psr_cmt_attach(xc_interface *xch, uint32_t domid);
+diff --git a/tools/libxc/xc_psr.c b/tools/libxc/xc_psr.c
+index e3ecc41..99cb754 100644
+--- a/tools/libxc/xc_psr.c
++++ b/tools/libxc/xc_psr.c
+@@ -23,6 +23,8 @@
+ #define IA32_CMT_CTR_ERROR_MASK         (0x3ull << 62)
+ 
+ #define EVTID_L3_OCCUPANCY             0x1
++#define EVTID_TOTAL_MEM_BANDWIDTH      0x2
++#define EVTID_LOCAL_MEM_BANDWIDTH      0x3
+ 
+ int xc_psr_cmt_attach(xc_interface *xch, uint32_t domid)
+ {
+@@ -175,6 +177,12 @@ int xc_psr_cmt_get_data(xc_interface *xch, uint32_t rmid, uint32_t cpu,
+     case XC_PSR_CMT_L3_OCCUPANCY:
+         evtid = EVTID_L3_OCCUPANCY;
+         break;
++    case XC_PSR_CMT_TOTAL_MEM_BANDWIDTH:
++        evtid = EVTID_TOTAL_MEM_BANDWIDTH;
++        break;
++    case XC_PSR_CMT_LOCAL_MEM_BANDWIDTH:
++        evtid = EVTID_LOCAL_MEM_BANDWIDTH;
++        break;
+     default:
+         return -1;
+     }
+diff --git a/tools/libxl/libxl.h b/tools/libxl/libxl.h
+index d84ff7f..5ab9d0c 100644
+--- a/tools/libxl/libxl.h
++++ b/tools/libxl/libxl.h
+@@ -1462,6 +1462,14 @@ int libxl_psr_cmt_get_cache_occupancy(libxl_ctx *ctx,
+                                       uint32_t domid,
+                                       uint32_t socketid,
+                                       uint32_t *l3_cache_occupancy);
++int libxl_psr_cmt_get_total_mem_bandwidth(libxl_ctx *ctx,
++                                          uint32_t domid,
++                                          uint32_t socketid,
++                                          uint32_t *bandwidth);
++int libxl_psr_cmt_get_local_mem_bandwidth(libxl_ctx *ctx,
++                                          uint32_t domid,
++                                          uint32_t socketid,
++                                          uint32_t *bandwidth);
+ #endif
+ 
+ /* misc */
+diff --git a/tools/libxl/libxl_psr.c b/tools/libxl/libxl_psr.c
+index 42e74d2..a0cda89 100644
+--- a/tools/libxl/libxl_psr.c
++++ b/tools/libxl/libxl_psr.c
+@@ -18,6 +18,7 @@
+ 
+ 
+ #define IA32_QM_CTR_ERROR_MASK         (0x3ul << 62)
++#define MBM_SAMPLE_RETRY_MAX 4
+ 
+ static void libxl__psr_cmt_log_err_msg(libxl__gc *gc, int err)
+ {
+@@ -240,6 +241,80 @@ out:
+     return rc;
+ }
+ 
++static int libxl__psr_cmt_get_mem_bandwidth(libxl__gc *gc,
++                                            uint32_t domid,
++                                            xc_psr_cmt_type type,
++                                            uint32_t socketid,
++                                            uint32_t *bandwidth)
++{
++    uint64_t sample1, sample2;
++    uint32_t upscaling_factor;
++    int retry_attempts = 0;
++    int rc;
++
++retry:
++    rc = libxl__psr_cmt_get_l3_monitoring_data(gc, domid, type, socketid,
++                                               &sample1);
++    if (rc < 0)
++        return ERROR_FAIL;
++
++    usleep(10000);
++
++    rc = libxl__psr_cmt_get_l3_monitoring_data(gc, domid, type, socketid,
++                                               &sample2);
++    if (rc < 0)
++       return ERROR_FAIL;
++
++    if (sample2 < sample1) {
++         if (retry_attempts < MBM_SAMPLE_RETRY_MAX) {
++             retry_attempts++;
++             goto retry;
++         } else {
++             LOGE(ERROR, "event counter overflowed");
++             return ERROR_FAIL;
++         }
++    }
++
++    rc = xc_psr_cmt_get_l3_upscaling_factor(CTX->xch, &upscaling_factor);
++    if (rc < 0) {
++        LOGE(ERROR, "failed to get L3 upscaling factor");
++        return ERROR_FAIL;
++    }
++
++    *bandwidth = (sample2 - sample1) * 100 *  upscaling_factor / 1024;
++    return rc;
++}
++
++int libxl_psr_cmt_get_total_mem_bandwidth(libxl_ctx *ctx,
++                                          uint32_t domid,
++                                          uint32_t socketid,
++                                          uint32_t *bandwidth)
++{
++    GC_INIT(ctx);
++    int rc;
++
++    rc = libxl__psr_cmt_get_mem_bandwidth(gc, domid,
++                                          XC_PSR_CMT_TOTAL_MEM_BANDWIDTH,
++                                          socketid, bandwidth);
++    GC_FREE;
++    return rc;
++}
++
++int libxl_psr_cmt_get_local_mem_bandwidth(libxl_ctx *ctx,
++                                          uint32_t domid,
++                                          uint32_t socketid,
++                                          uint32_t *bandwidth)
++{
++    GC_INIT(ctx);
++    int rc;
++
++    rc = libxl__psr_cmt_get_mem_bandwidth(gc, domid,
++                                          XC_PSR_CMT_LOCAL_MEM_BANDWIDTH,
++                                          socketid, bandwidth);
++    GC_FREE;
++    return rc;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libxl/libxl_types.idl b/tools/libxl/libxl_types.idl
+index f7fc695..8029a39 100644
+--- a/tools/libxl/libxl_types.idl
++++ b/tools/libxl/libxl_types.idl
+@@ -693,4 +693,6 @@ libxl_event = Struct("event",[
+ 
+ libxl_psr_cmt_type = Enumeration("psr_cmt_type", [
+     (1, "CACHE_OCCUPANCY"),
++    (2, "TOTAL_MEM_BANDWIDTH"),
++    (3, "LOCAL_MEM_BANDWIDTH"),
+     ])
+diff --git a/tools/libxl/xl_cmdimpl.c b/tools/libxl/xl_cmdimpl.c
+index 09ca73e..73a591e 100644
+--- a/tools/libxl/xl_cmdimpl.c
++++ b/tools/libxl/xl_cmdimpl.c
+@@ -7868,6 +7868,16 @@ static void psr_cmt_print_domain_l3_info(libxl_dominfo *dominfo,
+                                                    socketid, &data))
+                 printf("%13u KB", data);
+             break;
++        case LIBXL_PSR_CMT_TYPE_TOTAL_MEM_BANDWIDTH:
++            if (!libxl_psr_cmt_get_total_mem_bandwidth(ctx, dominfo->domid,
++                                                       socketid, &data))
++                printf("%11u KB/s", data);
++            break;
++        case LIBXL_PSR_CMT_TYPE_LOCAL_MEM_BANDWIDTH:
++            if (!libxl_psr_cmt_get_local_mem_bandwidth(ctx, dominfo->domid,
++                                                       socketid, &data))
++                printf("%11u KB/s", data);
++            break;
+         default:
+             return;
+         }
+@@ -7888,6 +7898,12 @@ static int psr_cmt_show_l3_info(libxl_psr_cmt_type type, uint32_t domid)
+         return -1;
+     }
+ 
++    if (!libxl_psr_cmt_type_supported(ctx, type)) {
++        fprintf(stderr, "Monitor type '%s' is not supported in the system\n",
++                libxl_psr_cmt_type_to_string(type));
++        return -1;
++    }
++
+     libxl_physinfo_init(&info);
+     rc = libxl_get_physinfo(ctx, &info);
+     if (rc < 0) {
+@@ -8005,6 +8021,8 @@ int main_psr_cmt_show(int argc, char **argv)
+ 
+     switch (type) {
+     case LIBXL_PSR_CMT_TYPE_CACHE_OCCUPANCY:
++    case LIBXL_PSR_CMT_TYPE_TOTAL_MEM_BANDWIDTH:
++    case LIBXL_PSR_CMT_TYPE_LOCAL_MEM_BANDWIDTH:
+         ret = psr_cmt_show_l3_info(type, domid);
+         break;
+     default:
+diff --git a/tools/libxl/xl_cmdtable.c b/tools/libxl/xl_cmdtable.c
+index 4b30d3d..2d8f272 100644
+--- a/tools/libxl/xl_cmdtable.c
++++ b/tools/libxl/xl_cmdtable.c
+@@ -538,7 +538,9 @@ struct cmd_spec cmd_table[] = {
+       "Show Cache Monitoring Technology information",
+       "<PSR-CMT-Type> <Domain>",
+       "Available monitor types:\n"
+-      "\"cache_occupancy\":         Show L3 cache occupancy\n",
++      "\"cache_occupancy\":         Show L3 cache occupancy\n"
++      "\"total_mem_bandwidth\":     Show total memory bandwidth\n"
++      "\"local_mem_bandwidth\":     Show local memory bandwidth\n",
+     },
+ #endif
+ };
+-- 
+1.7.9.5
+

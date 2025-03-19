@@ -1,0 +1,346 @@
+From patchwork Sat Sep 30 01:39:25 2017
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+X-Patchwork-Submitter: Yi Sun <yi.y.sun@linux.intel.com>
+X-Patchwork-Id: 9979029
+Return-Path: <xen-devel-bounces@lists.xen.org>
+Received: from mail.wl.linuxfoundation.org (pdx-wl-mail.web.codeaurora.org
+	[172.30.200.125])
+	by pdx-korg-patchwork.web.codeaurora.org (Postfix) with ESMTP id
+	055946037F for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:53 +0000 (UTC)
+Received: from mail.wl.linuxfoundation.org (localhost [127.0.0.1])
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTP id E77FD298AA
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:52 +0000 (UTC)
+Received: by mail.wl.linuxfoundation.org (Postfix, from userid 486)
+	id DC742298C5; Sat, 30 Sep 2017 02:01:52 +0000 (UTC)
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	pdx-wl-mail.web.codeaurora.org
+X-Spam-Level: 
+X-Spam-Status: No, score=-4.2 required=2.0 tests=BAYES_00, RCVD_IN_DNSWL_MED
+	autolearn=ham version=3.3.1
+Received: from lists.xenproject.org (lists.xenproject.org [192.237.175.120])
+	(using TLSv1.2 with cipher AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTPS id 482D6298CE
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:52 +0000 (UTC)
+Received: from localhost ([127.0.0.1] helo=lists.xenproject.org)
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <xen-devel-bounces@lists.xen.org>)
+	id 1dy745-0004kk-MN; Sat, 30 Sep 2017 01:59:37 +0000
+Received: from mail6.bemta6.messagelabs.com ([193.109.254.103])
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <yi.y.sun@linux.intel.com>) id 1dy743-0004hh-SI
+	for xen-devel@lists.xenproject.org; Sat, 30 Sep 2017 01:59:35 +0000
+Received: from [85.158.143.35] by server-8.bemta-6.messagelabs.com id
+	16/52-17770-78AFEC95; Sat, 30 Sep 2017 01:59:35 +0000
+X-Brightmail-Tracker: H4sIAAAAAAAAA+NgFjrCIsWRWlGSWpSXmKPExsXS1taRotv261y
+	kwftHMhbft0xmcmD0OPzhCksAYxRrZl5SfkUCa8aXOZsZC5Y7VszvXM3awPjAoIuRk0NIoEKi
+	u28nI4gtIcArcWTZDFYIO0Di6K8DjBA1DYwSi76JgdhsAuoSj7/2MIHYIgJKEvdWTQazmQWuM
+	0r0zI0FsYUFUiSuPJkKFmcRUJX43nIDbCavgIfEhvf9TBDz5SROHpsMFucEil/raWKD2OUuca
+	VlLSNEvaDEyZlPWLoYOYDmq0usnycEsUpeonnrbOYJjAKzkFTNQqiahaRqASPzKkb14tSistQ
+	iXUO9pKLM9IyS3MTMHF1DAzO93NTi4sT01JzEpGK95PzcTYzAsGQAgh2MO587HWKU5GBSEuXd
+	/fNcpBBfUn5KZUZicUZ8UWlOavEhRhkODiUJ3giQnGBRanpqRVpmDjBCYNISHDxKIry2IGne4
+	oLE3OLMdIjUKUZjjmObLv9h4ui4efcPkxBLXn5eqpQ4bwFIqQBIaUZpHtwgWOReYpSVEuZlBD
+	pNiKcgtSg3swRV/hWjOAejkjCvO8gUnsy8Erh9r4BOYQI6ZfLEMyCnlCQipKQaGGfdb/YyeKL
+	jktgkraz+KXbiRt4LuXxKBqaGNokh/w5U/fK6Lc2646L8S9ddWnxNG9NnuoULFt7sev7us35s
+	x13mZ9vdFTvS5kQ+m3gofWtQUlNPazznHMeLE1/uuXHmjNEsJveT9R2tUdXS0c+E+BfUpc9Xn
+	vqQzXrdlMOHj3Y+mDxjyjG5t0osxRmJhlrMRcWJAKfEwQTXAgAA
+X-Env-Sender: yi.y.sun@linux.intel.com
+X-Msg-Ref: server-13.tower-21.messagelabs.com!1506736764!79487342!6
+X-Originating-IP: [134.134.136.100]
+X-SpamReason: No, hits=0.0 required=7.0 tests=
+X-StarScan-Received: 
+X-StarScan-Version: 9.4.45; banners=-,-,-
+X-VirusChecked: Checked
+Received: (qmail 59004 invoked from network); 30 Sep 2017 01:59:34 -0000
+Received: from mga07.intel.com (HELO mga07.intel.com) (134.134.136.100)
+	by server-13.tower-21.messagelabs.com with DHE-RSA-AES256-GCM-SHA384
+	encrypted SMTP; 30 Sep 2017 01:59:34 -0000
+Received: from orsmga003.jf.intel.com ([10.7.209.27])
+	by orsmga105.jf.intel.com with ESMTP; 29 Sep 2017 18:59:33 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos; i="5.42,455,1500966000"; d="scan'208";
+	a="1020039136"
+Received: from vmmmba-s2600wft.bj.intel.com ([10.240.193.75])
+	by orsmga003.jf.intel.com with ESMTP; 29 Sep 2017 18:59:31 -0700
+From: Yi Sun <yi.y.sun@linux.intel.com>
+To: xen-devel@lists.xenproject.org
+Date: Sat, 30 Sep 2017 09:39:25 +0800
+Message-Id: <1506735566-5706-16-git-send-email-yi.y.sun@linux.intel.com>
+X-Mailer: git-send-email 1.9.1
+In-Reply-To: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+References: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+MIME-Version: 1.0
+Cc: Wei Liu <wei.liu2@citrix.com>, Chao Peng <chao.p.peng@linux.intel.com>,
+	Yi Sun <yi.y.sun@linux.intel.com>,
+	Ian Jackson <ian.jackson@eu.citrix.com>,
+	=?UTF-8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Subject: [Xen-devel] [PATCH v5 15/16] tools: implement new generic set value
+	interface and MBA set value command
+X-BeenThere: xen-devel@lists.xen.org
+X-Mailman-Version: 2.1.18
+Precedence: list
+List-Id: Xen developer discussion <xen-devel.lists.xen.org>
+List-Unsubscribe: <https://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <https://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Errors-To: xen-devel-bounces@lists.xen.org
+Sender: "Xen-devel" <xen-devel-bounces@lists.xen.org>
+X-Virus-Scanned: ClamAV using ClamSMTP
+
+This patch implements new generic set value interfaces in libxc and libxl.
+These interfaces are suitable for all allocation features. It also adds a
+new MBA set value command in xl.
+
+Signed-off-by: Yi Sun <yi.y.sun@linux.intel.com>
+Acked-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Roger Pau Monné <roger.pau@citrix.com>
+---
+CC: Wei Liu <wei.liu2@citrix.com>
+CC: Ian Jackson <ian.jackson@eu.citrix.com>
+CC: Roger Pau Monné <roger.pau@citrix.com>
+CC: Chao Peng <chao.p.peng@linux.intel.com>
+
+v5:
+    - move xc_type definition and value get out of the loop.
+      (suggested by Roger Pau Monné)
+v4:
+    - remove 'ALLOC_' from macro name.
+      (suggested by Roger Pau Monné)
+    - adjust place of argc check and return EXIT_FAILURE.
+      (suggested by Roger Pau Monné)
+    - fix indentation issue.
+      (suggested by Roger Pau Monné)
+    - move same type local variables declaration to a single line.
+      (suggested by Roger Pau Monné)
+v3:
+    - add 'const' for 'opts[]' in 'main_psr_mba_set'.
+      (suggested by Roger Pau Monné)
+    - replace 'libxl_psr_cbm_type' to 'libxl_psr_type' for newly defined
+      interfaces.
+      (suggested by Roger Pau Monné)
+---
+ tools/libxc/include/xenctrl.h |  6 ++---
+ tools/libxc/xc_psr.c          |  9 ++++---
+ tools/libxl/libxl_psr.c       | 52 ++++++++++++++++++++--------------------
+ tools/xl/xl.h                 |  1 +
+ tools/xl/xl_cmdtable.c        |  6 +++++
+ tools/xl/xl_psr.c             | 55 +++++++++++++++++++++++++++++++++++++++++++
+ 6 files changed, 96 insertions(+), 33 deletions(-)
+
+diff --git a/tools/libxc/include/xenctrl.h b/tools/libxc/include/xenctrl.h
+index 0629a25..1c71140 100644
+--- a/tools/libxc/include/xenctrl.h
++++ b/tools/libxc/include/xenctrl.h
+@@ -2497,9 +2497,9 @@ int xc_psr_cmt_get_data(xc_interface *xch, uint32_t rmid, uint32_t cpu,
+                         uint64_t *tsc);
+ int xc_psr_cmt_enabled(xc_interface *xch);
+ 
+-int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
+-                               xc_psr_type type, uint32_t target,
+-                               uint64_t data);
++int xc_psr_set_domain_data(xc_interface *xch, uint32_t domid,
++                           xc_psr_type type, uint32_t target,
++                           uint64_t data);
+ int xc_psr_get_domain_data(xc_interface *xch, uint32_t domid,
+                            xc_psr_type type, uint32_t target,
+                            uint64_t *data);
+diff --git a/tools/libxc/xc_psr.c b/tools/libxc/xc_psr.c
+index b001664..d38e7bd 100644
+--- a/tools/libxc/xc_psr.c
++++ b/tools/libxc/xc_psr.c
+@@ -248,9 +248,9 @@ int xc_psr_cmt_enabled(xc_interface *xch)
+ 
+     return 0;
+ }
+-int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
+-                               xc_psr_type type, uint32_t target,
+-                               uint64_t data)
++int xc_psr_set_domain_data(xc_interface *xch, uint32_t domid,
++                           xc_psr_type type, uint32_t target,
++                           uint64_t data)
+ {
+     DECLARE_DOMCTL;
+     uint32_t cmd;
+@@ -269,6 +269,9 @@ int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
+     case XC_PSR_CAT_L2_CBM:
+         cmd = XEN_DOMCTL_PSR_SET_L2_CBM;
+         break;
++    case XC_PSR_MBA_THRTL:
++        cmd = XEN_DOMCTL_PSR_SET_MBA_THRTL;
++        break;
+     default:
+         errno = EINVAL;
+         return -1;
+diff --git a/tools/libxl/libxl_psr.c b/tools/libxl/libxl_psr.c
+index 9c47d34..827fdfa 100644
+--- a/tools/libxl/libxl_psr.c
++++ b/tools/libxl/libxl_psr.c
+@@ -328,32 +328,7 @@ int libxl_psr_cat_set_cbm(libxl_ctx *ctx, uint32_t domid,
+                           libxl_psr_cbm_type type, libxl_bitmap *target_map,
+                           uint64_t cbm)
+ {
+-    GC_INIT(ctx);
+-    int rc;
+-    int socketid, nr_sockets;
+-
+-    rc = libxl__count_physical_sockets(gc, &nr_sockets);
+-    if (rc) {
+-        LOGED(ERROR, domid, "failed to get system socket count");
+-        goto out;
+-    }
+-
+-    libxl_for_each_set_bit(socketid, *target_map) {
+-        xc_psr_type xc_type = libxl__psr_type_to_libxc_psr_type(type);
+-
+-        if (socketid >= nr_sockets)
+-            break;
+-
+-        if (xc_psr_cat_set_domain_data(ctx->xch, domid, xc_type,
+-                                       socketid, cbm)) {
+-            libxl__psr_alloc_log_err_msg(gc, errno, type);
+-            rc = ERROR_FAIL;
+-        }
+-    }
+-
+-out:
+-    GC_FREE;
+-    return rc;
++    return libxl_psr_set_val(ctx, domid, type, target_map, cbm);
+ }
+ 
+ int libxl_psr_cat_get_cbm(libxl_ctx *ctx, uint32_t domid,
+@@ -451,7 +426,30 @@ int libxl_psr_set_val(libxl_ctx *ctx, uint32_t domid,
+                       libxl_psr_type type, libxl_bitmap *target_map,
+                       uint64_t val)
+ {
+-    return ERROR_FAIL;
++    GC_INIT(ctx);
++    int rc, socketid, nr_sockets;
++    xc_psr_type xc_type = libxl__psr_type_to_libxc_psr_type(type);
++
++    rc = libxl__count_physical_sockets(gc, &nr_sockets);
++    if (rc) {
++        LOG(ERROR, "failed to get system socket count");
++        goto out;
++    }
++
++    libxl_for_each_set_bit(socketid, *target_map) {
++        if (socketid >= nr_sockets)
++            break;
++
++        if (xc_psr_set_domain_data(ctx->xch, domid, xc_type,
++                                   socketid, val)) {
++            libxl__psr_alloc_log_err_msg(gc, errno, type);
++            rc = ERROR_FAIL;
++        }
++    }
++
++out:
++    GC_FREE;
++    return rc;
+ }
+ 
+ int libxl_psr_get_val(libxl_ctx *ctx, uint32_t domid,
+diff --git a/tools/xl/xl.h b/tools/xl/xl.h
+index 464831e..89309e7 100644
+--- a/tools/xl/xl.h
++++ b/tools/xl/xl.h
+@@ -205,6 +205,7 @@ int main_psr_cmt_detach(int argc, char **argv);
+ int main_psr_cmt_show(int argc, char **argv);
+ int main_psr_cat_cbm_set(int argc, char **argv);
+ int main_psr_cat_show(int argc, char **argv);
++int main_psr_mba_set(int argc, char **argv);
+ int main_psr_mba_show(int argc, char **argv);
+ #endif
+ int main_qemu_monitor_command(int argc, char **argv);
+diff --git a/tools/xl/xl_cmdtable.c b/tools/xl/xl_cmdtable.c
+index 3136d70..fb21317 100644
+--- a/tools/xl/xl_cmdtable.c
++++ b/tools/xl/xl_cmdtable.c
+@@ -565,6 +565,12 @@ struct cmd_spec cmd_table[] = {
+       "[options] <Domain>",
+       "-l <level>        Specify the cache level to process, otherwise L3 cache is processed\n"
+     },
++    { "psr-mba-set",
++      &main_psr_mba_set, 0, 1,
++      "Set throttling value (THRTL) for a domain",
++      "[options] <Domain> <THRTL>",
++      "-s <socket>       Specify the socket to process, otherwise all sockets are processed\n"
++    },
+     { "psr-mba-show",
+       &main_psr_mba_show, 0, 1,
+       "Show Memory Bandwidth Allocation information",
+diff --git a/tools/xl/xl_psr.c b/tools/xl/xl_psr.c
+index 4fed71e..b37dfa7 100644
+--- a/tools/xl/xl_psr.c
++++ b/tools/xl/xl_psr.c
+@@ -553,6 +553,61 @@ int main_psr_mba_show(int argc, char **argv)
+     return psr_val_show(domid, LIBXL_PSR_FEAT_TYPE_MBA, 0);
+ }
+ 
++int main_psr_mba_set(int argc, char **argv)
++{
++    uint32_t domid;
++    libxl_psr_type type;
++    uint64_t thrtl;
++    int ret, opt = 0;
++    libxl_bitmap target_map;
++    char *value;
++    libxl_string_list socket_list;
++    unsigned long start, end;
++    unsigned int i, j, len;
++
++    static const struct option opts[] = {
++        {"socket", 1, 0, 's'},
++        COMMON_LONG_OPTS
++    };
++
++    if (argc != optind + 2) {
++        help("psr-mba-set");
++        return EXIT_FAILURE;
++    }
++
++    libxl_socket_bitmap_alloc(ctx, &target_map, 0);
++    libxl_bitmap_set_none(&target_map);
++
++    SWITCH_FOREACH_OPT(opt, "s:", opts, "psr-mba-set", 0) {
++    case 's':
++        trim(isspace, optarg, &value);
++        split_string_into_string_list(value, ",", &socket_list);
++        len = libxl_string_list_length(&socket_list);
++        for (i = 0; i < len; i++) {
++            parse_range(socket_list[i], &start, &end);
++            for (j = start; j <= end; j++)
++                libxl_bitmap_set(&target_map, j);
++        }
++
++        libxl_string_list_dispose(&socket_list);
++        free(value);
++        break;
++    }
++
++    type = LIBXL_PSR_CBM_TYPE_MBA_THRTL;
++
++    if (libxl_bitmap_is_empty(&target_map))
++        libxl_bitmap_set_any(&target_map);
++
++    domid = find_domain(argv[optind]);
++    thrtl = strtoll(argv[optind + 1], NULL , 0);
++
++    ret = libxl_psr_set_val(ctx, domid, type, &target_map, thrtl);
++
++    libxl_bitmap_dispose(&target_map);
++    return ret;
++}
++
+ static int psr_mba_hwinfo(void)
+ {
+     int rc;

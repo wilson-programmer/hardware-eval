@@ -1,0 +1,266 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 06/10] x86: collect global CMT information
+Date: Tue, 30 Sep 2014 18:49:08 +0800
+Message-ID: <1412074152-2955-7-git-send-email-chao.p.peng@linux.intel.com>
+References: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+This implementation tries to put all policies into user space, thus some
+global CMT information needs to be exposed, such as the total RMID count,
+L3 upscaling factor, etc.
+
+Signed-off-by: Dongxiao Xu <dongxiao.xu@intel.com>
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+---
+ xen/arch/x86/cpu/intel_cacheinfo.c |   49 ++----------------------------------
+ xen/arch/x86/sysctl.c              |   43 +++++++++++++++++++++++++++++++
+ xen/include/asm-x86/cpufeature.h   |   45 +++++++++++++++++++++++++++++++++
+ xen/include/public/sysctl.h        |   14 +++++++++++
+ 4 files changed, 104 insertions(+), 47 deletions(-)
+
+diff --git a/xen/arch/x86/cpu/intel_cacheinfo.c b/xen/arch/x86/cpu/intel_cacheinfo.c
+index 430f939..48970c0 100644
+--- a/xen/arch/x86/cpu/intel_cacheinfo.c
++++ b/xen/arch/x86/cpu/intel_cacheinfo.c
+@@ -81,54 +81,9 @@ static struct _cache_table cache_table[] __cpuinitdata =
+ 	{ 0x00, 0, 0}
+ };
+ 
+-
+-enum _cache_type
+-{
+-	CACHE_TYPE_NULL	= 0,
+-	CACHE_TYPE_DATA = 1,
+-	CACHE_TYPE_INST = 2,
+-	CACHE_TYPE_UNIFIED = 3
+-};
+-
+-union _cpuid4_leaf_eax {
+-	struct {
+-		enum _cache_type	type:5;
+-		unsigned int		level:3;
+-		unsigned int		is_self_initializing:1;
+-		unsigned int		is_fully_associative:1;
+-		unsigned int		reserved:4;
+-		unsigned int		num_threads_sharing:12;
+-		unsigned int		num_cores_on_die:6;
+-	} split;
+-	u32 full;
+-};
+-
+-union _cpuid4_leaf_ebx {
+-	struct {
+-		unsigned int		coherency_line_size:12;
+-		unsigned int		physical_line_partition:10;
+-		unsigned int		ways_of_associativity:10;
+-	} split;
+-	u32 full;
+-};
+-
+-union _cpuid4_leaf_ecx {
+-	struct {
+-		unsigned int		number_of_sets:32;
+-	} split;
+-	u32 full;
+-};
+-
+-struct _cpuid4_info {
+-	union _cpuid4_leaf_eax eax;
+-	union _cpuid4_leaf_ebx ebx;
+-	union _cpuid4_leaf_ecx ecx;
+-	unsigned long size;
+-};
+-
+ unsigned short			num_cache_leaves;
+ 
+-static int __cpuinit cpuid4_cache_lookup(int index, struct _cpuid4_info *this_leaf)
++int cpuid4_cache_lookup(int index, struct cpuid4_info *this_leaf)
+ {
+ 	union _cpuid4_leaf_eax 	eax;
+ 	union _cpuid4_leaf_ebx 	ebx;
+@@ -185,7 +140,7 @@ unsigned int __cpuinit init_intel_cacheinfo(struct cpuinfo_x86 *c)
+ 		 * parameters cpuid leaf to find the cache details
+ 		 */
+ 		for (i = 0; i < num_cache_leaves; i++) {
+-			struct _cpuid4_info this_leaf;
++			struct cpuid4_info this_leaf;
+ 
+ 			int retval;
+ 
+diff --git a/xen/arch/x86/sysctl.c b/xen/arch/x86/sysctl.c
+index 15d4b91..b95408f 100644
+--- a/xen/arch/x86/sysctl.c
++++ b/xen/arch/x86/sysctl.c
+@@ -28,6 +28,7 @@
+ #include <xen/nodemask.h>
+ #include <xen/cpu.h>
+ #include <xsm/xsm.h>
++#include <asm/psr.h>
+ 
+ #define get_xen_guest_handle(val, hnd)  do { val = (hnd).p; } while (0)
+ 
+@@ -101,6 +102,48 @@ long arch_do_sysctl(
+     }
+     break;
+ 
++    case XEN_SYSCTL_psr_cmt_op:
++        if ( !psr_cmt_enabled() )
++            return -ENODEV;
++
++        if ( sysctl->u.psr_cmt_op.flags != 0 )
++            return -EINVAL;
++
++        switch ( sysctl->u.psr_cmt_op.cmd )
++        {
++        case XEN_SYSCTL_PSR_CMT_enabled:
++            sysctl->u.psr_cmt_op.data =
++                (psr_cmt->features & PSR_RESOURCE_TYPE_L3) &&
++                (psr_cmt->l3.features & PSR_CMT_L3_OCCUPANCY);
++            break;
++        case XEN_SYSCTL_PSR_CMT_get_total_rmid:
++            sysctl->u.psr_cmt_op.data = psr_cmt->rmid_max;
++            break;
++        case XEN_SYSCTL_PSR_CMT_get_l3_upscaling_factor:
++            sysctl->u.psr_cmt_op.data = psr_cmt->l3.upscaling_factor;
++            break;
++        case XEN_SYSCTL_PSR_CMT_get_l3_cache_size:
++        {
++            struct cpuid4_info info;
++
++            ret = cpuid4_cache_lookup(3, &info);
++            if ( ret < 0 )
++                break;
++
++            sysctl->u.psr_cmt_op.data = info.size / 1024; /* in KB unit */
++        }
++        break;
++        default:
++            sysctl->u.psr_cmt_op.data = 0;
++            ret = -ENOSYS;
++            break;
++        }
++
++        if ( __copy_to_guest(u_sysctl, sysctl, 1) )
++            ret = -EFAULT;
++
++        break;
++
+     default:
+         ret = -ENOSYS;
+         break;
+diff --git a/xen/include/asm-x86/cpufeature.h b/xen/include/asm-x86/cpufeature.h
+index 137d75c..d3bd14d 100644
+--- a/xen/include/asm-x86/cpufeature.h
++++ b/xen/include/asm-x86/cpufeature.h
+@@ -215,6 +215,51 @@
+ #define cpu_has_vmx		boot_cpu_has(X86_FEATURE_VMXE)
+ 
+ #define cpu_has_cpuid_faulting	boot_cpu_has(X86_FEATURE_CPUID_FAULTING)
++
++enum _cache_type {
++    CACHE_TYPE_NULL = 0,
++    CACHE_TYPE_DATA = 1,
++    CACHE_TYPE_INST = 2,
++    CACHE_TYPE_UNIFIED = 3
++};
++
++union _cpuid4_leaf_eax {
++    struct {
++        enum _cache_type type:5;
++        unsigned int level:3;
++        unsigned int is_self_initializing:1;
++        unsigned int is_fully_associative:1;
++        unsigned int reserved:4;
++        unsigned int num_threads_sharing:12;
++        unsigned int num_cores_on_die:6;
++    } split;
++    u32 full;
++};
++
++union _cpuid4_leaf_ebx {
++    struct {
++        unsigned int coherency_line_size:12;
++        unsigned int physical_line_partition:10;
++        unsigned int ways_of_associativity:10;
++    } split;
++    u32 full;
++};
++
++union _cpuid4_leaf_ecx {
++    struct {
++        unsigned int number_of_sets:32;
++    } split;
++    u32 full;
++};
++
++struct cpuid4_info {
++    union _cpuid4_leaf_eax eax;
++    union _cpuid4_leaf_ebx ebx;
++    union _cpuid4_leaf_ecx ecx;
++    unsigned long size;
++};
++
++int cpuid4_cache_lookup(int index, struct cpuid4_info *this_leaf);
+ #endif
+ 
+ #endif /* __ASM_I386_CPUFEATURE_H */
+diff --git a/xen/include/public/sysctl.h b/xen/include/public/sysctl.h
+index 3588698..66b6e47 100644
+--- a/xen/include/public/sysctl.h
++++ b/xen/include/public/sysctl.h
+@@ -636,6 +636,18 @@ struct xen_sysctl_coverage_op {
+ typedef struct xen_sysctl_coverage_op xen_sysctl_coverage_op_t;
+ DEFINE_XEN_GUEST_HANDLE(xen_sysctl_coverage_op_t);
+ 
++#define XEN_SYSCTL_PSR_CMT_get_total_rmid            0
++#define XEN_SYSCTL_PSR_CMT_get_l3_upscaling_factor   1
++/* The L3 cache size is returned in KB unit */
++#define XEN_SYSCTL_PSR_CMT_get_l3_cache_size         2
++#define XEN_SYSCTL_PSR_CMT_enabled                   3
++struct xen_sysctl_psr_cmt_op {
++    uint32_t cmd;
++    uint32_t flags;      /* padding variable, may be extended for future use */
++    uint64_t data;
++};
++typedef struct xen_sysctl_psr_cmt_op xen_sysctl_psr_cmt_op_t;
++DEFINE_XEN_GUEST_HANDLE(xen_sysctl_psr_cmt_op_t);
+ 
+ struct xen_sysctl {
+     uint32_t cmd;
+@@ -658,6 +670,7 @@ struct xen_sysctl {
+ #define XEN_SYSCTL_cpupool_op                    18
+ #define XEN_SYSCTL_scheduler_op                  19
+ #define XEN_SYSCTL_coverage_op                   20
++#define XEN_SYSCTL_psr_cmt_op                    21
+     uint32_t interface_version; /* XEN_SYSCTL_INTERFACE_VERSION */
+     union {
+         struct xen_sysctl_readconsole       readconsole;
+@@ -679,6 +692,7 @@ struct xen_sysctl {
+         struct xen_sysctl_cpupool_op        cpupool_op;
+         struct xen_sysctl_scheduler_op      scheduler_op;
+         struct xen_sysctl_coverage_op       coverage_op;
++        struct xen_sysctl_psr_cmt_op        psr_cmt_op;
+         uint8_t                             pad[128];
+     } u;
+ };
+-- 
+1.7.9.5
+

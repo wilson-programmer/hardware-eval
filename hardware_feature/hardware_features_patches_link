@@ -1,0 +1,59 @@
+patches Mailing list link : https://lore.kernel.org/xen-devel/?q=mba
+
+MBA: https://lore.kernel.org/xen-devel/?q=mba&r : result of research of MBA in the mailing list
+   1) https://lore.kernel.org/xen-devel/1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com/ The rest of patches have their link in the same page
+   
+
+MBM: https://lore.kernel.org/xen-devel/?q=mbm&r= : result of research of MBM in the mailing list
+   2) https://lore.kernel.org/xen-devel/1420629125-17725-1-git-send-email-chao.p.peng@linux.intel.com/ The rest of patches have their link in the same page
+   
+
+CDP: https://lore.kernel.org/xen-devel/?q=cdp&r : result of research of CDP in the mailing list
+   2) https://lore.kernel.org/xen-devel/1441182482-7688-1-git-send-email-he.chen@linux.intel.com/ The rest of patches have their link in the same page
+
+
+CAT: https://lore.kernel.org/xen-devel/?q=CAT&r : result of research of CDP in the mailing list
+   2) https://lore.kernel.org/xen-devel/1428571105-3604-4-git-send-email-chao.p.peng@linux.intel.com/ The rest of patches have their link in the same page
+   
+   
+   
+VPID: https://lore.kernel.org/xen-devel/?q=VPID&r= : result of research of VPID in the mailing list
+   2) https://lore.kernel.org/xen-devel/2D848F959C03D945A84E9EDE7F7BFE42161533@orsmsx424.amr.corp.intel.com/ The rest of patches have their link in the same page   
+
+PML: https://lore.kernel.org/xen-devel/?q=pml&o=200 : result of research of PML in the mailing list
+  2) https://lore.kernel.org/xen-devel/1429081433-9600-1-git-send-email-kai.huang@linux.intel.com/
+
+CMT: https://lore.kernel.org/xen-devel/?q=cmt&o=400
+  2) https://lore.kernel.org/xen-devel/1412249735-4215-1-git-send-email-chao.p.peng@linux.intel.com/
+
+EPT: https://lore.kernel.org/xen-devel/?q=ept&o=7800
+  2) https://lore.kernel.org/xen-devel/9A1462408D6D394C8A7A812E98F00A4D02AE342F@pdsmsx413.ccr.corp.intel.com/
+  
+  
+
+Lien pour Télécharger les patchs.
+https://patchwork.kernel.org/project/xen-devel/list/?series=&submitter=&state=*&q=mba&archive=true&delegate=
+
+
+For PML use an ubuntu 14 with 3.13.0-24-generic kernel
+Xen hypervisor: lastest upstream Xen
+dom0 kernel: 3.16.0
+   
+
+
+ 
+Fork Nox
+BusyBox minimal kernel
+ship an hyprvisor in a linux kernel module
+
+
+Micro benchmark : Increase the number of thread.
+levelDB Benchmark
+PARSEC dedup
+
+Virtual machine observability
+
+Microbenchmark
+Hackbench, Schbench
+
+

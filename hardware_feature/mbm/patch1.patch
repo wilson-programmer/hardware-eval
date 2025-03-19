@@ -1,0 +1,66 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v2 1/5] x86: expose CMT L3 event mask to user
+	space
+Date: Wed,  7 Jan 2015 19:12:01 +0800
+Message-ID: <1420629125-17725-2-git-send-email-chao.p.peng@linux.intel.com>
+References: <1420629125-17725-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1420629125-17725-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: wei.liu2@citrix.com, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+L3 event mask indicates the event types supported in host, including
+cache occupancy event as well as local/total memory bandwidth events
+for Memory Bandwidth Monitoring(MBM). Expose it so all these events
+can be monitored in user space.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+---
+ xen/arch/x86/sysctl.c       |    3 +++
+ xen/include/public/sysctl.h |    1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/xen/arch/x86/sysctl.c b/xen/arch/x86/sysctl.c
+index 57ad992..611a291 100644
+--- a/xen/arch/x86/sysctl.c
++++ b/xen/arch/x86/sysctl.c
+@@ -157,6 +157,9 @@ long arch_do_sysctl(
+             sysctl->u.psr_cmt_op.u.data = (ret ? 0 : info.size);
+             break;
+         }
++        case XEN_SYSCTL_PSR_CMT_get_l3_event_mask:
++            sysctl->u.psr_cmt_op.u.data = psr_cmt->l3.features;
++            break;
+         default:
+             sysctl->u.psr_cmt_op.u.data = 0;
+             ret = -ENOSYS;
+diff --git a/xen/include/public/sysctl.h b/xen/include/public/sysctl.h
+index b3713b3..8552dc6 100644
+--- a/xen/include/public/sysctl.h
++++ b/xen/include/public/sysctl.h
+@@ -641,6 +641,7 @@ DEFINE_XEN_GUEST_HANDLE(xen_sysctl_coverage_op_t);
+ /* The L3 cache size is returned in KB unit */
+ #define XEN_SYSCTL_PSR_CMT_get_l3_cache_size         2
+ #define XEN_SYSCTL_PSR_CMT_enabled                   3
++#define XEN_SYSCTL_PSR_CMT_get_l3_event_mask         4
+ struct xen_sysctl_psr_cmt_op {
+     uint32_t cmd;       /* IN: XEN_SYSCTL_PSR_CMT_* */
+     uint32_t flags;     /* padding variable, may be extended for future use */
+-- 
+1.7.9.5
+
