@@ -1,0 +1,88 @@
+From 40685f9283bcbd672a8d36e8ec617d4246ba9c4c Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Tue, 14 Nov 2023 13:56:39 +0100
+Subject: [PATCH] iommu/vt-d: fix SAGAW capability parsing
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+SAGAW is a bitmap field, with bits 1, 2 and 3 signaling support for 3, 4 and 5
+level page tables respectively.  According to the Intel VT-d specification, an
+IOMMU can report multiple SAGAW bits being set.
+
+Commit 859d11b27912 claims to replace the open-coded find_first_set_bit(), but
+it's actually replacing an open coded implementation to find the last set bit.
+The change forces the used AGAW to the lowest supported by the IOMMU instead of
+the highest one between 1 and 2.
+
+Restore the previous SAGAW parsing by using fls() instead of
+find_first_set_bit(), in order to get the highest (supported) AGAW to be used.
+
+However there's a caveat related to the value the AW context entry field must
+be set to when using passthrough mode:
+
+"When the Translation-type (TT) field indicates pass-through processing (10b),
+this field must be programmed to indicate the largest AGAW value supported by
+hardware." [0]
+
+Newer Intel IOMMU implementations support 5 level page tables for the IOMMU,
+and signal such support in SAGAW bit 3.
+
+Enabling 5 level paging support (AGAW 3) is too risky at this point in the Xen
+4.18 release, so instead put a bodge to unconditionally disable passthough
+mode if SAGAW has any bits greater than 2 set.  Ignore bit 0; it's reserved in
+current specifications, but had a meaning in the past and is unlikely to be
+reused in the future.
+
+Note the message about unhandled SAGAW bits being set is printed
+unconditionally, regardless of whether passthrough mode is enabled.  This is
+done in order to easily notice IOMMU implementations with not yet supported
+SAGAW values.
+
+[0] Intel VT Directed Spec Rev 4.1
+
+Fixes: 859d11b27912 ('VT-d: prune SAGAW recognition')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 474fc7d3c6525e209bd2fe1e6ef0bbb34de86bb4
+master date: 2023-10-19 21:52:52 +0100
+---
+ xen/drivers/passthrough/vtd/iommu.c | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index cde67b9574..b4c11a6b48 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -1330,15 +1330,25 @@ int __init iommu_alloc(struct acpi_drhd_unit *drhd)
+ 
+     /* Calculate number of pagetable levels: 3 or 4. */
+     sagaw = cap_sagaw(iommu->cap);
+-    if ( sagaw & 6 )
+-        agaw = find_first_set_bit(sagaw & 6);
+-    if ( !agaw )
++    agaw = fls(sagaw & 6) - 1;
++    if ( agaw <= 0 )
+     {
+         printk(XENLOG_ERR VTDPREFIX "IOMMU: unsupported sagaw %x\n", sagaw);
+         print_iommu_regs(drhd);
+         rc = -ENODEV;
+         goto free;
+     }
++
++    if ( sagaw >> 3 )
++    {
++        printk_once(XENLOG_WARNING VTDPREFIX
++                    " Unhandled bits in SAGAW %#x%s\n",
++                    sagaw,
++                    iommu_hwdom_passthrough ? ", disabling passthrough" : "");
++
++        iommu_hwdom_passthrough = false;
++    }
++
+     iommu->nr_pt_levels = agaw_to_level(agaw);
+     if ( min_pt_levels > iommu->nr_pt_levels )
+         min_pt_levels = iommu->nr_pt_levels;
+-- 
+2.30.2
+

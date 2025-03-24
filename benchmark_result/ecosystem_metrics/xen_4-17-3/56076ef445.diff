@@ -1,0 +1,50 @@
+From 56076ef445073458c39c481f9b70c3b4ff848839 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Wed, 5 Jul 2023 08:27:51 +0200
+Subject: [PATCH] build: remove TARGET_SUBARCH, a duplicate of ARCH
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit a6ab7dd061338c33faef629cbe52ed1608571d84)
+---
+ xen/Makefile | 3 +--
+ xen/build.mk | 2 +-
+ 2 files changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/xen/Makefile b/xen/Makefile
+index 7ecfa6e8e9..6e89bcf348 100644
+--- a/xen/Makefile
++++ b/xen/Makefile
+@@ -234,7 +234,7 @@ include scripts/Kbuild.include
+ # we need XEN_TARGET_ARCH to generate the proper config
+ include $(XEN_ROOT)/Config.mk
+ 
+-# Set ARCH/SUBARCH appropriately.
++# Set ARCH/SRCARCH appropriately.
+ 
+ ARCH := $(XEN_TARGET_ARCH)
+ SRCARCH := $(shell echo $(ARCH) | \
+@@ -242,7 +242,6 @@ SRCARCH := $(shell echo $(ARCH) | \
+         -e 's/riscv.*/riscv/g')
+ export ARCH SRCARCH
+ 
+-export TARGET_SUBARCH  := $(XEN_TARGET_ARCH)
+ export TARGET_ARCH     := $(shell echo $(XEN_TARGET_ARCH) | \
+                             sed -e 's/x86.*/x86/' -e s'/arm\(32\|64\)/arm/g' \
+                                 -e s'/riscv.*/riscv/g')
+diff --git a/xen/build.mk b/xen/build.mk
+index 758590c68e..d049d3a53a 100644
+--- a/xen/build.mk
++++ b/xen/build.mk
+@@ -41,7 +41,7 @@ include/xen/compile.h: include/xen/compile.h.in .banner FORCE
+ targets += include/xen/compile.h
+ 
+ -include $(wildcard .asm-offsets.s.d)
+-asm-offsets.s: arch/$(TARGET_ARCH)/$(TARGET_SUBARCH)/asm-offsets.c
++asm-offsets.s: arch/$(TARGET_ARCH)/$(ARCH)/asm-offsets.c
+ 	$(CC) $(call cpp_flags,$(c_flags)) -S -g0 -o $@.new -MQ $@ $<
+ 	$(call move-if-changed,$@.new,$@)
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,60 @@
+From a43eb8a1dce479b4574d255cc0e954be15052449 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Fri, 25 Oct 2019 11:56:07 +0200
+Subject: [PATCH] vpci: honor read-only devices
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Don't allow the hardware domain write access the PCI config space of
+devices marked as read-only.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 79f9ba78380fb3f4bf509e5c726c6cdd76e00c4f
+master date: 2019-09-17 16:13:39 +0200
+---
+ tools/tests/vpci/emul.h | 3 +++
+ xen/drivers/vpci/vpci.c | 5 +++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/tools/tests/vpci/emul.h b/tools/tests/vpci/emul.h
+index 5d47544bf7..2e1d3057c9 100644
+--- a/tools/tests/vpci/emul.h
++++ b/tools/tests/vpci/emul.h
+@@ -92,6 +92,9 @@ typedef union {
+ #define xfree(p) free(p)
+ 
+ #define pci_get_pdev_by_domain(...) &test_pdev
++#define pci_get_ro_map(...) NULL
++
++#define test_bit(...) false
+ 
+ /* Dummy native helpers. Writes are ignored, reads return 1's. */
+ #define pci_conf_read8(...)     0xff
+diff --git a/xen/drivers/vpci/vpci.c b/xen/drivers/vpci/vpci.c
+index 82607bdb9a..986da948f4 100644
+--- a/xen/drivers/vpci/vpci.c
++++ b/xen/drivers/vpci/vpci.c
+@@ -421,6 +421,7 @@ void vpci_write(pci_sbdf_t sbdf, unsigned int reg, unsigned int size,
+     const struct pci_dev *pdev;
+     const struct vpci_register *r;
+     unsigned int data_offset = 0;
++    const unsigned long *ro_map = pci_get_ro_map(sbdf.seg);
+ 
+     if ( !size )
+     {
+@@ -428,6 +429,10 @@ void vpci_write(pci_sbdf_t sbdf, unsigned int reg, unsigned int size,
+         return;
+     }
+ 
++    if ( ro_map && test_bit(sbdf.bdf, ro_map) )
++        /* Ignore writes to read-only devices. */
++        return;
++
+     /*
+      * Find the PCI dev matching the address.
+      * Passthrough everything that's not trapped.
+-- 
+2.30.2
+

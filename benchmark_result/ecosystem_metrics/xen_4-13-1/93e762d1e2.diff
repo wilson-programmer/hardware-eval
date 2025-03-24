@@ -1,0 +1,106 @@
+From 93e762d1e2a769b11de5a725e8c59872ae9e055d Mon Sep 17 00:00:00 2001
+From: "YOUNG, MICHAEL A" <m.a.young@durham.ac.uk>
+Date: Tue, 17 Mar 2020 23:01:43 +0000
+Subject: [PATCH] tools/python: mismatch between pyxc_methods flags and
+ PyObject definitions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+pygrub in xen-4.13.0 with python 3.8.2 fails with the error
+
+Traceback (most recent call last):
+  File "/usr/libexec/xen/bin/pygrub", line 21, in <module>
+    import xen.lowlevel.xc
+SystemError: bad call flags
+
+This patch fixes mismatches in tools/python/xen/lowlevel/xc/xc.c
+between the flag bits defined in pyxc_methods and the parameters passed
+to the corresponding PyObject definitions.
+
+With this patch applied pygrub works as expected.
+
+Signed-off-by: Michael Young <m.a.young@durham.ac.uk>
+Reviewed-by: Wei Liu <wl@xen.org>
+Acked-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+(cherry picked from commit e19b4b3b55f84e0cfcc02fe5d66965969a81c965)
+---
+ tools/python/xen/lowlevel/xc/xc.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/tools/python/xen/lowlevel/xc/xc.c b/tools/python/xen/lowlevel/xc/xc.c
+index a751e85910..80b3452ac2 100644
+--- a/tools/python/xen/lowlevel/xc/xc.c
++++ b/tools/python/xen/lowlevel/xc/xc.c
+@@ -2106,7 +2106,7 @@ static PyMethodDef pyxc_methods[] = {
+ 
+     { "gnttab_hvm_seed",
+       (PyCFunction)pyxc_gnttab_hvm_seed,
+-      METH_KEYWORDS, "\n"
++      METH_VARARGS | METH_KEYWORDS, "\n"
+       "Initialise HVM guest grant table.\n"
+       " dom     [int]:      Identifier of domain to build into.\n"
+       " console_gmfn [int]: \n"
+@@ -2175,7 +2175,7 @@ static PyMethodDef pyxc_methods[] = {
+ 
+     { "sched_credit_domain_set",
+       (PyCFunction)pyxc_sched_credit_domain_set,
+-      METH_KEYWORDS, "\n"
++      METH_VARARGS | METH_KEYWORDS, "\n"
+       "Set the scheduling parameters for a domain when running with the\n"
+       "SMP credit scheduler.\n"
+       " domid     [int]:   domain id to set\n"
+@@ -2193,7 +2193,7 @@ static PyMethodDef pyxc_methods[] = {
+ 
+     { "sched_credit2_domain_set",
+       (PyCFunction)pyxc_sched_credit2_domain_set,
+-      METH_KEYWORDS, "\n"
++      METH_VARARGS | METH_KEYWORDS, "\n"
+       "Set the scheduling parameters for a domain when running with the\n"
+       "SMP credit2 scheduler.\n"
+       " domid     [int]:   domain id to set\n"
+@@ -2491,21 +2491,21 @@ static PyMethodDef pyxc_methods[] = {
+ 
+     { "flask_context_to_sid",
+       (PyCFunction)pyflask_context_to_sid,
+-      METH_KEYWORDS, "\n"
++      METH_VARARGS | METH_KEYWORDS, "\n"
+       "Convert a context string to a dynamic SID.\n"
+       " context [str]: String specifying context to be converted\n"
+       "Returns: [int]: Numeric SID on success; -1 on error.\n" },
+ 
+     { "flask_sid_to_context",
+       (PyCFunction)pyflask_sid_to_context,
+-      METH_KEYWORDS, "\n"
++      METH_VARARGS | METH_KEYWORDS, "\n"
+       "Convert a dynamic SID to context string.\n"
+       " context [int]: SID to be converted\n"
+       "Returns: [str]: Numeric SID on success; -1 on error.\n" },
+ 
+     { "flask_load",
+       (PyCFunction)pyflask_load,
+-      METH_KEYWORDS, "\n"
++      METH_VARARGS | METH_KEYWORDS, "\n"
+       "Loads a policy into the hypervisor.\n"
+       " policy [str]: policy to be load\n"
+       "Returns: [int]: 0 on success; -1 on failure.\n" }, 
+@@ -2518,14 +2518,14 @@ static PyMethodDef pyxc_methods[] = {
+ 
+     { "flask_setenforce",
+       (PyCFunction)pyflask_setenforce,
+-      METH_KEYWORDS, "\n"
++      METH_VARARGS | METH_KEYWORDS, "\n"
+       "Modifies the current mode for the Flask XSM module.\n"
+       " mode [int]: mode to change to\n"
+       "Returns: [int]: 0 on success; -1 on failure.\n" }, 
+ 
+     { "flask_access",
+       (PyCFunction)pyflask_access,
+-      METH_KEYWORDS, "\n"
++      METH_VARARGS | METH_KEYWORDS, "\n"
+       "Returns whether a source context has access to target context based on \
+        class and permissions requested.\n"
+       " scon [str]: source context\n"
+-- 
+2.30.2
+

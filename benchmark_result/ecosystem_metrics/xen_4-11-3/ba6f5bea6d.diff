@@ -1,0 +1,50 @@
+From ba6f5bea6d725a3e5358108731ffc5fd1594b754 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Fri, 25 Oct 2019 12:00:09 +0200
+Subject: [PATCH] x86/crash: force unlock console before printing on kexec
+ crash
+
+There is a small window where shootdown NMI might come to a CPU
+(e.g. in serial interrupt handler) where console lock is taken. In order
+not to leave following console prints waiting infinitely for shot down
+CPUs to free the lock - force unlock the console.
+
+The race has been frequently observed while crashing nested Xen in
+an HVM domain.
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 7d5247cee21aa38a16c4b21bc9243eda70c8aebd
+master date: 2019-10-02 11:25:05 +0100
+---
+ xen/arch/x86/crash.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/xen/arch/x86/crash.c b/xen/arch/x86/crash.c
+index d4fc136a86..4db0758a88 100644
+--- a/xen/arch/x86/crash.c
++++ b/xen/arch/x86/crash.c
+@@ -30,6 +30,7 @@
+ #include <asm/io_apic.h>
+ #include <xen/iommu.h>
+ #include <asm/hpet.h>
++#include <xen/console.h>
+ 
+ static cpumask_t waiting_to_crash;
+ static unsigned int crashing_cpu;
+@@ -155,6 +156,12 @@ static void nmi_shootdown_cpus(void)
+         msecs--;
+     }
+ 
++    /*
++     * We may have NMI'd another CPU while it was holding the console lock.
++     * It won't be in a position to release the lock...
++     */
++    console_force_unlock();
++
+     /* Leave a hint of how well we did trying to shoot down the other cpus */
+     if ( cpumask_empty(&waiting_to_crash) )
+         printk("Shot down all CPUs\n");
+-- 
+2.30.2
+

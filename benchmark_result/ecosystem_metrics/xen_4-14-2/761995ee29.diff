@@ -1,0 +1,42 @@
+From 761995ee29ac7c43d88a5e853f0a75a653b23b11 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Fri, 5 Mar 2021 15:26:05 +0100
+Subject: [PATCH] x86/vioapic: check IRR before attempting to inject interrupt
+ after EOI
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+In vioapic_update_EOI the irq_lock will be dropped in order to forward
+the EOI to the dpci handler, so there's a window between clearing IRR
+and checking if the line is asserted where IRR can change behind our
+back.
+
+Fix this by checking whether IRR is set before attempting to inject a
+new interrupt.
+
+Fixes: 06e3f8f2766 ('vt-d: Do dpci eoi outside of irq_lock.')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: ba584fb1a26c058ebd0e6a2779287b3e4400415c
+master date: 2021-01-22 12:13:05 +0100
+---
+ xen/arch/x86/hvm/vioapic.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/vioapic.c b/xen/arch/x86/hvm/vioapic.c
+index abb27a5704..99e137df33 100644
+--- a/xen/arch/x86/hvm/vioapic.c
++++ b/xen/arch/x86/hvm/vioapic.c
+@@ -544,7 +544,7 @@ void vioapic_update_EOI(struct domain *d, u8 vector)
+             }
+ 
+             if ( (ent->fields.trig_mode == VIOAPIC_LEVEL_TRIG) &&
+-                 !ent->fields.mask &&
++                 !ent->fields.mask && !ent->fields.remote_irr &&
+                  hvm_irq->gsi_assert_count[vioapic->base_gsi + pin] )
+             {
+                 ent->fields.remote_irr = 1;
+-- 
+2.30.2
+

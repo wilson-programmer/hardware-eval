@@ -1,0 +1,124 @@
+From f77cedca537078a8886b1b2997c79faaecaeddcc Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 21 Jun 2019 12:17:16 +0200
+Subject: [PATCH] XSM: adjust Kconfig names
+
+Since the Kconfig option renaming was not backported, the new uses of
+involved CONFIG_* settings should have been adopted to the existing
+names in the XSA-295 series. Do this now, also changing XSM_SILO to just
+SILO to better match its FLASK counterpart.
+
+To avoid breaking the Kconfig menu structure also adjust XSM_POLICY's
+dependency (as was also silently done on master during the renaming).
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Julien Grall <julien.grall@arm.com>
+---
+ xen/common/Kconfig    | 14 +++++++-------
+ xen/include/xsm/xsm.h |  2 +-
+ xen/xsm/Makefile      |  2 +-
+ xen/xsm/xsm_core.c    |  8 ++++----
+ 4 files changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/xen/common/Kconfig b/xen/common/Kconfig
+index 97229c2f71..ea092b381d 100644
+--- a/xen/common/Kconfig
++++ b/xen/common/Kconfig
+@@ -127,7 +127,7 @@ config FLASK_AVC_STATS
+ config XSM_POLICY
+ 	bool "Compile Xen with a built-in security policy"
+ 	default y if HAS_CHECKPOLICY = "y"
+-	depends on XSM
++	depends on FLASK
+ 	---help---
+ 	  This includes a default XSM policy in the hypervisor so that the
+ 	  bootloader does not need to load a policy to get sane behavior from an
+@@ -140,7 +140,7 @@ config XSM_POLICY
+ 
+ 	  If unsure, say Y.
+ 
+-config XSM_SILO
++config SILO
+ 	def_bool y
+ 	prompt "SILO support"
+ 	depends on XSM
+@@ -155,16 +155,16 @@ config XSM_SILO
+ choice
+ 	prompt "Default XSM implementation"
+ 	depends on XSM
+-	default XSM_SILO_DEFAULT if XSM_SILO && ARM
+-	default XSM_FLASK_DEFAULT if XSM_FLASK
+-	default XSM_SILO_DEFAULT if XSM_SILO
++	default XSM_SILO_DEFAULT if SILO && ARM
++	default XSM_FLASK_DEFAULT if FLASK
++	default XSM_SILO_DEFAULT if SILO
+ 	default XSM_DUMMY_DEFAULT
+ 	config XSM_DUMMY_DEFAULT
+ 		bool "Match non-XSM behavior"
+ 	config XSM_FLASK_DEFAULT
+-		bool "FLux Advanced Security Kernel" if XSM_FLASK
++		bool "FLux Advanced Security Kernel" if FLASK
+ 	config XSM_SILO_DEFAULT
+-		bool "SILO" if XSM_SILO
++		bool "SILO" if SILO
+ endchoice
+ 
+ config LATE_HWDOM
+diff --git a/xen/include/xsm/xsm.h b/xen/include/xsm/xsm.h
+index 0845cb06ae..2a299f7569 100644
+--- a/xen/include/xsm/xsm.h
++++ b/xen/include/xsm/xsm.h
+@@ -734,7 +734,7 @@ extern const unsigned char xsm_init_policy[];
+ extern const unsigned int xsm_init_policy_size;
+ #endif
+ 
+-#ifdef CONFIG_XSM_SILO
++#ifdef CONFIG_SILO
+ extern void silo_init(void);
+ #else
+ static inline void silo_init(void) {}
+diff --git a/xen/xsm/Makefile b/xen/xsm/Makefile
+index 50e21303b3..0f0d7f9ad4 100644
+--- a/xen/xsm/Makefile
++++ b/xen/xsm/Makefile
+@@ -1,6 +1,6 @@
+ obj-y += xsm_core.o
+ obj-$(CONFIG_XSM) += xsm_policy.o
+ obj-$(CONFIG_XSM) += dummy.o
+-obj-$(CONFIG_XSM_SILO) += silo.o
++obj-$(CONFIG_SILO) += silo.o
+ 
+ subdir-$(CONFIG_FLASK) += flask
+diff --git a/xen/xsm/xsm_core.c b/xen/xsm/xsm_core.c
+index 2a2100929d..e8b0718e96 100644
+--- a/xen/xsm/xsm_core.c
++++ b/xen/xsm/xsm_core.c
+@@ -34,9 +34,9 @@ enum xsm_bootparam {
+ };
+ 
+ static enum xsm_bootparam __initdata xsm_bootparam =
+-#ifdef CONFIG_XSM_FLASK_DEFAULT
++#if defined(CONFIG_XSM_FLASK_DEFAULT)
+     XSM_BOOTPARAM_FLASK;
+-#elif CONFIG_XSM_SILO_DEFAULT
++#elif defined(CONFIG_XSM_SILO_DEFAULT)
+     XSM_BOOTPARAM_SILO;
+ #else
+     XSM_BOOTPARAM_DUMMY;
+@@ -48,11 +48,11 @@ static int __init parse_xsm_param(const char *s)
+ 
+     if ( !strcmp(s, "dummy") )
+         xsm_bootparam = XSM_BOOTPARAM_DUMMY;
+-#ifdef CONFIG_XSM_FLASK
++#ifdef CONFIG_FLASK
+     else if ( !strcmp(s, "flask") )
+         xsm_bootparam = XSM_BOOTPARAM_FLASK;
+ #endif
+-#ifdef CONFIG_XSM_SILO
++#ifdef CONFIG_SILO
+     else if ( !strcmp(s, "silo") )
+         xsm_bootparam = XSM_BOOTPARAM_SILO;
+ #endif
+-- 
+2.30.2
+

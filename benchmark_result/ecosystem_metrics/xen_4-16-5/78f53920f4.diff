@@ -1,0 +1,25 @@
+From 78f53920f406fe973bb70011ae36d6a53abf6942 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 18 Jul 2023 10:26:07 +0200
+Subject: [PATCH] update qemuu tag
+
+---
+ Config.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Config.mk b/Config.mk
+index 5b27248329..e3cf81f274 100644
+--- a/Config.mk
++++ b/Config.mk
+@@ -238,7 +238,7 @@ SEABIOS_UPSTREAM_URL ?= git://xenbits.xen.org/seabios.git
+ MINIOS_UPSTREAM_URL ?= git://xenbits.xen.org/mini-os.git
+ endif
+ OVMF_UPSTREAM_REVISION ?= 7b4a99be8a39c12d3a7fc4b8db9f0eab4ac688d5
+-QEMU_UPSTREAM_REVISION ?= qemu-xen-4.16.4
++QEMU_UPSTREAM_REVISION ?= c02cb236b5e4a76cf74e641cc35a0e3ebd3e52f3
+ MINIOS_UPSTREAM_REVISION ?= xen-RELEASE-4.16.4
+ 
+ SEABIOS_UPSTREAM_REVISION ?= rel-1.16.0
+-- 
+2.30.2
+

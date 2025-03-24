@@ -1,0 +1,39 @@
+From 30d3de4c61c297e12662df1fdb89af335947e59d Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 27 Jul 2022 09:31:31 +0200
+Subject: [PATCH] x86: also suppress use of MMX insns
+
+Passing -mno-sse alone is not enough: The compiler may still find
+(questionable) reasons to use MMX insns. In particular with gcc12 use
+of MOVD+PUNPCKLDQ+MOVQ was observed in an apparent attempt to auto-
+vectorize the storing of two adjacent zeroes, 32 bits each.
+
+Reported-by: ChrisD <chris@dalessio.org>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 6fe2e39a0243bddba60f83b77b972a5922d25eb8
+master date: 2022-07-20 15:48:49 +0200
+---
+ xen/arch/x86/arch.mk | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/arch.mk b/xen/arch/x86/arch.mk
+index 456e5d5c1a..c4337a1a11 100644
+--- a/xen/arch/x86/arch.mk
++++ b/xen/arch/x86/arch.mk
+@@ -37,9 +37,9 @@ $(call as-option-add,CFLAGS,CC,\
+ 
+ CFLAGS += -mno-red-zone -fpic
+ 
+-# Xen doesn't use SSE interally.  If the compiler supports it, also skip the
+-# SSE setup for variadic function calls.
+-CFLAGS += -mno-sse $(call cc-option,$(CC),-mskip-rax-setup)
++# Xen doesn't use MMX or SSE interally.  If the compiler supports it, also skip
++# the SSE setup for variadic function calls.
++CFLAGS += -mno-mmx -mno-sse $(call cc-option,$(CC),-mskip-rax-setup)
+ 
+ # Compile with thunk-extern, indirect-branch-register if avaiable.
+ CFLAGS-$(CONFIG_INDIRECT_THUNK) += -mindirect-branch=thunk-extern
+-- 
+2.30.2
+

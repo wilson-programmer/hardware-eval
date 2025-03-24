@@ -1,0 +1,52 @@
+From 35fcb982ea16c40619fee8bba4789a94d824521e Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 31 May 2018 16:57:47 +0100
+Subject: [PATCH] x86/VT-x: Fix printing of EFER in vmcs_dump_vcpu()
+
+This is essentially a "take 2" of c/s 82540b66ce "x86/VT-x: Fix determination
+of EFER.LMA in vmcs_dump_vcpu()" because in hindight, that change was more
+problematic than useful.
+
+The original reason was to fix the logic for determining when not to print the
+PDPTE pointers.  However, mutating the efer variable (particularly LME and
+LMA) before printing it interferes with diagnosing vmentry failures.
+
+Instead of modifying efer, change the PDPTE conditional to use
+VM_ENTRY_IA32E_MODE.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Kevin Tian <kevin.tian@intel.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+---
+ xen/arch/x86/hvm/vmx/vmcs.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmcs.c b/xen/arch/x86/hvm/vmx/vmcs.c
+index 70c2fb7482..b783ff0d45 100644
+--- a/xen/arch/x86/hvm/vmx/vmcs.c
++++ b/xen/arch/x86/hvm/vmx/vmcs.c
+@@ -1788,10 +1788,7 @@ void vmcs_dump_vcpu(struct vcpu *v)
+     vmentry_ctl = vmr32(VM_ENTRY_CONTROLS),
+     vmexit_ctl = vmr32(VM_EXIT_CONTROLS);
+     cr4 = vmr(GUEST_CR4);
+-
+-    /* EFER.LMA is read as zero, and is loaded from vmentry_ctl on entry. */
+-    BUILD_BUG_ON(VM_ENTRY_IA32E_MODE << 1 != EFER_LMA);
+-    efer = vmr(GUEST_EFER) | ((vmentry_ctl & VM_ENTRY_IA32E_MODE) << 1);
++    efer = vmr(GUEST_EFER);
+ 
+     printk("*** Guest State ***\n");
+     printk("CR0: actual=0x%016lx, shadow=0x%016lx, gh_mask=%016lx\n",
+@@ -1801,7 +1798,7 @@ void vmcs_dump_vcpu(struct vcpu *v)
+     printk("CR3 = 0x%016lx\n", vmr(GUEST_CR3));
+     if ( (v->arch.hvm_vmx.secondary_exec_control &
+           SECONDARY_EXEC_ENABLE_EPT) &&
+-         (cr4 & X86_CR4_PAE) && !(efer & EFER_LMA) )
++         (cr4 & X86_CR4_PAE) && !(vmentry_ctl & VM_ENTRY_IA32E_MODE) )
+     {
+         printk("PDPTE0 = 0x%016lx  PDPTE1 = 0x%016lx\n",
+                vmr(GUEST_PDPTE(0)), vmr(GUEST_PDPTE(1)));
+-- 
+2.30.2
+

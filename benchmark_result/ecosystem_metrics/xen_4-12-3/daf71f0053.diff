@@ -1,0 +1,64 @@
+From daf71f0053e21ebefb0e21431ef48d53af1c3b31 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 28 Jan 2020 06:21:07 +0000
+Subject: [PATCH] docs: document CONTROL command of xenstore protocol
+
+The CONTROL command (former DEBUG command) isn't specified in the
+xenstore protocol doc. Add it.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Ian Jackson <ian.jackson@eu.citrix.com>
+Backport: 4.9+
+(cherry picked from commit f910c3ebc6a178c5cbbc0868134be536fae7f7cf)
+---
+ docs/misc/xenstore.txt | 36 ++++++++++++++++++++++++++++--------
+ 1 file changed, 28 insertions(+), 8 deletions(-)
+
+diff --git a/docs/misc/xenstore.txt b/docs/misc/xenstore.txt
+index 65570183b6..6f8569d576 100644
+--- a/docs/misc/xenstore.txt
++++ b/docs/misc/xenstore.txt
+@@ -318,12 +318,32 @@ SET_TARGET		<domid>|<tdomid>|
+ 
+ ---------- Miscellaneous ----------
+ 
+-DEBUG			print|<string>|??	    sends <string> to debug log
+-DEBUG			print|<thing-with-no-nul>   EINVAL
+-DEBUG			check|??		    checks xenstored innards
+-DEBUG			<anything-else|>	    no-op (future extension)
+-
+-	These requests should not generally be used and may be
+-	withdrawn in the future.
+-
++CONTROL			<command>|[<parameters>|]
++	Send a control command <command> with optional parameters
++	(<parameters>) to Xenstore daemon.
++
++	The set of commands and their semantics is implementation
++	specific and is likely to change from one Xen version to the
++	next.  Out-of-tree users will encounter compatibility issues.
++
++	Current commands are:
++	check
++		checks xenstored innards
++	log|on
++		turn xenstore logging on
++	log|off
++		turn xenstore logging off
++	logfile|<file-name>
++		log to specified file
++	memreport|[<file-name>]
++		print memory statistics to logfile (no <file-name>
++		specified) or to specific file
++	print|<string>
++		print <string> to syslog (xenstore runs as daemon) or
++		to console (xenstore runs as stubdom)
++	help			<supported-commands>
++		return list of supported commands for CONTROL
++
++DEBUG
++	Deprecated, now named CONTROL
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,28 @@
+From f241cc48dabeef6cb0b381db62f2562b0a3970eb Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Tue, 12 Jul 2022 11:26:47 +0200
+Subject: [PATCH] tools/helpers: fix build of xen-init-dom0 with -Werror
+
+Missing prototype of asprintf() without _GNU_SOURCE.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Henry Wang <Henry.Wang@arm.com>
+master commit: d693b22733044d68e9974766b5c9e6259c9b1708
+master date: 2022-07-12 08:38:35 +0200
+---
+ tools/helpers/xen-init-dom0.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tools/helpers/xen-init-dom0.c b/tools/helpers/xen-init-dom0.c
+index c99224a4b6..b4861c9e80 100644
+--- a/tools/helpers/xen-init-dom0.c
++++ b/tools/helpers/xen-init-dom0.c
+@@ -1,3 +1,5 @@
++#define _GNU_SOURCE
++
+ #include <stdlib.h>
+ #include <stdint.h>
+ #include <string.h>
+-- 
+2.30.2
+

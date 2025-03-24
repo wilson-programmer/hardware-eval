@@ -1,0 +1,41 @@
+From 14828076057572f99fd66acd3f9e122cfcffb03a Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Thu, 5 Mar 2020 10:58:58 +0100
+Subject: [PATCH] xen/x86: domctl: Don't leak data via XEN_DOMCTL_gethvmcontext
+
+The HVM context may not fill up the full buffer passed by the caller.
+While we report corectly the size of the context, we will still be
+copying back the full size of the buffer.
+
+As the buffer is allocated through xmalloc(), we will be copying some
+bits from the previous allocation.
+
+Only copy back the part of the buffer used by the HVM context to prevent
+any leak.
+
+Note that per XSA-72, this is not a security issue.
+
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 41d8869003e96d8b7250ad1d0246371d6929aca6
+master date: 2020-01-31 18:51:38 +0000
+---
+ xen/arch/x86/domctl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/domctl.c b/xen/arch/x86/domctl.c
+index b461aadbd6..7aed545d2d 100644
+--- a/xen/arch/x86/domctl.c
++++ b/xen/arch/x86/domctl.c
+@@ -538,7 +538,7 @@ long arch_do_domctl(
+         domain_unpause(d);
+ 
+         domctl->u.hvmcontext.size = c.cur;
+-        if ( copy_to_guest(domctl->u.hvmcontext.buffer, c.data, c.size) != 0 )
++        if ( copy_to_guest(domctl->u.hvmcontext.buffer, c.data, c.cur) != 0 )
+             ret = -EFAULT;
+ 
+     gethvmcontext_out:
+-- 
+2.30.2
+

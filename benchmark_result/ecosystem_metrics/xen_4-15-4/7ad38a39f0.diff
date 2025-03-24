@@ -1,0 +1,289 @@
+From 7ad38a39f08aadc1578bdb46ccabaad79ed0faee Mon Sep 17 00:00:00 2001
+From: Henry Wang <Henry.Wang@arm.com>
+Date: Tue, 11 Oct 2022 15:10:34 +0200
+Subject: [PATCH] xen/arm: Allocate and free P2M pages from the P2M pool
+
+This commit sets/tearsdown of p2m pages pool for non-privileged Arm
+guests by calling `p2m_set_allocation` and `p2m_teardown_allocation`.
+
+- For dom0, P2M pages should come from heap directly instead of p2m
+pool, so that the kernel may take advantage of the extended regions.
+
+- For xl guests, the setting of the p2m pool is called in
+`XEN_DOMCTL_shadow_op` and the p2m pool is destroyed in
+`domain_relinquish_resources`. Note that domctl->u.shadow_op.mb is
+updated with the new size when setting the p2m pool.
+
+- For dom0less domUs, the setting of the p2m pool is called before
+allocating memory during domain creation. Users can specify the p2m
+pool size by `xen,domain-p2m-mem-mb` dts property.
+
+To actually allocate/free pages from the p2m pool, this commit adds
+two helper functions namely `p2m_alloc_page` and `p2m_free_page` to
+`struct p2m_domain`. By replacing the `alloc_domheap_page` and
+`free_domheap_page` with these two helper functions, p2m pages can
+be added/removed from the list of p2m pool rather than from the heap.
+
+Since page from `p2m_alloc_page` is cleaned, take the opportunity
+to remove the redundant `clean_page` in `p2m_create_table`.
+
+This is part of CVE-2022-33747 / XSA-409.
+
+Signed-off-by: Henry Wang <Henry.Wang@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+master commit: cbea5a1149ca7fd4b7cdbfa3ec2e4f109b601ff7
+master date: 2022-10-11 14:28:44 +0200
+---
+ docs/misc/arm/device-tree/booting.txt |  8 ++++
+ xen/arch/arm/domain.c                 |  6 +++
+ xen/arch/arm/domain_build.c           | 29 ++++++++++++++
+ xen/arch/arm/domctl.c                 | 23 ++++++++++-
+ xen/arch/arm/p2m.c                    | 57 +++++++++++++++++++++++++--
+ 5 files changed, 118 insertions(+), 5 deletions(-)
+
+diff --git a/docs/misc/arm/device-tree/booting.txt b/docs/misc/arm/device-tree/booting.txt
+index 5243bc7fd3..470c9491a7 100644
+--- a/docs/misc/arm/device-tree/booting.txt
++++ b/docs/misc/arm/device-tree/booting.txt
+@@ -164,6 +164,14 @@ with the following properties:
+     Both #address-cells and #size-cells need to be specified because
+     both sub-nodes (described shortly) have reg properties.
+ 
++- xen,domain-p2m-mem-mb
++
++    Optional. A 32-bit integer specifying the amount of megabytes of RAM
++    used for the domain P2M pool. This is in-sync with the shadow_memory
++    option in xl.cfg. Leaving this field empty in device tree will lead to
++    the default size of domain P2M pool, i.e. 1MB per guest vCPU plus 4KB
++    per MB of guest RAM plus 512KB for guest extended regions.
++
+ Under the "xen,domain" compatible node, one or more sub-nodes are present
+ for the DomU kernel and ramdisk.
+ 
+diff --git a/xen/arch/arm/domain.c b/xen/arch/arm/domain.c
+index 223ec9694d..a5ffd952ec 100644
+--- a/xen/arch/arm/domain.c
++++ b/xen/arch/arm/domain.c
+@@ -985,6 +985,7 @@ enum {
+     PROG_page,
+     PROG_mapping,
+     PROG_p2m,
++    PROG_p2m_pool,
+     PROG_done,
+ };
+ 
+@@ -1044,6 +1045,11 @@ int domain_relinquish_resources(struct domain *d)
+         if ( ret )
+             return ret;
+ 
++    PROGRESS(p2m_pool):
++        ret = p2m_teardown_allocation(d);
++        if( ret )
++            return ret;
++
+     PROGRESS(done):
+         break;
+ 
+diff --git a/xen/arch/arm/domain_build.c b/xen/arch/arm/domain_build.c
+index 26c1342948..df0ec84f03 100644
+--- a/xen/arch/arm/domain_build.c
++++ b/xen/arch/arm/domain_build.c
+@@ -2333,6 +2333,21 @@ static void __init find_gnttab_region(struct domain *d,
+            kinfo->gnttab_start, kinfo->gnttab_start + kinfo->gnttab_size);
+ }
+ 
++static unsigned long __init domain_p2m_pages(unsigned long maxmem_kb,
++                                             unsigned int smp_cpus)
++{
++    /*
++     * Keep in sync with libxl__get_required_paging_memory().
++     * 256 pages (1MB) per vcpu, plus 1 page per MiB of RAM for the P2M map,
++     * plus 128 pages to cover extended regions.
++     */
++    unsigned long memkb = 4 * (256 * smp_cpus + (maxmem_kb / 1024) + 128);
++
++    BUILD_BUG_ON(PAGE_SIZE != SZ_4K);
++
++    return DIV_ROUND_UP(memkb, 1024) << (20 - PAGE_SHIFT);
++}
++
+ static int __init construct_domain(struct domain *d, struct kernel_info *kinfo)
+ {
+     unsigned int i;
+@@ -2424,6 +2439,8 @@ static int __init construct_domU(struct domain *d,
+     struct kernel_info kinfo = {};
+     int rc;
+     u64 mem;
++    u32 p2m_mem_mb;
++    unsigned long p2m_pages;
+ 
+     rc = dt_property_read_u64(node, "memory", &mem);
+     if ( !rc )
+@@ -2433,6 +2450,18 @@ static int __init construct_domU(struct domain *d,
+     }
+     kinfo.unassigned_mem = (paddr_t)mem * SZ_1K;
+ 
++    rc = dt_property_read_u32(node, "xen,domain-p2m-mem-mb", &p2m_mem_mb);
++    /* If xen,domain-p2m-mem-mb is not specified, use the default value. */
++    p2m_pages = rc ?
++                p2m_mem_mb << (20 - PAGE_SHIFT) :
++                domain_p2m_pages(mem, d->max_vcpus);
++
++    spin_lock(&d->arch.paging.lock);
++    rc = p2m_set_allocation(d, p2m_pages, NULL);
++    spin_unlock(&d->arch.paging.lock);
++    if ( rc != 0 )
++        return rc;
++
+     printk("*** LOADING DOMU cpus=%u memory=%"PRIx64"KB ***\n", d->max_vcpus, mem);
+ 
+     kinfo.vpl011 = dt_property_read_bool(node, "vpl011");
+diff --git a/xen/arch/arm/domctl.c b/xen/arch/arm/domctl.c
+index a049bc7f3e..4ab5ed4ab2 100644
+--- a/xen/arch/arm/domctl.c
++++ b/xen/arch/arm/domctl.c
+@@ -48,6 +48,9 @@ static int handle_vuart_init(struct domain *d,
+ static long p2m_domctl(struct domain *d, struct xen_domctl_shadow_op *sc,
+                        XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
+ {
++    long rc;
++    bool preempted = false;
++
+     if ( unlikely(d == current->domain) )
+     {
+         printk(XENLOG_ERR "Tried to do a p2m domctl op on itself.\n");
+@@ -64,9 +67,27 @@ static long p2m_domctl(struct domain *d, struct xen_domctl_shadow_op *sc,
+     switch ( sc->op )
+     {
+     case XEN_DOMCTL_SHADOW_OP_SET_ALLOCATION:
+-        return 0;
++    {
++        /* Allow and handle preemption */
++        spin_lock(&d->arch.paging.lock);
++        rc = p2m_set_allocation(d, sc->mb << (20 - PAGE_SHIFT), &preempted);
++        spin_unlock(&d->arch.paging.lock);
++
++        if ( preempted )
++            /* Not finished. Set up to re-run the call. */
++            rc = hypercall_create_continuation(__HYPERVISOR_domctl, "h",
++                                               u_domctl);
++        else
++            /* Finished. Return the new allocation. */
++            sc->mb = p2m_get_allocation(d);
++
++        return rc;
++    }
+     case XEN_DOMCTL_SHADOW_OP_GET_ALLOCATION:
++    {
++        sc->mb = p2m_get_allocation(d);
+         return 0;
++    }
+     default:
+     {
+         printk(XENLOG_ERR "Bad p2m domctl op %u\n", sc->op);
+diff --git a/xen/arch/arm/p2m.c b/xen/arch/arm/p2m.c
+index 6883d86277..c1055ff2a7 100644
+--- a/xen/arch/arm/p2m.c
++++ b/xen/arch/arm/p2m.c
+@@ -50,6 +50,54 @@ static uint64_t generate_vttbr(uint16_t vmid, mfn_t root_mfn)
+     return (mfn_to_maddr(root_mfn) | ((uint64_t)vmid << 48));
+ }
+ 
++static struct page_info *p2m_alloc_page(struct domain *d)
++{
++    struct page_info *pg;
++
++    spin_lock(&d->arch.paging.lock);
++    /*
++     * For hardware domain, there should be no limit in the number of pages that
++     * can be allocated, so that the kernel may take advantage of the extended
++     * regions. Hence, allocate p2m pages for hardware domains from heap.
++     */
++    if ( is_hardware_domain(d) )
++    {
++        pg = alloc_domheap_page(NULL, 0);
++        if ( pg == NULL )
++        {
++            printk(XENLOG_G_ERR "Failed to allocate P2M pages for hwdom.\n");
++            spin_unlock(&d->arch.paging.lock);
++            return NULL;
++        }
++    }
++    else
++    {
++        pg = page_list_remove_head(&d->arch.paging.p2m_freelist);
++        if ( unlikely(!pg) )
++        {
++            spin_unlock(&d->arch.paging.lock);
++            return NULL;
++        }
++        d->arch.paging.p2m_total_pages--;
++    }
++    spin_unlock(&d->arch.paging.lock);
++
++    return pg;
++}
++
++static void p2m_free_page(struct domain *d, struct page_info *pg)
++{
++    spin_lock(&d->arch.paging.lock);
++    if ( is_hardware_domain(d) )
++        free_domheap_page(pg);
++    else
++    {
++        d->arch.paging.p2m_total_pages++;
++        page_list_add_tail(pg, &d->arch.paging.p2m_freelist);
++    }
++    spin_unlock(&d->arch.paging.lock);
++}
++
+ /* Return the size of the pool, rounded up to the nearest MB */
+ unsigned int p2m_get_allocation(struct domain *d)
+ {
+@@ -751,7 +799,7 @@ static int p2m_create_table(struct p2m_domain *p2m, lpae_t *entry)
+ 
+     ASSERT(!p2m_is_valid(*entry));
+ 
+-    page = alloc_domheap_page(NULL, 0);
++    page = p2m_alloc_page(p2m->domain);
+     if ( page == NULL )
+         return -ENOMEM;
+ 
+@@ -878,7 +926,7 @@ static void p2m_free_entry(struct p2m_domain *p2m,
+     pg = mfn_to_page(mfn);
+ 
+     page_list_del(pg, &p2m->pages);
+-    free_domheap_page(pg);
++    p2m_free_page(p2m->domain, pg);
+ }
+ 
+ static bool p2m_split_superpage(struct p2m_domain *p2m, lpae_t *entry,
+@@ -902,7 +950,7 @@ static bool p2m_split_superpage(struct p2m_domain *p2m, lpae_t *entry,
+     ASSERT(level < target);
+     ASSERT(p2m_is_superpage(*entry, level));
+ 
+-    page = alloc_domheap_page(NULL, 0);
++    page = p2m_alloc_page(p2m->domain);
+     if ( !page )
+         return false;
+ 
+@@ -1644,7 +1692,7 @@ int p2m_teardown(struct domain *d)
+ 
+     while ( (pg = page_list_remove_head(&p2m->pages)) )
+     {
+-        free_domheap_page(pg);
++        p2m_free_page(p2m->domain, pg);
+         count++;
+         /* Arbitrarily preempt every 512 iterations */
+         if ( !(count % 512) && hypercall_preempt_check() )
+@@ -1668,6 +1716,7 @@ void p2m_final_teardown(struct domain *d)
+         return;
+ 
+     ASSERT(page_list_empty(&p2m->pages));
++    ASSERT(page_list_empty(&d->arch.paging.p2m_freelist));
+ 
+     if ( p2m->root )
+         free_domheap_pages(p2m->root, P2M_ROOT_ORDER);
+-- 
+2.30.2
+

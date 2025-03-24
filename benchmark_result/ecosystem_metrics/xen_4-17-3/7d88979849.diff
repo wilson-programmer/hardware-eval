@@ -1,0 +1,84 @@
+From 7d8897984927a51495e9a1b827aa4bce1d779b87 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 21 Aug 2023 15:53:17 +0200
+Subject: [PATCH] x86: fix build with old gcc after CPU policy changes
+
+Old gcc won't cope with initializers involving unnamed struct/union
+fields.
+
+Fixes: 441b1b2a50ea ("x86/emul: Switch x86_emulate_ctxt to cpu_policy")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 768846690d64bc730c1a1123e8de3af731bb2eb3
+master date: 2023-04-19 11:02:47 +0200
+---
+ tools/fuzz/x86_instruction_emulator/fuzz-emul.c | 4 +++-
+ xen/arch/x86/pv/emul-priv-op.c                  | 4 +++-
+ xen/arch/x86/pv/ro-page-fault.c                 | 4 +++-
+ 3 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/tools/fuzz/x86_instruction_emulator/fuzz-emul.c b/tools/fuzz/x86_instruction_emulator/fuzz-emul.c
+index 4885a68210..eeeb6931f4 100644
+--- a/tools/fuzz/x86_instruction_emulator/fuzz-emul.c
++++ b/tools/fuzz/x86_instruction_emulator/fuzz-emul.c
+@@ -893,12 +893,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data_p, size_t size)
+     struct x86_emulate_ctxt ctxt = {
+         .data = &state,
+         .regs = &input.regs,
+-        .cpu_policy = &cp,
+         .addr_size = 8 * sizeof(void *),
+         .sp_size = 8 * sizeof(void *),
+     };
+     int rc;
+ 
++    /* Not part of the initializer, for old gcc to cope. */
++    ctxt.cpu_policy = &cp;
++
+     /* Reset all global state variables */
+     memset(&input, 0, sizeof(input));
+ 
+diff --git a/xen/arch/x86/pv/emul-priv-op.c b/xen/arch/x86/pv/emul-priv-op.c
+index 04416f1979..2c94beb10e 100644
+--- a/xen/arch/x86/pv/emul-priv-op.c
++++ b/xen/arch/x86/pv/emul-priv-op.c
+@@ -1327,12 +1327,14 @@ int pv_emulate_privileged_op(struct cpu_user_regs *regs)
+     struct domain *currd = curr->domain;
+     struct priv_op_ctxt ctxt = {
+         .ctxt.regs = regs,
+-        .ctxt.cpu_policy = currd->arch.cpu_policy,
+         .ctxt.lma = !is_pv_32bit_domain(currd),
+     };
+     int rc;
+     unsigned int eflags, ar;
+ 
++    /* Not part of the initializer, for old gcc to cope. */
++    ctxt.ctxt.cpu_policy = currd->arch.cpu_policy;
++
+     if ( !pv_emul_read_descriptor(regs->cs, curr, &ctxt.cs.base,
+                                   &ctxt.cs.limit, &ar, 1) ||
+          !(ar & _SEGMENT_S) ||
+diff --git a/xen/arch/x86/pv/ro-page-fault.c b/xen/arch/x86/pv/ro-page-fault.c
+index 0d02c7d2ab..f23ad5d184 100644
+--- a/xen/arch/x86/pv/ro-page-fault.c
++++ b/xen/arch/x86/pv/ro-page-fault.c
+@@ -356,7 +356,6 @@ int pv_ro_page_fault(unsigned long addr, struct cpu_user_regs *regs)
+     unsigned int addr_size = is_pv_32bit_domain(currd) ? 32 : BITS_PER_LONG;
+     struct x86_emulate_ctxt ctxt = {
+         .regs      = regs,
+-        .cpu_policy = currd->arch.cpu_policy,
+         .addr_size = addr_size,
+         .sp_size   = addr_size,
+         .lma       = addr_size > 32,
+@@ -364,6 +363,9 @@ int pv_ro_page_fault(unsigned long addr, struct cpu_user_regs *regs)
+     int rc;
+     bool mmio_ro;
+ 
++    /* Not part of the initializer, for old gcc to cope. */
++    ctxt.cpu_policy = currd->arch.cpu_policy;
++
+     /* Attempt to read the PTE that maps the VA being accessed. */
+     pte = guest_get_eff_kern_l1e(addr);
+ 
+-- 
+2.30.2
+

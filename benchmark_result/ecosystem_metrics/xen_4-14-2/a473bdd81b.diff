@@ -1,0 +1,37 @@
+From a473bdd81bc109b104a451c71f9402150796a1ff Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 5 Mar 2021 15:26:51 +0100
+Subject: [PATCH] xen/include: compat/xlat.h may change with .config changes
+
+$(xlat-y) getting derived from $(headers-y) means its contents may
+change with changes to .config. The individual files $(xlat-y) refers
+to, otoh, may not change, and hence not trigger rebuilding of xlat.h.
+(Note that the issue was already present before the commit referred to
+below, but it was far more limited in affecting only changes to
+CONFIG_XSM_FLASK.)
+
+Fixes: 2c8fabb2232d ("x86: only generate compat headers actually needed")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: c7b0f25e8f86373ed54e1c446f8e67ce25ac6819
+master date: 2021-01-26 14:42:23 +0100
+---
+ xen/include/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/Makefile b/xen/include/Makefile
+index 089314dc72..687aa130d8 100644
+--- a/xen/include/Makefile
++++ b/xen/include/Makefile
+@@ -89,7 +89,7 @@ compat/.xlat/%.lst: xlat.lst Makefile
+ xlat-y := $(shell sed -ne 's,@arch@,$(compat-arch-y),g' -re 's,^[?!][[:blank:]]+[^[:blank:]]+[[:blank:]]+,,p' xlat.lst | uniq)
+ xlat-y := $(filter $(patsubst compat/%,%,$(headers-y)),$(xlat-y))
+ 
+-compat/xlat.h: $(addprefix compat/.xlat/,$(xlat-y)) Makefile
++compat/xlat.h: $(addprefix compat/.xlat/,$(xlat-y)) config/auto.conf Makefile
+ 	cat $(filter %.h,$^) >$@.new
+ 	mv -f $@.new $@
+ 
+-- 
+2.30.2
+

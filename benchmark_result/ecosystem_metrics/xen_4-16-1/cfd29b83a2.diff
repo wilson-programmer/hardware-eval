@@ -1,0 +1,75 @@
+From cfd29b83a26f35f49f074f06169ce4cadfdebf0d Mon Sep 17 00:00:00 2001
+From: Luca Fancellu <luca.fancellu@arm.com>
+Date: Mon, 13 Dec 2021 11:48:54 +0000
+Subject: [PATCH] arm/efi: Handle Xen bootargs from both xen.cfg and DT
+
+Currently the Xen UEFI stub can accept Xen boot arguments from
+the Xen configuration file using the "options=" keyword, but also
+directly from the device tree specifying xen,xen-bootargs
+property.
+
+When the configuration file is used, device tree boot arguments
+are ignored and overwritten even if the keyword "options=" is
+not used.
+
+This patch handle this case, so if the Xen configuration file is not
+specifying boot arguments, the device tree boot arguments will be
+used, if they are present.
+
+Signed-off-by: Luca Fancellu <luca.fancellu@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit f3999bc2e099c571e4583bff8f494b834b2f5f76)
+---
+ docs/misc/efi.pandoc        |  4 ++++
+ xen/arch/arm/efi/efi-boot.h | 15 +++++++++++++++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/docs/misc/efi.pandoc b/docs/misc/efi.pandoc
+index abafb34527..71fdc316b6 100644
+--- a/docs/misc/efi.pandoc
++++ b/docs/misc/efi.pandoc
+@@ -249,6 +249,10 @@ UEFI stub for module loading.
+ When adding DomU modules to device tree, also add the property
+ xen,uefi-cfg-load under chosen for Xen to load the Xen config file.
+ Otherwise, Xen will skip the config file and rely on device tree alone.
++When using the Xen configuration file in conjunction with the device tree, you
++can specify the Xen boot arguments in the configuration file with the "options="
++keyword or in the device tree with the "xen,xen-bootargs" property, but be
++aware that the Xen configuration file value has a precedence over the DT value.
+ 
+ Example 1 of how to boot a true dom0less configuration:
+ 
+diff --git a/xen/arch/arm/efi/efi-boot.h b/xen/arch/arm/efi/efi-boot.h
+index 458cfbbed4..9f26798239 100644
+--- a/xen/arch/arm/efi/efi-boot.h
++++ b/xen/arch/arm/efi/efi-boot.h
+@@ -514,11 +514,26 @@ static void __init efi_arch_handle_cmdline(CHAR16 *image_name,
+ 
+     if ( cfgfile_options )
+     {
++        PrintMessage(L"Using bootargs from Xen configuration file.");
+         prop_len += snprintf(buf + prop_len,
+                                EFI_PAGE_SIZE - prop_len, " %s", cfgfile_options);
+         if ( prop_len >= EFI_PAGE_SIZE )
+             blexit(L"FDT string overflow");
+     }
++    else
++    {
++        /* Get xen,xen-bootargs in /chosen if it is specified */
++        const char *dt_bootargs_prop = fdt_getprop(fdt, chosen,
++                                                   "xen,xen-bootargs", NULL);
++        if ( dt_bootargs_prop )
++        {
++            PrintMessage(L"Using bootargs from device tree.");
++            prop_len += snprintf(buf + prop_len, EFI_PAGE_SIZE - prop_len,
++                                 " %s", dt_bootargs_prop);
++            if ( prop_len >= EFI_PAGE_SIZE )
++                blexit(L"FDT string overflow");
++        }
++    }
+ 
+     if ( cmdline_options )
+     {
+-- 
+2.30.2
+

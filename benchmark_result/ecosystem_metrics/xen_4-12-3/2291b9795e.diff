@@ -1,0 +1,89 @@
+From 2291b9795e69f4ec34c6a997d66a50a9fa014775 Mon Sep 17 00:00:00 2001
+From: Hongyan Xia <hongyxia@amazon.com>
+Date: Thu, 7 May 2020 14:57:35 +0200
+Subject: [PATCH] x86/traps: fix an off-by-one error
+
+stack++ can go into the next page and unmap_domain_page() will unmap the
+wrong one, causing mapcache and memory corruption. Fix.
+
+Signed-off-by: Hongyan Xia <hongyxia@amazon.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 2e3d87cc734a895ef5b486926274a178836b67a9
+master date: 2020-05-05 16:13:44 +0100
+---
+ xen/arch/x86/traps.c | 24 ++++++++++++------------
+ 1 file changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
+index 6851f9dbab..3241951805 100644
+--- a/xen/arch/x86/traps.c
++++ b/xen/arch/x86/traps.c
+@@ -230,6 +230,7 @@ static void compat_show_guest_stack(struct vcpu *v,
+                                     int debug_stack_lines)
+ {
+     unsigned int i, *stack, addr, mask = STACK_SIZE;
++    void *stack_page = NULL;
+ 
+     stack = (unsigned int *)(unsigned long)regs->esp;
+     printk("Guest stack trace from esp=%08lx:\n ", (unsigned long)stack);
+@@ -252,7 +253,7 @@ static void compat_show_guest_stack(struct vcpu *v,
+                 break;
+         if ( !vcpu )
+         {
+-            stack = do_page_walk(v, (unsigned long)stack);
++            stack_page = stack = do_page_walk(v, (unsigned long)stack);
+             if ( (unsigned long)stack < PAGE_SIZE )
+             {
+                 printk("Inaccessible guest memory.\n");
+@@ -279,11 +280,10 @@ static void compat_show_guest_stack(struct vcpu *v,
+         printk(" %08x", addr);
+         stack++;
+     }
+-    if ( mask == PAGE_SIZE )
+-    {
+-        BUILD_BUG_ON(PAGE_SIZE == STACK_SIZE);
+-        unmap_domain_page(stack);
+-    }
++
++    if ( stack_page )
++        unmap_domain_page(stack_page);
++
+     if ( i == 0 )
+         printk("Stack empty.");
+     printk("\n");
+@@ -294,6 +294,7 @@ static void show_guest_stack(struct vcpu *v, const struct cpu_user_regs *regs)
+     int i;
+     unsigned long *stack, addr;
+     unsigned long mask = STACK_SIZE;
++    void *stack_page = NULL;
+ 
+     /* Avoid HVM as we don't know what the stack looks like. */
+     if ( is_hvm_vcpu(v) )
+@@ -322,7 +323,7 @@ static void show_guest_stack(struct vcpu *v, const struct cpu_user_regs *regs)
+         vcpu = maddr_get_owner(read_cr3()) == v->domain ? v : NULL;
+         if ( !vcpu )
+         {
+-            stack = do_page_walk(v, (unsigned long)stack);
++            stack_page = stack = do_page_walk(v, (unsigned long)stack);
+             if ( (unsigned long)stack < PAGE_SIZE )
+             {
+                 printk("Inaccessible guest memory.\n");
+@@ -349,11 +350,10 @@ static void show_guest_stack(struct vcpu *v, const struct cpu_user_regs *regs)
+         printk(" %p", _p(addr));
+         stack++;
+     }
+-    if ( mask == PAGE_SIZE )
+-    {
+-        BUILD_BUG_ON(PAGE_SIZE == STACK_SIZE);
+-        unmap_domain_page(stack);
+-    }
++
++    if ( stack_page )
++        unmap_domain_page(stack_page);
++
+     if ( i == 0 )
+         printk("Stack empty.");
+     printk("\n");
+-- 
+2.30.2
+

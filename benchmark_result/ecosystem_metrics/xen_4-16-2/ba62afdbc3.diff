@@ -1,0 +1,36 @@
+From ba62afdbc31a8cfe897191efd25ed4449d9acd94 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 7 Jun 2022 14:01:03 +0200
+Subject: [PATCH] tools/libs/ctrl: don't set errno to a negative value
+
+The claimed reason for setting errno to -1 is wrong. On x86
+xc_domain_pod_target() will set errno to a sane value in the error
+case.
+
+Fixes: ff1745d5882b ("tools: libxl: do not set the PoD target on ARM")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: a0fb7e0e73483ed042d5ca34861a891a51ad337b
+master date: 2022-04-22 20:39:34 +0100
+---
+ tools/libs/ctrl/xc_domain.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/tools/libs/ctrl/xc_domain.c b/tools/libs/ctrl/xc_domain.c
+index b155d6afd2..9d675c8f21 100644
+--- a/tools/libs/ctrl/xc_domain.c
++++ b/tools/libs/ctrl/xc_domain.c
+@@ -1297,9 +1297,7 @@ int xc_domain_get_pod_target(xc_interface *xch,
+                              uint64_t *pod_cache_pages,
+                              uint64_t *pod_entries)
+ {
+-    /* On x86 (above) xc_domain_pod_target will incorrectly return -1
+-     * with errno==-1 on error. Do the same for least surprise. */
+-    errno = -1;
++    errno = EOPNOTSUPP;
+     return -1;
+ }
+ #endif
+-- 
+2.30.2
+

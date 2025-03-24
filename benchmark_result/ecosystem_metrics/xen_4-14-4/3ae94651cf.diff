@@ -1,0 +1,52 @@
+From 3ae94651cf0b08f86f1aba012f6bdd42c449c68b Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 23 Nov 2021 13:29:54 +0100
+Subject: [PATCH] x86/PoD: handle intermediate page orders in
+ p2m_pod_cache_add()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+p2m_pod_decrease_reservation() may pass pages to the function which
+aren't 4k, 2M, or 1G. Handle all intermediate orders as well, to avoid
+hitting the BUG() at the switch() statement's "default" case.
+
+This is CVE-2021-28708 / part of XSA-388.
+
+Fixes: 3c352011c0d3 ("x86/PoD: shorten certain operations on higher order ranges")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 8ec13f68e0b026863d23e7f44f252d06478bc809
+master date: 2021-11-22 12:27:30 +0000
+---
+ xen/arch/x86/mm/p2m-pod.c | 12 +++++-------
+ 1 file changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/xen/arch/x86/mm/p2m-pod.c b/xen/arch/x86/mm/p2m-pod.c
+index fd5bad31f0..d947595132 100644
+--- a/xen/arch/x86/mm/p2m-pod.c
++++ b/xen/arch/x86/mm/p2m-pod.c
+@@ -111,15 +111,13 @@ p2m_pod_cache_add(struct p2m_domain *p2m,
+     /* Then add to the appropriate populate-on-demand list. */
+     switch ( order )
+     {
+-    case PAGE_ORDER_1G:
+-        for ( i = 0; i < (1UL << PAGE_ORDER_1G); i += 1UL << PAGE_ORDER_2M )
++    case PAGE_ORDER_2M ... PAGE_ORDER_1G:
++        for ( i = 0; i < (1UL << order); i += 1UL << PAGE_ORDER_2M )
+             page_list_add_tail(page + i, &p2m->pod.super);
+         break;
+-    case PAGE_ORDER_2M:
+-        page_list_add_tail(page, &p2m->pod.super);
+-        break;
+-    case PAGE_ORDER_4K:
+-        page_list_add_tail(page, &p2m->pod.single);
++    case PAGE_ORDER_4K ... PAGE_ORDER_2M - 1:
++        for ( i = 0; i < (1UL << order); i += 1UL << PAGE_ORDER_4K )
++            page_list_add_tail(page + i, &p2m->pod.single);
+         break;
+     default:
+         BUG();
+-- 
+2.30.2
+

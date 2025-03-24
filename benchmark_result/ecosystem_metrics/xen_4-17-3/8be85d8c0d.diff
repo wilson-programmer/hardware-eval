@@ -1,0 +1,100 @@
+From 8be85d8c0df2445c012fac42117396b483db5db0 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 5 Sep 2023 08:53:31 +0200
+Subject: [PATCH] x86/vmx: Revert "x86/VMX: sanitize rIP before re-entering
+ guest"
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+At the time of XSA-170, the x86 instruction emulator was genuinely broken.  It
+would load arbitrary values into %rip and putting a check here probably was
+the best stopgap security fix.  It should have been reverted following c/s
+81d3a0b26c1 "x86emul: limit-check branch targets" which corrected the emulator
+behaviour.
+
+However, everyone involved in XSA-170, myself included, failed to read the SDM
+correctly.  On the subject of %rip consistency checks, the SDM stated:
+
+  If the processor supports N < 64 linear-address bits, bits 63:N must be
+  identical
+
+A non-canonical %rip (and SSP more recently) is an explicitly legal state in
+x86, and the VMEntry consistency checks are intentionally off-by-one from a
+regular canonical check.
+
+The consequence of this bug is that Xen will currently take a legal x86 state
+which would successfully VMEnter, and corrupt it into having non-architectural
+behaviour.
+
+Furthermore, in the time this bugfix has been pending in public, I
+successfully persuaded Intel to clarify the SDM, adding the following
+clarification:
+
+  The guest RIP value is not required to be canonical; the value of bit N-1
+  may differ from that of bit N.
+
+Fixes: ffbbfda377 ("x86/VMX: sanitize rIP before re-entering guest")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 10c83bb0f5d158d101d983883741b76f927e54a3
+master date: 2023-08-23 18:44:59 +0100
+---
+ xen/arch/x86/hvm/vmx/vmx.c | 34 +---------------------------------
+ 1 file changed, 1 insertion(+), 33 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index f256dc2635..072288a5ef 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -3975,7 +3975,7 @@ static void undo_nmis_unblocked_by_iret(void)
+ void vmx_vmexit_handler(struct cpu_user_regs *regs)
+ {
+     unsigned long exit_qualification, exit_reason, idtv_info, intr_info = 0;
+-    unsigned int vector = 0, mode;
++    unsigned int vector = 0;
+     struct vcpu *v = current;
+     struct domain *currd = v->domain;
+ 
+@@ -4650,38 +4650,6 @@ void vmx_vmexit_handler(struct cpu_user_regs *regs)
+ out:
+     if ( nestedhvm_vcpu_in_guestmode(v) )
+         nvmx_idtv_handling();
+-
+-    /*
+-     * VM entry will fail (causing the guest to get crashed) if rIP (and
+-     * rFLAGS, but we don't have an issue there) doesn't meet certain
+-     * criteria. As we must not allow less than fully privileged mode to have
+-     * such an effect on the domain, we correct rIP in that case (accepting
+-     * this not being architecturally correct behavior, as the injected #GP
+-     * fault will then not see the correct [invalid] return address).
+-     * And since we know the guest will crash, we crash it right away if it
+-     * already is in most privileged mode.
+-     */
+-    mode = vmx_guest_x86_mode(v);
+-    if ( mode == 8 ? !is_canonical_address(regs->rip)
+-                   : regs->rip != regs->eip )
+-    {
+-        gprintk(XENLOG_WARNING, "Bad rIP %lx for mode %u\n", regs->rip, mode);
+-
+-        if ( vmx_get_cpl() )
+-        {
+-            __vmread(VM_ENTRY_INTR_INFO, &intr_info);
+-            if ( !(intr_info & INTR_INFO_VALID_MASK) )
+-                hvm_inject_hw_exception(TRAP_gp_fault, 0);
+-            /* Need to fix rIP nevertheless. */
+-            if ( mode == 8 )
+-                regs->rip = (long)(regs->rip << (64 - VADDR_BITS)) >>
+-                            (64 - VADDR_BITS);
+-            else
+-                regs->rip = regs->eip;
+-        }
+-        else
+-            domain_crash(v->domain);
+-    }
+ }
+ 
+ static void lbr_tsx_fixup(void)
+-- 
+2.30.2
+

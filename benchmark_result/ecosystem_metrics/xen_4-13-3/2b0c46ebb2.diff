@@ -1,0 +1,37 @@
+From 2b0c46ebb26b872c5507b16e417a8b73c0ea0fca Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 5 Mar 2021 15:45:06 +0100
+Subject: [PATCH] x86/ucode/amd: Fix OoB read in cpu_request_microcode()
+
+verify_patch_size() is a maximum size check, and doesn't have a minimum bound.
+
+If the microcode container encodes a blob with a length less than 64 bytes,
+the subsequent calls to microcode_fits()/compare_header() may read off the end
+of the buffer.
+
+Fixes: 4de936a38a ("x86/ucode/amd: Rework parsing logic in cpu_request_microcode()")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 1cbc4d89c45cba3929f1c0cb4bca0b000c4f174b
+master date: 2021-02-10 13:23:51 +0000
+---
+ xen/arch/x86/microcode_amd.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/microcode_amd.c b/xen/arch/x86/microcode_amd.c
+index a5becbfaf4..d678357bb4 100644
+--- a/xen/arch/x86/microcode_amd.c
++++ b/xen/arch/x86/microcode_amd.c
+@@ -292,7 +292,8 @@ static int get_ucode_from_buffer_amd(
+         return -EINVAL;
+     }
+ 
+-    if ( (*offset + mpbuf->len) > bufsize )
++    if ( (*offset + mpbuf->len) > bufsize ||
++         mpbuf->len < sizeof(struct microcode_header_amd) )
+     {
+         printk(KERN_ERR "microcode: Bad data in microcode data file\n");
+         return -EINVAL;
+-- 
+2.30.2
+

@@ -1,0 +1,33 @@
+From a1d8a6c24b87ff86072d071376587ac68211c6e7 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <JBeulich@suse.com>
+Date: Tue, 1 Dec 2020 15:39:48 +0100
+Subject: [PATCH] x86/DMI: fix SMBIOS pointer range check
+
+Forever since its introduction this has been using an inverted relation
+operator.
+
+Fixes: 54057a28f22b ("x86: support SMBIOS v3")
+Signed-off-by: Jan Beulich <JBeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 6befe598706218673b14710d90d00ce90763b372
+master date: 2020-11-24 11:25:29 +0100
+---
+ xen/arch/x86/dmi_scan.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/dmi_scan.c b/xen/arch/x86/dmi_scan.c
+index d24da1c53a..e5930d27ea 100644
+--- a/xen/arch/x86/dmi_scan.c
++++ b/xen/arch/x86/dmi_scan.c
+@@ -357,7 +357,7 @@ static int __init dmi_iterate(void (*decode)(struct dmi_header *))
+ 			memcpy_fromio(&smbios3, q, sizeof(smbios3));
+ 			if (memcmp(smbios3.anchor, "_SM3_", 5) ||
+ 			    smbios3.length < sizeof(smbios3) ||
+-			    q < p + 0x10000 - smbios3.length ||
++			    q > p + 0x10000 - smbios3.length ||
+ 			    !dmi_checksum(q, smbios3.length))
+ 				smbios3.length = 0;
+ 		}
+-- 
+2.30.2
+

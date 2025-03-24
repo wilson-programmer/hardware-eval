@@ -1,0 +1,62 @@
+From 527e324dbb35e5c1d5e747520a54e957b8acfa90 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 29 Oct 2019 14:32:40 +0100
+Subject: [PATCH] x86/hvm: Fix altp2m_op hypercall continuations
+
+c/s 9383de210 "x86/altp2m: support for setting restrictions for an array of
+pages" introduced this logic, but do_hvm_op() was already capable of handling
+-ERESTART correctly.
+
+More problematic however is a continuation from compat_altp2m_op().  The arg
+written back into register state points into the hypercall XLAT area, not at
+the original parameter passed by the guest.  It may be truncated by the
+vmentry, but definitely won't be correct on the next invocation.
+
+Delete the hypercall_create_continuation() call, and return -ERESTART, which
+will cause the compat case to start working correctly.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 8228577ad1ba9f4b49370b76c90b75fb9243ee2f
+master date: 2019-04-09 19:34:41 +0100
+---
+ xen/arch/x86/hvm/hvm.c | 12 ++----------
+ 1 file changed, 2 insertions(+), 10 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/hvm.c b/xen/arch/x86/hvm/hvm.c
+index 2d3c55a9fe..f4a6a37149 100644
+--- a/xen/arch/x86/hvm/hvm.c
++++ b/xen/arch/x86/hvm/hvm.c
+@@ -4679,12 +4679,10 @@ static int do_altp2m_op(
+         if ( rc > 0 )
+         {
+             a.u.set_mem_access_multi.opaque = rc;
++            rc = -ERESTART;
+             if ( __copy_field_to_guest(guest_handle_cast(arg, xen_hvm_altp2m_op_t),
+                                        &a, u.set_mem_access_multi.opaque) )
+                 rc = -EFAULT;
+-            else
+-                rc = hypercall_create_continuation(__HYPERVISOR_hvm_op, "lh",
+-                                                   HVMOP_altp2m, arg);
+         }
+         break;
+ 
+@@ -4786,14 +4784,8 @@ static int compat_altp2m_op(
+     switch ( a.cmd )
+     {
+     case HVMOP_altp2m_set_mem_access_multi:
+-        /*
+-         * The return code can be positive only if it is the return value
+-         * of hypercall_create_continuation. In this case, the opaque value
+-         * must be copied back to the guest.
+-         */
+-        if ( rc > 0 )
++        if ( rc == -ERESTART )
+         {
+-            ASSERT(rc == __HYPERVISOR_hvm_op);
+             a.u.set_mem_access_multi.opaque =
+                 nat.altp2m_op->u.set_mem_access_multi.opaque;
+             if ( __copy_field_to_guest(guest_handle_cast(arg,
+-- 
+2.30.2
+

@@ -1,0 +1,41 @@
+From 182f8bb503b9dd3db5dd9118dc763d241787c6fc Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 11 Oct 2022 15:16:09 +0200
+Subject: [PATCH] tools/xenstore: minor fix of the migration stream doc
+
+Drop mentioning the non-existent read-only socket in the migration
+stream description document.
+
+The related record field was removed in commit 8868a0e3f674 ("docs:
+update the xenstore migration stream documentation).
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+master commit: ace1d2eff80d3d66c37ae765dae3e3cb5697e5a4
+master date: 2022-09-08 09:25:58 +0200
+---
+ docs/designs/xenstore-migration.md | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/docs/designs/xenstore-migration.md b/docs/designs/xenstore-migration.md
+index 5f1155273e..78530bbb0e 100644
+--- a/docs/designs/xenstore-migration.md
++++ b/docs/designs/xenstore-migration.md
+@@ -129,11 +129,9 @@ xenstored state that needs to be restored.
+ | `evtchn-fd`    | The file descriptor used to communicate with |
+ |                | the event channel driver                     |
+ 
+-xenstored will resume in the original process context. Hence `rw-socket-fd` and
+-`ro-socket-fd` simply specify the file descriptors of the sockets. Sockets
+-are not always used, however, and so -1 will be used to denote an unused
+-socket.
+-
++xenstored will resume in the original process context. Hence `rw-socket-fd`
++simply specifies the file descriptor of the socket. Sockets are not always
++used, however, and so -1 will be used to denote an unused socket.
+ 
+ \pagebreak
+ 
+-- 
+2.30.2
+

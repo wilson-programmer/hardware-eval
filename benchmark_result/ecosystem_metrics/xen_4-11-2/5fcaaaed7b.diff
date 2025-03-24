@@ -1,0 +1,35 @@
+From 5fcaaaed7b163e7806fec2080fa0714743e63692 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 25 Oct 2019 11:58:05 +0200
+Subject: [PATCH] ACPI/cpuidle: bump maximum number of power states we support
+
+Commit 4c6cd64519 ("mwait_idle: Skylake Client Support") added a table
+with 8 entries, which - together with C0 - rendered the current limit
+too low. It should have been accompanied by an increase of the constant;
+do this now. Don't bump by too much though, as there are a number of on-
+stack arrays which are dimensioned by this constant.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+master commit: ff22a91b4c45f9310d0ec0d7ee070d84a373dd87
+master date: 2019-09-25 15:53:35 +0200
+---
+ xen/include/xen/cpuidle.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/xen/cpuidle.h b/xen/include/xen/cpuidle.h
+index 13901e16dc..af50d37bb7 100644
+--- a/xen/include/xen/cpuidle.h
++++ b/xen/include/xen/cpuidle.h
+@@ -29,7 +29,7 @@
+ #include <xen/cpumask.h>
+ #include <xen/spinlock.h>
+ 
+-#define ACPI_PROCESSOR_MAX_POWER        8
++#define ACPI_PROCESSOR_MAX_POWER        12
+ #define CPUIDLE_NAME_LEN                16
+ 
+ #define ACPI_CSTATE_EM_NONE     0
+-- 
+2.30.2
+

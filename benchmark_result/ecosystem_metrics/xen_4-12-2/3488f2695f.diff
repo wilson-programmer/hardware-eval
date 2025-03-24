@@ -1,0 +1,155 @@
+From 3488f2695f23ebedfad48e8421916026457ae68a Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Fri, 6 Dec 2019 12:45:48 +0100
+Subject: [PATCH] xen/x86: vpmu: Unmap per-vCPU PMU page when the domain is
+ destroyed
+
+A guest will setup a shared page with the hypervisor for each vCPU via
+XENPMU_init. The page will then get mapped in the hypervisor and only
+released when XENPMU_finish is called.
+
+This means that if the guest fails to invoke XENPMU_finish, e.g if it is
+destroyed rather than cleanly shut down, the page will stay mapped in the
+hypervisor. One of the consequences is the domain can never be fully
+destroyed as a page reference is still held.
+
+As Xen should never rely on the guest to correctly clean-up any
+allocation in the hypervisor, we should also unmap such pages during the
+domain destruction if there are any left.
+
+We can re-use the same logic as in pvpmu_finish(). To avoid
+duplication, move the logic in a new function that can also be called
+from vpmu_destroy().
+
+NOTE: - The call to vpmu_destroy() must also be moved from
+        arch_vcpu_destroy() into domain_relinquish_resources() such that
+        the reference on the mapped page does not prevent domain_destroy()
+        (which calls arch_vcpu_destroy()) from being called.
+      - Whilst it appears that vpmu_arch_destroy() is idempotent it is
+        by no means obvious. Hence make sure the VPMU_CONTEXT_ALLOCATED
+        flag is cleared at the end of vpmu_arch_destroy().
+      - This is not an XSA because vPMU is not security supported (see
+        XSA-163).
+
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Signed-off-by: Paul Durrant <pdurrant@amazon.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: be18e39d2f69038804b27c30026754deaeefa543
+master date: 2019-11-29 18:23:24 +0000
+---
+ xen/arch/x86/cpu/vpmu.c | 47 +++++++++++++++++++++++------------------
+ xen/arch/x86/domain.c   | 10 +++++----
+ 2 files changed, 33 insertions(+), 24 deletions(-)
+
+diff --git a/xen/arch/x86/cpu/vpmu.c b/xen/arch/x86/cpu/vpmu.c
+index 8f6daf13fd..be9386f000 100644
+--- a/xen/arch/x86/cpu/vpmu.c
++++ b/xen/arch/x86/cpu/vpmu.c
+@@ -575,11 +575,36 @@ static void vpmu_arch_destroy(struct vcpu *v)
+ 
+          vpmu->arch_vpmu_ops->arch_vpmu_destroy(v);
+     }
++
++    vpmu_reset(vpmu, VPMU_CONTEXT_ALLOCATED);
+ }
+ 
+-void vpmu_destroy(struct vcpu *v)
++static void vpmu_cleanup(struct vcpu *v)
+ {
++    struct vpmu_struct *vpmu = vcpu_vpmu(v);
++    void *xenpmu_data;
++
++    spin_lock(&vpmu->vpmu_lock);
++
+     vpmu_arch_destroy(v);
++    xenpmu_data = vpmu->xenpmu_data;
++    vpmu->xenpmu_data = NULL;
++
++    spin_unlock(&vpmu->vpmu_lock);
++
++    if ( xenpmu_data )
++    {
++        mfn_t mfn = domain_page_map_to_mfn(xenpmu_data);
++
++        ASSERT(mfn_valid(mfn));
++        unmap_domain_page_global(xenpmu_data);
++        put_page_and_type(mfn_to_page(mfn));
++    }
++}
++
++void vpmu_destroy(struct vcpu *v)
++{
++    vpmu_cleanup(v);
+ 
+     put_vpmu(v);
+ }
+@@ -638,9 +663,6 @@ static int pvpmu_init(struct domain *d, xen_pmu_params_t *params)
+ static void pvpmu_finish(struct domain *d, xen_pmu_params_t *params)
+ {
+     struct vcpu *v;
+-    struct vpmu_struct *vpmu;
+-    mfn_t mfn;
+-    void *xenpmu_data;
+ 
+     if ( (params->vcpu >= d->max_vcpus) || (d->vcpu[params->vcpu] == NULL) )
+         return;
+@@ -649,22 +671,7 @@ static void pvpmu_finish(struct domain *d, xen_pmu_params_t *params)
+     if ( v != current )
+         vcpu_pause(v);
+ 
+-    vpmu = vcpu_vpmu(v);
+-    spin_lock(&vpmu->vpmu_lock);
+-
+-    vpmu_arch_destroy(v);
+-    xenpmu_data = vpmu->xenpmu_data;
+-    vpmu->xenpmu_data = NULL;
+-
+-    spin_unlock(&vpmu->vpmu_lock);
+-
+-    if ( xenpmu_data )
+-    {
+-        mfn = domain_page_map_to_mfn(xenpmu_data);
+-        ASSERT(mfn_valid(mfn));
+-        unmap_domain_page_global(xenpmu_data);
+-        put_page_and_type(mfn_to_page(mfn));
+-    }
++    vpmu_cleanup(v);
+ 
+     if ( v != current )
+         vcpu_unpause(v);
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index 795d2c9d05..9b4907d2a7 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -410,9 +410,6 @@ void arch_vcpu_destroy(struct vcpu *v)
+     xfree(v->arch.msrs);
+     v->arch.msrs = NULL;
+ 
+-    if ( !is_idle_domain(v->domain) )
+-        vpmu_destroy(v);
+-
+     if ( is_hvm_vcpu(v) )
+         hvm_vcpu_destroy(v);
+     else
+@@ -2077,12 +2074,17 @@ int domain_relinquish_resources(struct domain *d)
+ 
+     PROGRESS(vcpu_pagetables):
+ 
+-        /* Drop the in-use references to page-table bases. */
++        /*
++         * Drop the in-use references to page-table bases and clean
++         * up vPMU instances.
++         */
+         for_each_vcpu ( d, v )
+         {
+             ret = vcpu_destroy_pagetables(v);
+             if ( ret )
+                 return ret;
++
++            vpmu_destroy(v);
+         }
+ 
+         if ( altp2m_active(d) )
+-- 
+2.30.2
+

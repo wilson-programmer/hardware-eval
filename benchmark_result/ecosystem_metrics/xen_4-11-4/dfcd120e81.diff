@@ -1,0 +1,50 @@
+From dfcd120e81e476a421814e08e264e9b47dcc5c35 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 9 Apr 2020 10:13:01 +0200
+Subject: [PATCH] x86/vPMU: don't blindly assume IA32_PERF_CAPABILITIES MSR
+ exists
+
+Just like VMX'es lbr_tsx_fixup_check() the respective CPUID bit should
+be consulted first.
+
+Reported-by: Farrah Chen <farrah.chen@intel.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 15c39c7c913f26fba40231e103ce1ffa6101e7c9
+master date: 2020-02-26 17:35:48 +0100
+---
+ xen/arch/x86/cpu/vpmu_intel.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/cpu/vpmu_intel.c b/xen/arch/x86/cpu/vpmu_intel.c
+index 6e27f6ec8e..75aa11c6ad 100644
+--- a/xen/arch/x86/cpu/vpmu_intel.c
++++ b/xen/arch/x86/cpu/vpmu_intel.c
+@@ -900,7 +900,6 @@ int vmx_vpmu_initialise(struct vcpu *v)
+ 
+ int __init core2_vpmu_init(void)
+ {
+-    u64 caps;
+     unsigned int version = 0;
+     unsigned int i;
+ 
+@@ -932,8 +931,14 @@ int __init core2_vpmu_init(void)
+ 
+     arch_pmc_cnt = core2_get_arch_pmc_count();
+     fixed_pmc_cnt = core2_get_fixed_pmc_count();
+-    rdmsrl(MSR_IA32_PERF_CAPABILITIES, caps);
+-    full_width_write = (caps >> 13) & 1;
++
++    if ( cpu_has_pdcm )
++    {
++        uint64_t caps;
++
++        rdmsrl(MSR_IA32_PERF_CAPABILITIES, caps);
++        full_width_write = (caps >> 13) & 1;
++    }
+ 
+     fixed_ctrl_mask = ~((1ull << (fixed_pmc_cnt * FIXED_CTR_CTRL_BITS)) - 1);
+     /* mask .AnyThread bits for all fixed counters */
+-- 
+2.30.2
+

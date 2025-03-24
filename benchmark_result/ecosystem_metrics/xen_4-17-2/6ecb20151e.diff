@@ -1,0 +1,37 @@
+From 6ecb20151e7fdb99d68ddcc21ec84ca866a0b051 Mon Sep 17 00:00:00 2001
+From: Alejandro Vallejo <alejandro.vallejo@cloud.com>
+Date: Mon, 17 Jul 2023 08:28:19 +0200
+Subject: [PATCH] x86/microcode: Add missing unlock in
+ microcode_update_helper()
+
+microcode_update_helper() may return early while holding
+cpu_add_remove_lock, hence preventing any writers from taking it again.
+
+Leave through the `put` label instead so it's properly released.
+
+Fixes: 5ed12565aa32 ("microcode: rendezvous CPUs in NMI handler and load ucode")
+Signed-off-by: Alejandro Vallejo <alejandro.vallejo@cloud.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: b35b22acb887f682efe8385b3df165220bc84c86
+master date: 2023-06-05 16:11:10 +0100
+---
+ xen/arch/x86/cpu/microcode/core.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/cpu/microcode/core.c b/xen/arch/x86/cpu/microcode/core.c
+index c760723e4f..b204b95f8f 100644
+--- a/xen/arch/x86/cpu/microcode/core.c
++++ b/xen/arch/x86/cpu/microcode/core.c
+@@ -596,7 +596,8 @@ static long cf_check microcode_update_helper(void *data)
+         printk(XENLOG_WARNING
+                "CPU%u is expected to lead ucode loading (but got CPU%u)\n",
+                nmi_cpu, cpumask_first(&cpu_online_map));
+-        return -EPERM;
++        ret = -EPERM;
++        goto put;
+     }
+ 
+     patch = parse_blob(buffer->buffer, buffer->len);
+-- 
+2.30.2
+

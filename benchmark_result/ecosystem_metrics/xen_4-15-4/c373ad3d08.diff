@@ -1,0 +1,38 @@
+From c373ad3d084614a93c55e25dc20e70ffc7574971 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Mon, 15 Aug 2022 15:42:09 +0200
+Subject: [PATCH] tools/libxl: Replace deprecated -sdl option on QEMU command
+ line
+
+"-sdl" is deprecated upstream since 6695e4c0fd9e ("softmmu/vl:
+Deprecate the -sdl and -curses option"), QEMU v6.2, and the option is
+removed by 707d93d4abc6 ("ui: Remove deprecated options "-sdl" and
+"-curses""), in upcoming QEMU v7.1.
+
+Instead, use "-display sdl", available since 1472a95bab1e ("Introduce
+-display argument"), before QEMU v1.0.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+master commit: 41fcb3af8ad6d4c9f65a9d72798e6d18afec55ac
+master date: 2022-08-11 11:47:11 +0200
+---
+ tools/libs/light/libxl_dm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libs/light/libxl_dm.c b/tools/libs/light/libxl_dm.c
+index 24f6e73b0a..ae5f35e0c3 100644
+--- a/tools/libs/light/libxl_dm.c
++++ b/tools/libs/light/libxl_dm.c
+@@ -1349,7 +1349,7 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
+     flexarray_append_pair(dm_args, "-display", "none");
+ 
+     if (sdl && !is_stubdom) {
+-        flexarray_append(dm_args, "-sdl");
++        flexarray_append_pair(dm_args, "-display", "sdl");
+         if (sdl->display)
+             flexarray_append_pair(dm_envs, "DISPLAY", sdl->display);
+         if (sdl->xauthority)
+-- 
+2.30.2
+

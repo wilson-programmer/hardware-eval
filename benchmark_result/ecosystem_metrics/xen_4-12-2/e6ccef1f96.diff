@@ -1,0 +1,41 @@
+From e6ccef1f96af2b3855033acd39e597580541527d Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 23 Sep 2019 14:25:04 +0200
+Subject: [PATCH] x86/shadow: don't enable shadow mode with too small a shadow
+ allocation (part 2)
+
+Commit 2634b997af ("x86/shadow: don't enable shadow mode with too small
+a shadow allocation") was incomplete: The adjustment done there to
+shadow_enable() is also needed in shadow_one_bit_enable(). The (new)
+problem report was (apparently) a failed PV guest migration followed by
+another migration attempt for that same guest. Disabling log-dirty mode
+after the first one had left a couple of shadow pages allocated (perhaps
+something that also wants fixing), and hence the second enabling of
+log-dirty mode wouldn't have allocated anything further.
+
+Reported-by: James Wang <jnwang@suse.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Tim Deegan <tim@xen.org>
+master commit: 8b25551baa3307af0aa1ef8f7f43403f01c2c5d7
+master date: 2019-09-05 09:56:42 +0200
+---
+ xen/arch/x86/mm/shadow/common.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/mm/shadow/common.c b/xen/arch/x86/mm/shadow/common.c
+index 025071a163..1ac5b22028 100644
+--- a/xen/arch/x86/mm/shadow/common.c
++++ b/xen/arch/x86/mm/shadow/common.c
+@@ -2984,7 +2984,8 @@ static int shadow_one_bit_enable(struct domain *d, u32 mode)
+ 
+     mode |= PG_SH_enable;
+ 
+-    if ( d->arch.paging.shadow.total_pages == 0 )
++    if ( d->arch.paging.shadow.total_pages <
++         sh_min_allocation(d) + d->arch.paging.shadow.p2m_pages )
+     {
+         /* Init the shadow memory allocation if the user hasn't done so */
+         if ( shadow_set_allocation(d, 1, NULL) != 0 )
+-- 
+2.30.2
+

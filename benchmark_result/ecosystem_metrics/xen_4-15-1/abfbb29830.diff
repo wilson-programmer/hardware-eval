@@ -1,0 +1,83 @@
+From abfbb29830a25ddf31298d0eebd60e1d576a33c5 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 24 Jun 2021 16:39:26 +0200
+Subject: [PATCH] libxc: use multicall for memory-op on Linux (and Solaris)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Some sub-functions, XENMEM_maximum_gpfn and XENMEM_maximum_ram_page in
+particular, can return values requiring more than 31 bits to represent.
+Hence we cannot issue the hypercall directly when the return value of
+ioctl() is used to propagate this value. This is the case for Linux
+and Solaris (and hence needs changing), while the BSDs avoid using the
+return value for dual purposes altogether, and MiniOS already wraps all
+hypercalls in a multicall.
+
+Suggested-by: JÃ¼rgen GroÃ <jgross@suse.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Backport-requested-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 6f02d1ea4a109a32f346a5d1de63a42b291c354c)
+---
+ tools/libs/ctrl/xc_private.c | 43 ++++++++++++++++++++++++++++++++++--
+ 1 file changed, 41 insertions(+), 2 deletions(-)
+
+diff --git a/tools/libs/ctrl/xc_private.c b/tools/libs/ctrl/xc_private.c
+index d94f846686..c0422662f0 100644
+--- a/tools/libs/ctrl/xc_private.c
++++ b/tools/libs/ctrl/xc_private.c
+@@ -337,8 +337,47 @@ long do_memory_op(xc_interface *xch, int cmd, void *arg, size_t len)
+         goto out1;
+     }
+ 
+-    ret = xencall2(xch->xcall, __HYPERVISOR_memory_op,
+-                   cmd, HYPERCALL_BUFFER_AS_ARG(arg));
++#if defined(__linux__) || defined(__sun__)
++    /*
++     * Some sub-ops return values which don't fit in "int". On platforms
++     * without a specific hypercall return value field in the privcmd
++     * interface structure, issue the request as a single-element multicall,
++     * to be able to capture the full return value.
++     */
++    if ( sizeof(long) > sizeof(int) )
++    {
++        multicall_entry_t multicall = {
++            .op = __HYPERVISOR_memory_op,
++            .args[0] = cmd,
++            .args[1] = HYPERCALL_BUFFER_AS_ARG(arg),
++        }, *call = &multicall;
++        DECLARE_HYPERCALL_BOUNCE(call, sizeof(*call),
++                                 XC_HYPERCALL_BUFFER_BOUNCE_BOTH);
++
++        if ( xc_hypercall_bounce_pre(xch, call) )
++        {
++            PERROR("Could not bounce buffer for memory_op hypercall");
++            goto out1;
++        }
++
++        ret = do_multicall_op(xch, HYPERCALL_BUFFER(call), 1);
++
++        xc_hypercall_bounce_post(xch, call);
++
++        if ( !ret )
++        {
++            ret = multicall.result;
++            if ( multicall.result > ~0xfffUL )
++            {
++                errno = -ret;
++                ret = -1;
++            }
++        }
++    }
++    else
++#endif
++        ret = xencall2L(xch->xcall, __HYPERVISOR_memory_op,
++                        cmd, HYPERCALL_BUFFER_AS_ARG(arg));
+ 
+     xc_hypercall_bounce_post(xch, arg);
+  out1:
+-- 
+2.30.2
+

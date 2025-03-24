@@ -1,0 +1,34 @@
+From 0e419e446f1d8e75bf27c35d4e82906168499d23 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Mon, 28 Jun 2021 11:01:56 +0100
+Subject: [PATCH] libxl: Replace short-form boolean for QEMU's -vnc
+
+f3f778c81769 forgot one boolean parameter.
+
+Fixes: f3f778c81769 ("libxl: Replace QEMU's command line short-form boolean option")
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+(cherry picked from commit 217eef30f7b9b85ba6e27c81a791dae8f6fcdbe7)
+
+Backport-requested-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+---
+ tools/libs/light/libxl_dm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libs/light/libxl_dm.c b/tools/libs/light/libxl_dm.c
+index 1e16f9e5b6..0b4c6be3f9 100644
+--- a/tools/libs/light/libxl_dm.c
++++ b/tools/libs/light/libxl_dm.c
+@@ -1324,7 +1324,7 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
+             vncarg = GCSPRINTF("127.0.0.1:%d", vnc->display);
+ 
+         if (vnc->passwd && vnc->passwd[0]) {
+-            vncarg = GCSPRINTF("%s,password", vncarg);
++            vncarg = GCSPRINTF("%s,password=on", vncarg);
+         }
+ 
+         if (libxl_defbool_val(vnc->findunused)) {
+-- 
+2.30.2
+

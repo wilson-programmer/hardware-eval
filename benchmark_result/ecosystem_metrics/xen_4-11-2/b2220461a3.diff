@@ -1,0 +1,36 @@
+From b2220461a3081d23ed9c36dc053161d58655da97 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 23 Sep 2019 14:42:13 +0200
+Subject: [PATCH] ioreq: fix hvm_all_ioreq_servers_add_vcpu fail path cleanup
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The loop in FOR_EACH_IOREQ_SERVER is backwards hence the cleanup on
+failure needs to be done forwards.
+
+Fixes: 97a5a3e30161 ('x86/hvm/ioreq: maintain an array of ioreq servers rather than a list')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Paul Durrant <paul.durrant@citrix.com>
+master commit: 215f2576b0ac1bc18f3ff74e34f0d8379bda9040
+master date: 2019-09-10 16:32:47 +0200
+---
+ xen/arch/x86/hvm/ioreq.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/ioreq.c b/xen/arch/x86/hvm/ioreq.c
+index ac05875af1..f95fb18c1f 100644
+--- a/xen/arch/x86/hvm/ioreq.c
++++ b/xen/arch/x86/hvm/ioreq.c
+@@ -1246,7 +1246,7 @@ int hvm_all_ioreq_servers_add_vcpu(struct domain *d, struct vcpu *v)
+     return 0;
+ 
+  fail:
+-    while ( id-- != 0 )
++    while ( ++id != MAX_NR_IOREQ_SERVERS )
+     {
+         s = GET_IOREQ_SERVER(d, id);
+ 
+-- 
+2.30.2
+

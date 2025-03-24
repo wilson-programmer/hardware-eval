@@ -1,0 +1,127 @@
+From cdd8f958d6c142d9ac5d63ca737f0397eaf6ba7a Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 24 Jun 2020 16:50:25 +0200
+Subject: [PATCH] x86/passthrough: introduce a flag for GSIs not requiring an
+ EOI or unmask
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+There's no need to setup a timer for GSIs that are edge triggered,
+since those don't require any EIO or unmask, and hence couldn't block
+other interrupts.
+
+Note this is only used by PVH dom0, that can setup the passthrough of
+edge triggered interrupts from the vIO-APIC. One example of such kind
+of interrupt that can be used by a PVH dom0 would be the RTC timer.
+
+While there introduce an out label to do the unlock and reduce code
+duplication.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 2995d0afdf2d3fb44d07eada088db3613741db1e
+master date: 2020-06-11 18:14:29 +0100
+---
+ xen/drivers/passthrough/io.c  | 24 +++++++++++++++---------
+ xen/include/asm-x86/hvm/irq.h |  2 ++
+ 2 files changed, 17 insertions(+), 9 deletions(-)
+
+diff --git a/xen/drivers/passthrough/io.c b/xen/drivers/passthrough/io.c
+index b292e79382..6b1305a3e5 100644
+--- a/xen/drivers/passthrough/io.c
++++ b/xen/drivers/passthrough/io.c
+@@ -138,7 +138,8 @@ static void pt_pirq_softirq_reset(struct hvm_pirq_dpci *pirq_dpci)
+ 
+ bool pt_irq_need_timer(uint32_t flags)
+ {
+-    return !(flags & (HVM_IRQ_DPCI_GUEST_MSI | HVM_IRQ_DPCI_TRANSLATE));
++    return !(flags & (HVM_IRQ_DPCI_GUEST_MSI | HVM_IRQ_DPCI_TRANSLATE |
++                      HVM_IRQ_DPCI_NO_EOI));
+ }
+ 
+ static int pt_irq_guest_eoi(struct domain *d, struct hvm_pirq_dpci *pirq_dpci,
+@@ -558,6 +559,12 @@ int pt_irq_create_bind(
+                      */
+                     ASSERT(!mask);
+                     share = trigger_mode;
++                    if ( trigger_mode == VIOAPIC_EDGE_TRIG )
++                        /*
++                         * Edge IO-APIC interrupt, no EOI or unmask to perform
++                         * and hence no timer needed.
++                         */
++                        pirq_dpci->flags |= HVM_IRQ_DPCI_NO_EOI;
+                 }
+             }
+ 
+@@ -897,17 +904,13 @@ static void hvm_dirq_assist(struct domain *d, struct hvm_pirq_dpci *pirq_dpci)
+             send_guest_pirq(d, pirq);
+ 
+             if ( pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI )
+-            {
+-                spin_unlock(&d->event_lock);
+-                return;
+-            }
++                goto out;
+         }
+ 
+         if ( pirq_dpci->flags & HVM_IRQ_DPCI_GUEST_MSI )
+         {
+             vmsi_deliver_pirq(d, pirq_dpci);
+-            spin_unlock(&d->event_lock);
+-            return;
++            goto out;
+         }
+ 
+         list_for_each_entry ( digl, &pirq_dpci->digl_list, list )
+@@ -920,6 +923,8 @@ static void hvm_dirq_assist(struct domain *d, struct hvm_pirq_dpci *pirq_dpci)
+         if ( pirq_dpci->flags & HVM_IRQ_DPCI_IDENTITY_GSI )
+         {
+             hvm_gsi_assert(d, pirq->pirq);
++            if ( pirq_dpci->flags & HVM_IRQ_DPCI_NO_EOI )
++                goto out;
+             pirq_dpci->pending++;
+         }
+ 
+@@ -927,8 +932,7 @@ static void hvm_dirq_assist(struct domain *d, struct hvm_pirq_dpci *pirq_dpci)
+         {
+             /* for translated MSI to INTx interrupt, eoi as early as possible */
+             __msi_pirq_eoi(pirq_dpci);
+-            spin_unlock(&d->event_lock);
+-            return;
++            goto out;
+         }
+ 
+         /*
+@@ -941,6 +945,8 @@ static void hvm_dirq_assist(struct domain *d, struct hvm_pirq_dpci *pirq_dpci)
+         ASSERT(pt_irq_need_timer(pirq_dpci->flags));
+         set_timer(&pirq_dpci->timer, NOW() + PT_IRQ_TIME_OUT);
+     }
++
++ out:
+     spin_unlock(&d->event_lock);
+ }
+ 
+diff --git a/xen/include/asm-x86/hvm/irq.h b/xen/include/asm-x86/hvm/irq.h
+index d306cfeade..532880d497 100644
+--- a/xen/include/asm-x86/hvm/irq.h
++++ b/xen/include/asm-x86/hvm/irq.h
+@@ -121,6 +121,7 @@ struct dev_intx_gsi_link {
+ #define _HVM_IRQ_DPCI_GUEST_PCI_SHIFT           4
+ #define _HVM_IRQ_DPCI_GUEST_MSI_SHIFT           5
+ #define _HVM_IRQ_DPCI_IDENTITY_GSI_SHIFT        6
++#define _HVM_IRQ_DPCI_NO_EOI_SHIFT              7
+ #define _HVM_IRQ_DPCI_TRANSLATE_SHIFT          15
+ #define HVM_IRQ_DPCI_MACH_PCI        (1u << _HVM_IRQ_DPCI_MACH_PCI_SHIFT)
+ #define HVM_IRQ_DPCI_MACH_MSI        (1u << _HVM_IRQ_DPCI_MACH_MSI_SHIFT)
+@@ -129,6 +130,7 @@ struct dev_intx_gsi_link {
+ #define HVM_IRQ_DPCI_GUEST_PCI       (1u << _HVM_IRQ_DPCI_GUEST_PCI_SHIFT)
+ #define HVM_IRQ_DPCI_GUEST_MSI       (1u << _HVM_IRQ_DPCI_GUEST_MSI_SHIFT)
+ #define HVM_IRQ_DPCI_IDENTITY_GSI    (1u << _HVM_IRQ_DPCI_IDENTITY_GSI_SHIFT)
++#define HVM_IRQ_DPCI_NO_EOI          (1u << _HVM_IRQ_DPCI_NO_EOI_SHIFT)
+ #define HVM_IRQ_DPCI_TRANSLATE       (1u << _HVM_IRQ_DPCI_TRANSLATE_SHIFT)
+ 
+ struct hvm_gmsi_info {
+-- 
+2.30.2
+

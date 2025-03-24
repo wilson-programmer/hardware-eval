@@ -1,0 +1,53 @@
+From 239d37e514c93e29d50d71f734b1dc453b2236a6 Mon Sep 17 00:00:00 2001
+From: Amit Singh Tomar <amittomer25@gmail.com>
+Date: Tue, 11 Sep 2018 22:18:06 +0530
+Subject: [PATCH] xen:arm: Populate arm64 image header
+
+This patch adds image size and flags to XEN image header. It uses
+those fields according to the updated Linux kernel image definition.
+
+With this patch bootloader can now place XEN image anywhere in system
+RAM at 2MB aligned address without to worry about relocation.
+For instance, it fixes the XEN boot on Amlogic SoC where bootloader(U-BOOT)
+always relocates the XEN image to an address range reserved for firmware data.
+
+Signed-off-by: Amit Singh Tomar <amittomer25@gmail.com>
+Reviewed-by: Andre Pryzwara <andre.przywara@arm.com>
+Acked-by: Julien Grall <julien.grall@arm.com>
+(cherry picked from commit 17bd254a508f4174fe0d56a9f1b9892b7649b4b9)
+---
+ xen/arch/arm/arm64/head.S | 11 +++++++++--
+ 1 file changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/arm64/head.S b/xen/arch/arm/arm64/head.S
+index d63734fdfa..ef87b5c254 100644
+--- a/xen/arch/arm/arm64/head.S
++++ b/xen/arch/arm/arm64/head.S
+@@ -32,6 +32,13 @@
+ #define PT_DEV    0xe71 /* nG=1 AF=1 SH=10 AP=01 NS=1 ATTR=100 T=0 P=1 */
+ #define PT_DEV_L3 0xe73 /* nG=1 AF=1 SH=10 AP=01 NS=1 ATTR=100 T=1 P=1 */
+ 
++#define __HEAD_FLAG_PAGE_SIZE   ((PAGE_SHIFT - 10) / 2)
++
++#define __HEAD_FLAG_PHYS_BASE   1
++
++#define __HEAD_FLAGS            ((__HEAD_FLAG_PAGE_SIZE << 1) | \
++                                 (__HEAD_FLAG_PHYS_BASE << 3))
++
+ #if (defined (CONFIG_EARLY_PRINTK)) && (defined (EARLY_PRINTK_INC))
+ #include EARLY_PRINTK_INC
+ #endif
+@@ -120,8 +127,8 @@ efi_head:
+         add     x13, x18, #0x16
+         b       real_start           /* branch to kernel start */
+         .quad   0                    /* Image load offset from start of RAM */
+-        .quad   0                    /* reserved */
+-        .quad   0                    /* reserved */
++        .quad   _end - start         /* Effective size of kernel image, little-endian */
++        .quad   __HEAD_FLAGS         /* Informative flags, little-endian */
+         .quad   0                    /* reserved */
+         .quad   0                    /* reserved */
+         .quad   0                    /* reserved */
+-- 
+2.30.2
+

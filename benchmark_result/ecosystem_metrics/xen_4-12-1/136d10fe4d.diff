@@ -1,0 +1,41 @@
+From 136d10fe4dbea6e7f07b62faacbdcce1baad1eb0 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 4 Jun 2019 15:37:18 +0200
+Subject: [PATCH] x86/svm: Fix handling of ICEBP intercepts
+
+c/s 9338a37d "x86/svm: implement debug events" added support for introspecting
+ICEBP debug exceptions, but didn't account for the fact that
+svm_get_insn_len() (previously __get_instruction_length) can fail and may
+already have raised #GP with the guest.
+
+If svm_get_insn_len() fails, return back to guest context rather than
+continuing and mistaking a trap-style VMExit for a fault-style one.
+
+Spotted by Coverity.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Razvan Cojocaru <rcojocaru@bitdefender.com>
+Acked-by: Brian Woods <brian.woods@amd.com>
+master commit: 1495b4ff9b4af2b9c0f12cdb6491082cecf34f86
+master date: 2019-05-13 10:35:37 +0100
+---
+ xen/arch/x86/hvm/svm/svm.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/svm/svm.c b/xen/arch/x86/hvm/svm/svm.c
+index 23d72e81e3..ec9fb763af 100644
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -2757,6 +2757,9 @@ void svm_vmexit_handler(struct cpu_user_regs *regs)
+             {
+                 trap_type = X86_EVENTTYPE_PRI_SW_EXCEPTION;
+                 inst_len = svm_get_insn_len(v, INSTR_ICEBP);
++
++                if ( !inst_len )
++                    break;
+             }
+ 
+             rc = hvm_monitor_debug(regs->rip,
+-- 
+2.30.2
+

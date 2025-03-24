@@ -1,0 +1,62 @@
+From f00d56309533427981f09ef2614f1bae4bcab62e Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 17 Feb 2023 11:16:32 +0000
+Subject: [PATCH] CI: Resync FreeBSD config with staging
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+CI: Update FreeBSD to 13.1
+
+Also print the compiler version before starting.  It's not easy to find
+otherwise, and does change from time to time.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+(cherry picked from commit 5e7667ea2dd33e0e5e0f3a96db37fdb4ecd98fba)
+
+CI: Update FreeBSD to 13.2
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit f872a624cbf92de9944483eea7674ef80ced1380)
+
+CI: Update FreeBSD to 12.4
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+(cherry picked from commit a73560896ce3c513460f26bd1c205060d6ec4f8a)
+---
+ .cirrus.yml | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/.cirrus.yml b/.cirrus.yml
+index c38333e736..7e0beb200d 100644
+--- a/.cirrus.yml
++++ b/.cirrus.yml
+@@ -10,19 +10,20 @@ freebsd_template: &FREEBSD_TEMPLATE
+                                  libxml2 glib git
+ 
+   build_script:
++    - cc --version
+     - ./configure --with-system-seabios=/usr/local/share/seabios/bios.bin
+     - gmake -j`sysctl -n hw.ncpu` clang=y
+ 
+ task:
+   name: 'FreeBSD 12'
+   freebsd_instance:
+-    image_family: freebsd-12-3
++    image_family: freebsd-12-4
+   << : *FREEBSD_TEMPLATE
+ 
+ task:
+   name: 'FreeBSD 13'
+   freebsd_instance:
+-    image_family: freebsd-13-0
++    image_family: freebsd-13-2
+   << : *FREEBSD_TEMPLATE
+ 
+ task:
+-- 
+2.30.2
+

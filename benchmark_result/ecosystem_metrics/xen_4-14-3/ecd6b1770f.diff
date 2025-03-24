@@ -1,0 +1,61 @@
+From ecd6b1770ff7a3e7b9f13013fc661790b553a743 Mon Sep 17 00:00:00 2001
+From: Dario Faggioli <dfaggioli@suse.com>
+Date: Thu, 15 Jul 2021 09:29:34 +0200
+Subject: [PATCH] credit2: make sure we pick a runnable unit from the runq if
+ there is one
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+A !runnable unit (temporarily) present in the runq may cause us to
+stop scanning the runq itself too early. Of course, we don't run any
+non-runnable vCPUs, but we end the scan and we fallback to picking
+the idle unit. In other word, this prevent us to find there and pick
+the actual unit that we're meant to start running (which might be
+further ahead in the runq).
+
+Depending on the vCPU pinning configuration, this may lead to such
+unit to be stuck in the runq for long time, causing malfunctioning
+inside the guest.
+
+Fix this by checking runnable/non-runnable status up-front, in the runq
+scanning function.
+
+Reported-by: MichaÅ LeszczyÅski <michal.leszczynski@cert.pl>
+Reported-by: Dion Kant <g.w.kant@hunenet.nl>
+Signed-off-by: Dario Faggioli <dfaggioli@suse.com>
+Reviewed-by: George Dunlap <george.dunlap@citrix.com>
+master commit: 07b0eb5d0ef0be154606aa46b5b4c5c59b158505
+master date: 2021-06-07 13:16:36 +0100
+---
+ xen/common/sched/credit2.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/xen/common/sched/credit2.c b/xen/common/sched/credit2.c
+index eb5e5a78c5..f5c1e5b944 100644
+--- a/xen/common/sched/credit2.c
++++ b/xen/common/sched/credit2.c
+@@ -3463,6 +3463,10 @@ runq_candidate(struct csched2_runqueue_data *rqd,
+                         (unsigned char *)&d);
+         }
+ 
++        /* Skip non runnable units that we (temporarily) have in the runq */
++        if ( unlikely(!unit_runnable_state(svc->unit)) )
++            continue;
++
+         /* Only consider vcpus that are allowed to run on this processor. */
+         if ( !cpumask_test_cpu(cpu, svc->unit->cpu_hard_affinity) )
+             continue;
+@@ -3496,8 +3500,7 @@ runq_candidate(struct csched2_runqueue_data *rqd,
+          * some budget, then choose it.
+          */
+         if ( (yield || svc->credit > snext->credit) &&
+-             (!has_cap(svc) || unit_grab_budget(svc)) &&
+-             unit_runnable_state(svc->unit) )
++             (!has_cap(svc) || unit_grab_budget(svc)) )
+             snext = svc;
+ 
+         /* In any case, if we got this far, break. */
+-- 
+2.30.2
+

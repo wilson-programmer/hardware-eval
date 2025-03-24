@@ -1,0 +1,51 @@
+From b081a5f14ccfe7609be63495efe8cb8c39cfb447 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 20 Oct 2020 14:44:36 +0200
+Subject: [PATCH] x86: fix resource leaks on arch_vcpu_create() error path
+
+{hvm,pv}_vcpu_initialise() have always kind of been meant to be the
+final possible source of errors in arch_vcpu_create(), hence not
+requiring any unrolling of what they've done on the error path. (Of
+course this may change once the various involved paths all have become
+idempotent.)
+
+But even beyond this aspect I think it is more logical to do policy
+initialization ahead of the calling of these two functions, as they may
+in principle want to access it.
+
+Fixes: 4187f79dc718 ("x86/msr: introduce struct msr_vcpu_policy")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 6a34e67c118408ebdd62bfa7be76598ca040f170
+master date: 2020-10-14 14:03:38 +0200
+---
+ xen/arch/x86/domain.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index b1c8644945..c830d1225c 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -402,6 +402,9 @@ int arch_vcpu_create(struct vcpu *v)
+         vmce_init_vcpu(v);
+ 
+         arch_vcpu_regs_init(v);
++
++        if ( (rc = init_vcpu_msr_policy(v)) )
++            goto fail;
+     }
+     else if ( (rc = xstate_alloc_save_area(v)) != 0 )
+         return rc;
+@@ -427,9 +430,6 @@ int arch_vcpu_create(struct vcpu *v)
+     {
+         vpmu_initialise(v);
+ 
+-        if ( (rc = init_vcpu_msr_policy(v)) )
+-            goto fail;
+-
+         cpuid_policy_updated(v);
+     }
+ 
+-- 
+2.30.2
+

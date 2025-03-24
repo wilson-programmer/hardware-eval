@@ -1,0 +1,124 @@
+From 78eb1284a8f178b59a87225471fdc4865d81928a Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 4 Jan 2023 17:32:44 +0000
+Subject: [PATCH] x86/spec-ctrl: Enumerations for Gather Data Sampling
+
+GDS_CTRL is introduced by the August 2023 microcode.  GDS_NO is for current
+and future processors not susceptible to GDS.
+
+This is part of XSA-435 / CVE-2022-40982
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 9f585f59d90c8d3a1b21369a852b7d7eee8a29b9)
+---
+ tools/misc/xen-cpuid.c                      | 3 ++-
+ xen/arch/x86/spec_ctrl.c                    | 6 ++++--
+ xen/include/asm-x86/cpufeature.h            | 2 ++
+ xen/include/asm-x86/msr-index.h             | 4 ++++
+ xen/include/public/arch-x86/cpufeatureset.h | 2 ++
+ 5 files changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/tools/misc/xen-cpuid.c b/tools/misc/xen-cpuid.c
+index bb913bb68f..c55a6e7678 100644
+--- a/tools/misc/xen-cpuid.c
++++ b/tools/misc/xen-cpuid.c
+@@ -229,7 +229,8 @@ static const char *const str_m10Al[32] =
+     [18] = "fb-clear-ctrl",       [19] = "rrsba",
+     [20] = "bhi-no",              [21] = "xapic-status",
+     /* 22 */                      [23] = "ovrclk-status",
+-    [24] = "pbrsb-no",
++    [24] = "pbrsb-no",            [25] = "gds-ctrl",
++    [26] = "gds-no",
+ };
+ 
+ static const char *const str_m10Ah[32] =
+diff --git a/xen/arch/x86/spec_ctrl.c b/xen/arch/x86/spec_ctrl.c
+index fef19dd50e..d841c0d811 100644
+--- a/xen/arch/x86/spec_ctrl.c
++++ b/xen/arch/x86/spec_ctrl.c
+@@ -422,7 +422,7 @@ static void __init print_details(enum ind_thunk thunk)
+      * Hardware read-only information, stating immunity to certain issues, or
+      * suggestions of which mitigation to use.
+      */
+-    printk("  Hardware hints:%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
++    printk("  Hardware hints:%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+            (caps & ARCH_CAPS_RDCL_NO)                        ? " RDCL_NO"        : "",
+            (caps & ARCH_CAPS_EIBRS)                          ? " EIBRS"          : "",
+            (caps & ARCH_CAPS_RSBA)                           ? " RSBA"           : "",
+@@ -437,6 +437,7 @@ static void __init print_details(enum ind_thunk thunk)
+            (caps & ARCH_CAPS_PSDP_NO)                        ? " PSDP_NO"        : "",
+            (caps & ARCH_CAPS_FB_CLEAR)                       ? " FB_CLEAR"       : "",
+            (caps & ARCH_CAPS_PBRSB_NO)                       ? " PBRSB_NO"       : "",
++           (caps & ARCH_CAPS_GDS_NO)                         ? " GDS_NO"         : "",
+            (e8b  & cpufeat_mask(X86_FEATURE_IBRS_ALWAYS))    ? " IBRS_ALWAYS"    : "",
+            (e8b  & cpufeat_mask(X86_FEATURE_STIBP_ALWAYS))   ? " STIBP_ALWAYS"   : "",
+            (e8b  & cpufeat_mask(X86_FEATURE_IBRS_FAST))      ? " IBRS_FAST"      : "",
+@@ -447,7 +448,7 @@ static void __init print_details(enum ind_thunk thunk)
+            (e21a & cpufeat_mask(X86_FEATURE_SRSO_NO))        ? " SRSO_NO"        : "");
+ 
+     /* Hardware features which need driving to mitigate issues. */
+-    printk("  Hardware features:%s%s%s%s%s%s%s%s%s%s%s%s\n",
++    printk("  Hardware features:%s%s%s%s%s%s%s%s%s%s%s%s%s\n",
+            (e8b  & cpufeat_mask(X86_FEATURE_IBPB)) ||
+            (_7d0 & cpufeat_mask(X86_FEATURE_IBRSB))          ? " IBPB"           : "",
+            (e8b  & cpufeat_mask(X86_FEATURE_IBRS)) ||
+@@ -464,6 +465,7 @@ static void __init print_details(enum ind_thunk thunk)
+            (e8b  & cpufeat_mask(X86_FEATURE_VIRT_SSBD))      ? " VIRT_SSBD"      : "",
+            (caps & ARCH_CAPS_TSX_CTRL)                       ? " TSX_CTRL"       : "",
+            (caps & ARCH_CAPS_FB_CLEAR_CTRL)                  ? " FB_CLEAR_CTRL"  : "",
++           (caps & ARCH_CAPS_GDS_CTRL)                       ? " GDS_CTRL"       : "",
+            (e21a & cpufeat_mask(X86_FEATURE_SBPB))           ? " SBPB"           : "");
+ 
+     /* Compiled-in support which pertains to mitigations. */
+diff --git a/xen/include/asm-x86/cpufeature.h b/xen/include/asm-x86/cpufeature.h
+index f8dce8e461..1ac3d3a1f9 100644
+--- a/xen/include/asm-x86/cpufeature.h
++++ b/xen/include/asm-x86/cpufeature.h
+@@ -154,6 +154,8 @@
+ #define cpu_has_taa_no          boot_cpu_has(X86_FEATURE_TAA_NO)
+ #define cpu_has_fb_clear        boot_cpu_has(X86_FEATURE_FB_CLEAR)
+ #define cpu_has_rrsba           boot_cpu_has(X86_FEATURE_RRSBA)
++#define cpu_has_gds_ctrl        boot_cpu_has(X86_FEATURE_GDS_CTRL)
++#define cpu_has_gds_no          boot_cpu_has(X86_FEATURE_GDS_NO)
+ 
+ /* Synthesized. */
+ #define cpu_has_arch_perfmon    boot_cpu_has(X86_FEATURE_ARCH_PERFMON)
+diff --git a/xen/include/asm-x86/msr-index.h b/xen/include/asm-x86/msr-index.h
+index 267f4e59c4..8251b8258b 100644
+--- a/xen/include/asm-x86/msr-index.h
++++ b/xen/include/asm-x86/msr-index.h
+@@ -75,6 +75,8 @@
+ #define  ARCH_CAPS_RRSBA                    (_AC(1, ULL) << 19)
+ #define  ARCH_CAPS_BHI_NO                   (_AC(1, ULL) << 20)
+ #define  ARCH_CAPS_PBRSB_NO                 (_AC(1, ULL) << 24)
++#define  ARCH_CAPS_GDS_CTRL                 (_AC(1, ULL) << 25)
++#define  ARCH_CAPS_GDS_NO                   (_AC(1, ULL) << 26)
+ 
+ #define MSR_FLUSH_CMD                       0x0000010b
+ #define  FLUSH_CMD_L1D                      (_AC(1, ULL) <<  0)
+@@ -93,6 +95,8 @@
+ #define  MCU_OPT_CTRL_RTM_ALLOW             (_AC(1, ULL) <<  1)
+ #define  MCU_OPT_CTRL_RTM_LOCKED            (_AC(1, ULL) <<  2)
+ #define  MCU_OPT_CTRL_FB_CLEAR_DIS          (_AC(1, ULL) <<  3)
++#define  MCU_OPT_CTRL_GDS_MIT_DIS           (_AC(1, ULL) <<  4)
++#define  MCU_OPT_CTRL_GDS_MIT_LOCK          (_AC(1, ULL) <<  5)
+ 
+ #define MSR_RTIT_OUTPUT_BASE                0x00000560
+ #define MSR_RTIT_OUTPUT_MASK                0x00000561
+diff --git a/xen/include/public/arch-x86/cpufeatureset.h b/xen/include/public/arch-x86/cpufeatureset.h
+index dc8ffc59b6..0ee1d1d903 100644
+--- a/xen/include/public/arch-x86/cpufeatureset.h
++++ b/xen/include/public/arch-x86/cpufeatureset.h
+@@ -336,6 +336,8 @@ XEN_CPUFEATURE(BHI_NO,             16*32+20) /*A  No Branch History Injection  *
+ XEN_CPUFEATURE(XAPIC_STATUS,       16*32+21) /*   MSR_XAPIC_DISABLE_STATUS */
+ XEN_CPUFEATURE(OVRCLK_STATUS,      16*32+23) /*   MSR_OVERCLOCKING_STATUS */
+ XEN_CPUFEATURE(PBRSB_NO,           16*32+24) /*A  No Post-Barrier RSB predictions */
++XEN_CPUFEATURE(GDS_CTRL,           16*32+25) /*   MCU_OPT_CTRL.GDS_MIT_{DIS,LOCK} */
++XEN_CPUFEATURE(GDS_NO,             16*32+26) /*A  No Gather Data Sampling */
+ 
+ /* Intel-defined CPU features, MSR_ARCH_CAPS 0x10a.edx, word 17 */
+ 
+-- 
+2.30.2
+

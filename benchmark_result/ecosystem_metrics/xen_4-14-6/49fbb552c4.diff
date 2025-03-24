@@ -1,0 +1,71 @@
+From 49fbb552c4f5c6663dc83ea923cabe8056ae4710 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 17 May 2023 10:13:36 +0100
+Subject: [PATCH] x86/cpu-policy: Advertise MSR_ARCH_CAPS to guests by default
+
+With xl/libxl now able to control the policy bits for MSR_ARCH_CAPS, it is
+safe to advertise to guests by default.  In turn, we don't need the special
+case to expose details to dom0.
+
+This advertises MSR_ARCH_CAPS to guests on *all* Intel hardware, even if the
+register content ends up being empty.
+
+  - Advertising ARCH_CAPS and not RSBA signals "retpoline is safe here and
+    everywhere you might migrate to".  This is important because it avoids the
+    guest kernel needing to rely on model checks.
+
+  - Alternatively, levelling for safety across the Broadwell/Skylake divide
+    requires advertising ARCH_CAPS and RSBA, meaning "retpoline not safe on
+    some hardware you might migrate to".
+
+On Cascade Lake and later hardware, guests can now see RDCL_NO (not vulnerable
+to Meltdown) amongst others.  This causes substantial performance
+improvements, as guests are no longer applying software mitigations in cases
+where they don't need to.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 4b2cdbfe766e5666e6754198946df2dc16f6a642)
+---
+ xen/arch/x86/cpu-policy.c                   | 11 -----------
+ xen/include/public/arch-x86/cpufeatureset.h |  2 +-
+ 2 files changed, 1 insertion(+), 12 deletions(-)
+
+diff --git a/xen/arch/x86/cpu-policy.c b/xen/arch/x86/cpu-policy.c
+index 9d70e41306..99914b0bff 100644
+--- a/xen/arch/x86/cpu-policy.c
++++ b/xen/arch/x86/cpu-policy.c
+@@ -853,17 +853,6 @@ void __init init_dom0_cpuid_policy(struct domain *d)
+     if ( cpu_has_itsc )
+         p->extd.itsc = true;
+ 
+-    /*
+-     * Expose the "hardware speculation behaviour" bits of ARCH_CAPS to dom0,
+-     * so dom0 can turn off workarounds as appropriate.  Temporary, until the
+-     * domain policy logic gains a better understanding of MSRs.
+-     */
+-    if ( is_hardware_domain(d) && cpu_has_arch_caps )
+-    {
+-        p->feat.arch_caps = true;
+-        p->arch_caps.raw = host_cpu_policy.arch_caps.raw;
+-    }
+-
+     /* Apply dom0-cpuid= command line settings, if provided. */
+     if ( dom0_cpuid_cmdline )
+     {
+diff --git a/xen/include/public/arch-x86/cpufeatureset.h b/xen/include/public/arch-x86/cpufeatureset.h
+index 357a86521e..be85e7b38a 100644
+--- a/xen/include/public/arch-x86/cpufeatureset.h
++++ b/xen/include/public/arch-x86/cpufeatureset.h
+@@ -280,7 +280,7 @@ XEN_CPUFEATURE(CET_IBT,       9*32+20) /*   CET - Indirect Branch Tracking */
+ XEN_CPUFEATURE(IBRSB,         9*32+26) /*A  IBRS and IBPB support (used by Intel) */
+ XEN_CPUFEATURE(STIBP,         9*32+27) /*A  STIBP */
+ XEN_CPUFEATURE(L1D_FLUSH,     9*32+28) /*S  MSR_FLUSH_CMD and L1D flush. */
+-XEN_CPUFEATURE(ARCH_CAPS,     9*32+29) /*!a IA32_ARCH_CAPABILITIES MSR */
++XEN_CPUFEATURE(ARCH_CAPS,     9*32+29) /*!A IA32_ARCH_CAPABILITIES MSR */
+ XEN_CPUFEATURE(CORE_CAPS,     9*32+30) /*   IA32_CORE_CAPABILITIES MSR */
+ XEN_CPUFEATURE(SSBD,          9*32+31) /*A  MSR_SPEC_CTRL.SSBD available */
+ 
+-- 
+2.30.2
+

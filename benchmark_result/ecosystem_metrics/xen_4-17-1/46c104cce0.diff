@@ -1,0 +1,42 @@
+From 46c104cce0bf340193cb1eacaee5dcd75e264c8f Mon Sep 17 00:00:00 2001
+From: Ross Lagerwall <ross.lagerwall@citrix.com>
+Date: Fri, 3 Mar 2023 07:58:12 +0100
+Subject: [PATCH] build: make FILE symbol paths consistent
+
+The FILE symbols in out-of-tree builds may be either a relative path to
+the object dir or an absolute path depending on how the build is
+invoked. Fix the paths for C files so that they are consistent with
+in-tree builds - the path is relative to the "xen" directory (e.g.
+common/irq.c).
+
+This fixes livepatch builds when the original Xen build was out-of-tree
+since livepatch-build always does in-tree builds. Note that this doesn't
+fix the behaviour for Clang < 6 which always embeds full paths.
+
+Fixes: 7115fa562fe7 ("build: adding out-of-tree support to the xen build")
+Signed-off-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 5b9bb91abba7c983def3b4bef71ab08ad360a242
+master date: 2023-02-15 16:13:49 +0100
+---
+ xen/Rules.mk | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/Rules.mk b/xen/Rules.mk
+index 70b7489ea8..d6b7cec0a8 100644
+--- a/xen/Rules.mk
++++ b/xen/Rules.mk
+@@ -228,8 +228,9 @@ quiet_cmd_cc_o_c = CC      $@
+ ifeq ($(CONFIG_ENFORCE_UNIQUE_SYMBOLS),y)
+     cmd_cc_o_c = $(CC) $(c_flags) -c $< -o $(dot-target).tmp -MQ $@
+     ifneq ($(CONFIG_CC_IS_CLANG)$(call clang-ifversion,-lt,600,y),yy)
++        rel-path = $(patsubst $(abs_srctree)/%,%,$(call realpath,$(1)))
+         cmd_objcopy_fix_sym = \
+-	    $(OBJCOPY) --redefine-sym $(<F)=$< $(dot-target).tmp $@ && rm -f $(dot-target).tmp
++           $(OBJCOPY) --redefine-sym $(<F)=$(call rel-path,$<) $(dot-target).tmp $@ && rm -f $(dot-target).tmp
+     else
+         cmd_objcopy_fix_sym = mv -f $(dot-target).tmp $@
+     endif
+-- 
+2.30.2
+

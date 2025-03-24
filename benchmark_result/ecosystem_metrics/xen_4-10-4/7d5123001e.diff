@@ -1,0 +1,46 @@
+From 7d5123001ee4a5bc010a48b30b6071f3e055ad18 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Thu, 20 Jun 2019 18:47:06 +0100
+Subject: [PATCH] xen/arm: time: cycles_t should be an uint64_t and not
+ unsigned long
+
+Since commit ca73ac8e7d "xen/arm: Add an isb() before reading CNTPCT_EL0
+to prevent re-ordering", get_cycles() is now returning the number of
+cycles and used in more callers.
+
+While the counter registers is always 64-bit, get_cycles() will only
+reutrn a 32-bit on Arm32 and therefore truncate the value. This will
+result to weird behavior by both Xen and the Guest as the timer will not
+be setup correctly.
+
+This could be resolved by switch cycles_t from unsigned long to
+unsigned int.
+
+This change was originally introduced by
+da3d55ae67225798c2ad8f42af2f432f6f2b2214 "console: avoid printing no or
+null time stamps".
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+[Stefano: improve commit message]
+Signed-off-by: Stefano Stabellini <stefanos@xilinx.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+---
+ xen/include/asm-arm/time.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/asm-arm/time.h b/xen/include/asm-arm/time.h
+index ca30406669..bd7dc86d78 100644
+--- a/xen/include/asm-arm/time.h
++++ b/xen/include/asm-arm/time.h
+@@ -7,7 +7,7 @@
+     DT_MATCH_COMPATIBLE("arm,armv7-timer"), \
+     DT_MATCH_COMPATIBLE("arm,armv8-timer")
+ 
+-typedef unsigned long cycles_t;
++typedef uint64_t cycles_t;
+ 
+ static inline cycles_t get_cycles (void)
+ {
+-- 
+2.30.2
+

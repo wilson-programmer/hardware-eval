@@ -1,0 +1,82 @@
+From aebe0554e9ac4e5addb0d3cf25bd51af7dd61821 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Mon, 18 Mar 2019 18:01:31 +0000
+Subject: [PATCH] xen/arm: mm: Flush the TLBs even if a mapping failed in
+ create_xen_entries
+
+At the moment, create_xen_entries will only flush the TLBs if the full
+range has successfully been updated. This may lead to leave unwanted
+entries in the TLBs if we fail to update some entries.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Andrii Anisov <andrii_anisov@epam.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit a189ef027dbb7a3c0dfe566137f05c06d6685fb9)
+---
+ xen/arch/arm/mm.c | 20 +++++++++++++-------
+ 1 file changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/xen/arch/arm/mm.c b/xen/arch/arm/mm.c
+index a940f5976e..6450850457 100644
+--- a/xen/arch/arm/mm.c
++++ b/xen/arch/arm/mm.c
+@@ -987,7 +987,7 @@ static int create_xen_entries(enum xenmap_operation op,
+                               unsigned long nr_mfns,
+                               unsigned int flags)
+ {
+-    int rc;
++    int rc = 0;
+     unsigned long addr = virt, addr_end = addr + nr_mfns * PAGE_SIZE;
+     lpae_t pte, *entry;
+     lpae_t *third = NULL;
+@@ -1016,7 +1016,8 @@ static int create_xen_entries(enum xenmap_operation op,
+                 {
+                     printk("%s: trying to replace an existing mapping addr=%lx mfn=%"PRI_mfn"\n",
+                            __func__, addr, mfn_x(mfn));
+-                    return -EINVAL;
++                    rc = -EINVAL;
++                    goto out;
+                 }
+                 if ( op == RESERVE )
+                     break;
+@@ -1033,7 +1034,8 @@ static int create_xen_entries(enum xenmap_operation op,
+                 {
+                     printk("%s: trying to %s a non-existing mapping addr=%lx\n",
+                            __func__, op == REMOVE ? "remove" : "modify", addr);
+-                    return -EINVAL;
++                    rc = -EINVAL;
++                    goto out;
+                 }
+                 if ( op == REMOVE )
+                     pte.bits = 0;
+@@ -1046,7 +1048,8 @@ static int create_xen_entries(enum xenmap_operation op,
+                     {
+                         printk("%s: Incorrect combination for addr=%lx\n",
+                                __func__, addr);
+-                        return -EINVAL;
++                        rc = -EINVAL;
++                        goto out;
+                     }
+                 }
+                 write_pte(entry, pte);
+@@ -1055,11 +1058,14 @@ static int create_xen_entries(enum xenmap_operation op,
+                 BUG();
+         }
+     }
++out:
++    /*
++     * Flush the TLBs even in case of failure because we may have
++     * partially modified the PT. This will prevent any unexpected
++     * behavior afterwards.
++     */
+     flush_xen_data_tlb_range_va(virt, PAGE_SIZE * nr_mfns);
+ 
+-    rc = 0;
+-
+-out:
+     return rc;
+ }
+ 
+-- 
+2.30.2
+

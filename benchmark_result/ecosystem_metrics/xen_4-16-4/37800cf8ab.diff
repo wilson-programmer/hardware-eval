@@ -1,0 +1,87 @@
+From 37800cf8ab7806e506b96a13cad0fb395d86663a Mon Sep 17 00:00:00 2001
+From: Michal Orzel <michal.orzel@amd.com>
+Date: Tue, 14 Feb 2023 16:38:38 +0100
+Subject: [PATCH] automation: Switch arm32 cross builds to run on arm64
+
+Due to the limited x86 CI resources slowing down the whole pipeline,
+switch the arm32 cross builds to be executed on arm64 which is much more
+capable. For that, rename the existing debian container dockerfile
+from unstable-arm32-gcc to unstable-arm64v8-arm32-gcc and use
+arm64v8/debian:unstable as an image. Note, that we cannot use the same
+container name as we have to keep the backwards compatibility.
+Take the opportunity to remove extra empty line at the end of a file.
+
+Modify the tag of .arm32-cross-build-tmpl to arm64 and update the build
+jobs accordingly.
+
+Signed-off-by: Michal Orzel <michal.orzel@amd.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit a35fccc8df93de7154dba87db6e7bcf391e9d51c)
+---
+ ...ockerfile => unstable-arm64v8-arm32-gcc.dockerfile} |  3 +--
+ automation/gitlab-ci/build.yaml                        | 10 +++++-----
+ 2 files changed, 6 insertions(+), 7 deletions(-)
+ rename automation/build/debian/{unstable-arm32-gcc.dockerfile => unstable-arm64v8-arm32-gcc.dockerfile} (94%)
+
+diff --git a/automation/build/debian/unstable-arm32-gcc.dockerfile b/automation/build/debian/unstable-arm64v8-arm32-gcc.dockerfile
+similarity index 94%
+rename from automation/build/debian/unstable-arm32-gcc.dockerfile
+rename to automation/build/debian/unstable-arm64v8-arm32-gcc.dockerfile
+index b41a57f197..11860425a6 100644
+--- a/automation/build/debian/unstable-arm32-gcc.dockerfile
++++ b/automation/build/debian/unstable-arm64v8-arm32-gcc.dockerfile
+@@ -1,4 +1,4 @@
+-FROM debian:unstable
++FROM arm64v8/debian:unstable
+ LABEL maintainer.name="The Xen Project" \
+       maintainer.email="xen-devel@lists.xenproject.org"
+ 
+@@ -21,4 +21,3 @@ RUN apt-get update && \
+         apt-get autoremove -y && \
+         apt-get clean && \
+         rm -rf /var/lib/apt/lists* /tmp/* /var/tmp/*
+-
+diff --git a/automation/gitlab-ci/build.yaml b/automation/gitlab-ci/build.yaml
+index 06a75a8c5a..f66fbca8a7 100644
+--- a/automation/gitlab-ci/build.yaml
++++ b/automation/gitlab-ci/build.yaml
+@@ -123,7 +123,7 @@
+   variables:
+     XEN_TARGET_ARCH: arm32
+   tags:
+-    - x86_64
++    - arm64
+ 
+ .arm32-cross-build:
+   extends: .arm32-cross-build-tmpl
+@@ -497,23 +497,23 @@ alpine-3.12-clang-debug:
+ debian-unstable-gcc-arm32:
+   extends: .gcc-arm32-cross-build
+   variables:
+-    CONTAINER: debian:unstable-arm32-gcc
++    CONTAINER: debian:unstable-arm64v8-arm32-gcc
+ 
+ debian-unstable-gcc-arm32-debug:
+   extends: .gcc-arm32-cross-build-debug
+   variables:
+-    CONTAINER: debian:unstable-arm32-gcc
++    CONTAINER: debian:unstable-arm64v8-arm32-gcc
+ 
+ debian-unstable-gcc-arm32-randconfig:
+   extends: .gcc-arm32-cross-build
+   variables:
+-    CONTAINER: debian:unstable-arm32-gcc
++    CONTAINER: debian:unstable-arm64v8-arm32-gcc
+     RANDCONFIG: y
+ 
+ debian-unstable-gcc-arm32-debug-randconfig:
+   extends: .gcc-arm32-cross-build-debug
+   variables:
+-    CONTAINER: debian:unstable-arm32-gcc
++    CONTAINER: debian:unstable-arm64v8-arm32-gcc
+     RANDCONFIG: y
+ 
+ # Arm builds
+-- 
+2.30.2
+

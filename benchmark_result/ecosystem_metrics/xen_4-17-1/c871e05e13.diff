@@ -1,0 +1,74 @@
+From c871e05e138aae2ac75e9b4ccebe6cf3fd1a775b Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 7 Feb 2023 16:57:52 +0100
+Subject: [PATCH] include/compat: produce stubs for headers not otherwise
+ generated
+
+Public headers can include other public headers. Such interdependencies
+are retained in their compat counterparts. Since some compat headers are
+generated only in certain configurations, the referenced headers still
+need to exist. The lack thereof was observed with hvm/hvm_op.h needing
+trace.h, where generation of the latter depends on TRACEBUFFER=y. Make
+empty stubs in such cases (as generating the extra headers is relatively
+slow and hence better to avoid). Changes to .config and incrementally
+(re-)building is covered by the respective .*.cmd then no longer
+matching the command to be used, resulting in the necessary re-creation
+of the (possibly stub) header.
+
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: 6bec713f871f21c6254a5783c1e39867ea828256
+master date: 2023-01-12 16:17:54 +0100
+---
+ xen/include/Makefile | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/xen/include/Makefile b/xen/include/Makefile
+index 65be310eca..cfd7851614 100644
+--- a/xen/include/Makefile
++++ b/xen/include/Makefile
+@@ -34,6 +34,8 @@ headers-$(CONFIG_TRACEBUFFER) += compat/trace.h
+ headers-$(CONFIG_XENOPROF) += compat/xenoprof.h
+ headers-$(CONFIG_XSM_FLASK) += compat/xsm/flask_op.h
+ 
++headers-n := $(filter-out $(headers-y),$(headers-n) $(headers-))
++
+ cppflags-y                := -include public/xen-compat.h -DXEN_GENERATING_COMPAT_HEADERS
+ cppflags-$(CONFIG_X86)    += -m32
+ 
+@@ -43,13 +45,16 @@ public-$(CONFIG_X86) := $(wildcard $(srcdir)/public/arch-x86/*.h $(srcdir)/publi
+ public-$(CONFIG_ARM) := $(wildcard $(srcdir)/public/arch-arm/*.h $(srcdir)/public/arch-arm/*/*.h)
+ 
+ .PHONY: all
+-all: $(addprefix $(obj)/,$(headers-y))
++all: $(addprefix $(obj)/,$(headers-y) $(headers-n))
+ 
+ quiet_cmd_compat_h = GEN     $@
+ cmd_compat_h = \
+     $(PYTHON) $(srctree)/tools/compat-build-header.py <$< $(patsubst $(obj)/%,%,$@) >>$@.new; \
+     mv -f $@.new $@
+ 
++quiet_cmd_stub_h = GEN     $@
++cmd_stub_h = echo '/* empty */' >$@
++
+ quiet_cmd_compat_i = CPP     $@
+ cmd_compat_i = $(CPP) $(filter-out -Wa$(comma)% -include %/include/xen/config.h,$(XEN_CFLAGS)) $(cppflags-y) -o $@ $<
+ 
+@@ -69,6 +74,13 @@ targets += $(headers-y)
+ $(obj)/compat/%.h: $(obj)/compat/%.i $(srctree)/tools/compat-build-header.py FORCE
+ 	$(call if_changed,compat_h)
+ 
++# Placeholders may be needed in case files in $(headers-y) include files we
++# don't otherwise generate.  Real dependencies would need spelling out explicitly,
++# for them to appear in $(headers-y) instead.
++targets += $(headers-n)
++$(addprefix $(obj)/,$(headers-n)): FORCE
++	$(call if_changed,stub_h)
++
+ .PRECIOUS: $(obj)/compat/%.i
+ targets += $(patsubst %.h, %.i, $(headers-y))
+ $(obj)/compat/%.i: $(obj)/compat/%.c FORCE
+-- 
+2.30.2
+

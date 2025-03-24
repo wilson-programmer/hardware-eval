@@ -1,0 +1,69 @@
+From 86a2e13cbe0840edb3400ee3e752af3dc2e856d8 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Marek=20Marczykowski-G=C3=B3recki?=
+ <marmarek@invisiblethingslab.com>
+Date: Tue, 4 Jun 2019 15:36:17 +0200
+Subject: [PATCH] drivers/video: drop framebuffer size constraints
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The limit 1900x1200 do not match real world devices (1900 looks like a
+typo, should be 1920). But in practice the limits are arbitrary and do
+not serve any real purpose. As discussed in "Increase framebuffer size
+to todays standards" thread, drop them completely.
+
+This fixes graphic console on device with 3840x2160 native resolution.
+
+Suggested-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+
+drivers/video: drop unused limits
+
+MAX_BPP, MAX_FONT_W, MAX_FONT_H are not used in the code at all.
+
+Suggested-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 19600eb75aa9b1df3e4b0a4e55a5d08b957e1fd9
+master date: 2019-05-13 10:13:24 +0200
+master commit: 343459e34a6d32ba44a21f8b8fe4c1f69b1714c2
+master date: 2019-05-13 10:12:56 +0200
+---
+ xen/drivers/video/lfb.c | 13 -------------
+ 1 file changed, 13 deletions(-)
+
+diff --git a/xen/drivers/video/lfb.c b/xen/drivers/video/lfb.c
+index d0c8c492b0..5022195ae5 100644
+--- a/xen/drivers/video/lfb.c
++++ b/xen/drivers/video/lfb.c
+@@ -10,12 +10,6 @@
+ #include "lfb.h"
+ #include "font.h"
+ 
+-#define MAX_XRES 1900
+-#define MAX_YRES 1200
+-#define MAX_BPP 4
+-#define MAX_FONT_W 8
+-#define MAX_FONT_H 16
+-
+ struct lfb_status {
+     struct lfb_prop lfbp;
+ 
+@@ -149,13 +143,6 @@ void lfb_carriage_return(void)
+ 
+ int __init lfb_init(struct lfb_prop *lfbp)
+ {
+-    if ( lfbp->width > MAX_XRES || lfbp->height > MAX_YRES )
+-    {
+-        printk(XENLOG_WARNING "Couldn't initialize a %ux%u framebuffer early.\n",
+-               lfbp->width, lfbp->height);
+-        return -EINVAL;
+-    }
+-
+     lfb.lfbp = *lfbp;
+ 
+     lfb.lbuf = xmalloc_bytes(lfb.lfbp.bytes_per_line);
+-- 
+2.30.2
+

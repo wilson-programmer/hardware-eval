@@ -1,0 +1,103 @@
+From 2518d92b0ec45a502115f0be8f61a76440026172 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 4 Jun 2019 15:52:23 +0200
+Subject: [PATCH] x86/boot: Fix latent memory corruption with early_boot_opts_t
+
+c/s ebb26b509f "xen/x86: make VGA support selectable" added an #ifdef
+CONFIG_VIDEO into the middle the backing space for early_boot_opts_t,
+but didn't adjust the structure definition in cmdline.c
+
+This only functions correctly because the affected fields are at the end
+of the structure, and cmdline.c doesn't write to them in this case.
+
+To retain the slimming effect of compiling out CONFIG_VIDEO, adjust
+cmdline.c with enough #ifdef-ary to make C's idea of the structure match
+the declaration in asm.  This requires adding __maybe_unused annotations
+to two helper functions.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 30596213617fcf4dd7b71d244e16c8fc0acf456b
+master date: 2019-05-13 10:35:38 +0100
+---
+ xen/arch/x86/boot/cmdline.c | 14 ++++++++++----
+ xen/arch/x86/boot/defs.h    |  1 +
+ 2 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/boot/cmdline.c b/xen/arch/x86/boot/cmdline.c
+index 51b0659a04..fc11c6d3c5 100644
+--- a/xen/arch/x86/boot/cmdline.c
++++ b/xen/arch/x86/boot/cmdline.c
+@@ -40,10 +40,12 @@ typedef struct __packed {
+     u8 opt_edd;
+     u8 opt_edid;
+     u8 padding;
++#ifdef CONFIG_VIDEO
+     u16 boot_vid_mode;
+     u16 vesa_width;
+     u16 vesa_height;
+     u16 vesa_depth;
++#endif
+ } early_boot_opts_t;
+ 
+ /*
+@@ -127,7 +129,8 @@ static size_t strcspn(const char *s, const char *reject)
+     return count;
+ }
+ 
+-static unsigned int strtoui(const char *s, const char *stop, const char **next)
++static unsigned int __maybe_unused strtoui(
++    const char *s, const char *stop, const char **next)
+ {
+     char base = 10, l;
+     unsigned long long res = 0;
+@@ -176,7 +179,7 @@ static int strmaxcmp(const char *cs, const char *ct, const char *_delim_chars)
+     return strncmp(cs, ct, max(strcspn(cs, _delim_chars), strlen(ct)));
+ }
+ 
+-static int strsubcmp(const char *cs, const char *ct)
++static int __maybe_unused strsubcmp(const char *cs, const char *ct)
+ {
+     return strncmp(cs, ct, strlen(ct));
+ }
+@@ -241,6 +244,7 @@ static u8 edid_parse(const char *cmdline)
+     return !strmaxcmp(c, "no", delim_chars);
+ }
+ 
++#ifdef CONFIG_VIDEO
+ static u16 rows2vmode(unsigned int rows)
+ {
+     switch ( rows )
+@@ -328,6 +332,7 @@ static void vga_parse(const char *cmdline, early_boot_opts_t *ebo)
+         ebo->boot_vid_mode = tmp;
+     }
+ }
++#endif
+ 
+ void __stdcall cmdline_parse_early(const char *cmdline, early_boot_opts_t *ebo)
+ {
+@@ -338,6 +343,7 @@ void __stdcall cmdline_parse_early(const char *cmdline, early_boot_opts_t *ebo)
+     ebo->opt_edd = edd_parse(cmdline);
+     ebo->opt_edid = edid_parse(cmdline);
+ 
+-    if ( IS_ENABLED(CONFIG_VIDEO) )
+-        vga_parse(cmdline, ebo);
++#ifdef CONFIG_VIDEO
++    vga_parse(cmdline, ebo);
++#endif
+ }
+diff --git a/xen/arch/x86/boot/defs.h b/xen/arch/x86/boot/defs.h
+index 05921a64a3..21d292cd73 100644
+--- a/xen/arch/x86/boot/defs.h
++++ b/xen/arch/x86/boot/defs.h
+@@ -22,6 +22,7 @@
+ 
+ #include "../../../include/xen/stdbool.h"
+ 
++#define __maybe_unused	__attribute__((__unused__))
+ #define __packed	__attribute__((__packed__))
+ #define __stdcall	__attribute__((__stdcall__))
+ 
+-- 
+2.30.2
+

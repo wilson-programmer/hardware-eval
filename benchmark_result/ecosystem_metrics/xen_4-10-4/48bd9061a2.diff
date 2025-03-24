@@ -1,0 +1,62 @@
+From 48bd9061a251748260a33f6fad38b7a7dc1535df Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 15 May 2019 09:55:25 +0200
+Subject: [PATCH] x86: fix build race when generating temporary object files
+
+The rules to generate xen-syms and xen.efi may run in parallel, but both
+recursively invoke $(MAKE) to build symbol/relocation table temporary
+object files. These recursive builds would both re-generate the .*.d2
+files (where needed). Both would in turn invoke the same rule, thus
+allowing for a race on the .*.d2.tmp intermediate files.
+
+The dependency files of the temporary .xen*.o files live in xen/ rather
+than xen/arch/x86/ anyway, so won't be included no matter what. Take the
+opportunity and delete them, as the just re-generated .xen*.S files will
+trigger a proper re-build of the .xen*.o ones anyway.
+
+Empty the DEPS variable in case the set of goals consists of just those
+temporary object files, thus eliminating the race.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 761bb575ce97255029d2d2249b2719e54bc76825
+master date: 2019-04-11 10:25:05 +0200
+---
+ xen/arch/x86/Makefile | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/Makefile b/xen/arch/x86/Makefile
+index 2ed7d54366..d86fb97fa3 100644
+--- a/xen/arch/x86/Makefile
++++ b/xen/arch/x86/Makefile
+@@ -147,7 +147,7 @@ $(TARGET)-syms: prelink.o xen.lds $(BASEDIR)/common/symbols-dummy.o
+ 	$(NM) -pa --format=sysv $(@D)/$(@F) \
+ 		| $(BASEDIR)/tools/symbols --xensyms --sysv --sort \
+ 		>$(@D)/$(@F).map
+-	rm -f $(@D)/.$(@F).[0-9]*
++	rm -f $(@D)/.$(@F).[0-9]* $(@D)/..$(@F).[0-9]*
+ 
+ note.o: $(TARGET)-syms
+ 	$(OBJCOPY) -O binary --only-section=.note.gnu.build-id  $(BASEDIR)/xen-syms $@.bin
+@@ -206,7 +206,7 @@ $(TARGET).efi: prelink-efi.o $(note_file) efi.lds efi/relocs-dummy.o $(BASEDIR)/
+ 	if $(guard) false; then rm -f $@; echo 'EFI support disabled'; \
+ 	else $(NM) -pa --format=sysv $(@D)/$(@F) \
+ 		| $(BASEDIR)/tools/symbols --xensyms --sysv --sort >$(@D)/$(@F).map; fi
+-	rm -f $(@D)/.$(@F).[0-9]*
++	rm -f $(@D)/.$(@F).[0-9]* $(@D)/..$(@F).[0-9]*
+ 
+ efi/boot.init.o efi/runtime.o efi/compat.o efi/buildid.o: $(BASEDIR)/arch/x86/efi/built_in.o
+ efi/boot.init.o efi/runtime.o efi/compat.o efi/buildid.o: ;
+@@ -237,3 +237,9 @@ clean::
+ 	rm -f $(BASEDIR)/.xen.efi.[0-9]* efi/*.efi efi/mkreloc
+ 	rm -f boot/cmdline.S boot/reloc.S boot/*.lnk boot/*.bin
+ 	rm -f note.o
++
++# Suppress loading of DEPS files for internal, temporary target files.  This
++# then also suppresses re-generation of the respective .*.d2 files.
++ifeq ($(filter-out .xen%.o,$(notdir $(MAKECMDGOALS))),)
++DEPS:=
++endif
+-- 
+2.30.2
+

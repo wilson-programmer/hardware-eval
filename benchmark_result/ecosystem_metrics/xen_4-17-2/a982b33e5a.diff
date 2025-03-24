@@ -1,0 +1,69 @@
+From a982b33e5a6b3d6b8e85931a1b52e14db7bec20f Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 3 Aug 2023 17:35:39 +0200
+Subject: [PATCH] libxl: allow building with old gcc again
+
+We can't use initializers of unnamed struct/union members just yet.
+
+Fixes: d638fe233cb3 ("libxl: use the cpuid feature names from cpufeatureset.h")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+(cherry picked from commit 1aa5acbbec3f37bf38d78fa96d210053f8e8efd5)
+---
+ tools/libs/light/libxl_cpuid.c | 20 ++++++++++++--------
+ 1 file changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/tools/libs/light/libxl_cpuid.c b/tools/libs/light/libxl_cpuid.c
+index 0630d342b0..849722541c 100644
+--- a/tools/libs/light/libxl_cpuid.c
++++ b/tools/libs/light/libxl_cpuid.c
+@@ -316,12 +316,16 @@ int libxl_cpuid_parse_config(libxl_cpuid_policy_list *policy, const char* str)
+                 uint32_t index;
+                 unsigned int reg;
+             } msr;
+-        };
++        } u;
+     } feature_to_policy[] = {
+ #define CPUID_ENTRY(l, s, r) \
+-    { .type = FEAT_CPUID, .cpuid.leaf = l, .cpuid.subleaf = s, .cpuid.reg = r }
++    { .type = FEAT_CPUID, \
++      .u = { .cpuid.leaf = l, .cpuid.subleaf = s, .cpuid.reg = r } \
++    }
+ #define MSR_ENTRY(i, r) \
+-    { .type = FEAT_MSR, .msr.index = i, .msr.reg = r }
++    { .type = FEAT_MSR, \
++      .u = { .msr.index = i, .msr.reg = r } \
++    }
+         CPUID_ENTRY(0x00000001, NA, CPUID_REG_EDX),
+         CPUID_ENTRY(0x00000001, NA, CPUID_REG_ECX),
+         CPUID_ENTRY(0x80000001, NA, CPUID_REG_EDX),
+@@ -380,9 +384,9 @@ int libxl_cpuid_parse_config(libxl_cpuid_policy_list *policy, const char* str)
+         struct cpuid_flags f;
+ 
+         f.name = feat->name;
+-        f.leaf = feature_to_policy[feat->bit / 32].cpuid.leaf;
+-        f.subleaf = feature_to_policy[feat->bit / 32].cpuid.subleaf;
+-        f.reg = feature_to_policy[feat->bit / 32].cpuid.reg;
++        f.leaf = feature_to_policy[feat->bit / 32].u.cpuid.leaf;
++        f.subleaf = feature_to_policy[feat->bit / 32].u.cpuid.subleaf;
++        f.reg = feature_to_policy[feat->bit / 32].u.cpuid.reg;
+         f.bit = feat->bit % 32;
+         f.length = 1;
+ 
+@@ -393,10 +397,10 @@ int libxl_cpuid_parse_config(libxl_cpuid_policy_list *policy, const char* str)
+     {
+         unsigned int bit = feat->bit % 32;
+ 
+-        if (feature_to_policy[feat->bit / 32].msr.reg == CPUID_REG_EDX)
++        if (feature_to_policy[feat->bit / 32].u.msr.reg == CPUID_REG_EDX)
+             bit += 32;
+ 
+-        return msr_add(policy, feature_to_policy[feat->bit / 32].msr.index,
++        return msr_add(policy, feature_to_policy[feat->bit / 32].u.msr.index,
+                        bit, val);
+     }
+     }
+-- 
+2.30.2
+

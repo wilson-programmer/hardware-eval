@@ -1,0 +1,194 @@
+From 15107a80b209955a56d022a6d04774dc7b29876d Mon Sep 17 00:00:00 2001
+From: Roger Pau Monne <roger.pau@citrix.com>
+Date: Thu, 18 Mar 2021 11:11:22 +0100
+Subject: [PATCH] libxl: don't ignore the return value from
+ xc_cpuid_apply_policy
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Also change libxl__cpuid_legacy to propagate the error from
+xc_cpuid_apply_policy into callers.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+(cherry picked from commit 34990446ca91d9e201ff17bd4e3f43bfe3ad308e)
+
+libs/light: Propagate libxl__arch_domain_create() return code
+
+Commit 34990446ca91 started to overwrite the `rc` value from
+libxl__arch_domain_create(), thus error aren't propagated anymore.
+
+Check `rc` value before doing the next thing.
+
+Fixes: 34990446ca91 ("libxl: don't ignore the return value from xc_cpuid_apply_policy")
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+Release-acked-by: Henry Wang <Henry.Wang@arm.com>
+(cherry picked from commit 8cdfbf95b19c01fbb741c41d5ea5a94f8823964c)
+
+libxl: fix guest kexec - skip cpuid policy
+
+When a domain performs a kexec (soft reset), libxl__build_pre() is
+called with the existing domid.  Calling libxl__cpuid_legacy() on the
+existing domain fails since the cpuid policy has already been set, and
+the guest isn't rebuilt and doesn't kexec.
+
+xc: error: Failed to set d1's policy (err leaf 0xffffffff, subleaf 0xffffffff, msr 0xffffffff) (17 = File exists): Internal error
+libxl: error: libxl_cpuid.c:494:libxl__cpuid_legacy: Domain 1:Failed to apply CPUID policy: File exists
+libxl: error: libxl_create.c:1641:domcreate_rebuild_done: Domain 1:cannot (re-)build domain: -3
+libxl: error: libxl_xshelp.c:201:libxl__xs_read_mandatory: xenstore read failed: `/libxl/1/type': No such file or directory
+libxl: warning: libxl_dom.c:49:libxl__domain_type: unable to get domain type for domid=1, assuming HVM
+
+During a soft_reset, skip calling libxl__cpuid_legacy() to avoid the
+issue.  Before commit 34990446ca91, the libxl__cpuid_legacy() failure
+would have been ignored, so kexec would continue.
+
+Fixes: 34990446ca91 ("libxl: don't ignore the return value from xc_cpuid_apply_policy")
+Signed-off-by: Jason Andryuk <jandryuk@gmail.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+(cherry picked from commit 1e454c2b5b1172e0fc7457e411ebaba61db8fc87)
+---
+ tools/libs/light/libxl_cpuid.c    | 15 +++++++++++----
+ tools/libs/light/libxl_create.c   |  7 +++++--
+ tools/libs/light/libxl_dom.c      |  6 ++++--
+ tools/libs/light/libxl_internal.h |  5 +++--
+ tools/libs/light/libxl_nocpuid.c  |  5 +++--
+ 5 files changed, 26 insertions(+), 12 deletions(-)
+
+diff --git a/tools/libs/light/libxl_cpuid.c b/tools/libs/light/libxl_cpuid.c
+index 4cc2f211b8..93c93d2d22 100644
+--- a/tools/libs/light/libxl_cpuid.c
++++ b/tools/libs/light/libxl_cpuid.c
+@@ -435,11 +435,13 @@ int libxl_cpuid_parse_config_xend(libxl_cpuid_policy_list *cpuid,
+     return 0;
+ }
+ 
+-void libxl__cpuid_legacy(libxl_ctx *ctx, uint32_t domid, bool restore,
+-                         libxl_domain_build_info *info)
++int libxl__cpuid_legacy(libxl_ctx *ctx, uint32_t domid, bool restore,
++                        libxl_domain_build_info *info)
+ {
++    GC_INIT(ctx);
+     bool pae = true;
+     bool itsc;
++    int r;
+ 
+     /*
+      * Gross hack.  Using libxl_defbool_val() here causes libvirt to crash in
+@@ -478,8 +480,13 @@ void libxl__cpuid_legacy(libxl_ctx *ctx, uint32_t domid, bool restore,
+     itsc = (libxl_defbool_val(info->disable_migrate) ||
+             info->tsc_mode == LIBXL_TSC_MODE_ALWAYS_EMULATE);
+ 
+-    xc_cpuid_apply_policy(ctx->xch, domid, restore, NULL, 0,
+-                          pae, itsc, nested_virt, info->cpuid);
++    r = xc_cpuid_apply_policy(ctx->xch, domid, restore, NULL, 0,
++                              pae, itsc, nested_virt, info->cpuid);
++    if (r)
++        LOGEVD(ERROR, -r, domid, "Failed to apply CPUID policy");
++
++    GC_FREE;
++    return r ? ERROR_FAIL : 0;
+ }
+ 
+ static const char *input_names[2] = { "leaf", "subleaf" };
+diff --git a/tools/libs/light/libxl_create.c b/tools/libs/light/libxl_create.c
+index 2f171a190a..40b6aa462b 100644
+--- a/tools/libs/light/libxl_create.c
++++ b/tools/libs/light/libxl_create.c
+@@ -1443,6 +1443,7 @@ int libxl__srm_callout_callback_static_data_done(unsigned int missing,
+ 
+     libxl_domain_config *d_config = dcs->guest_config;
+     libxl_domain_build_info *info = &d_config->b_info;
++    int rc = 0;
+ 
+     /*
+      * CPUID/MSR information is not present in pre Xen-4.14 streams.
+@@ -1452,9 +1453,9 @@ int libxl__srm_callout_callback_static_data_done(unsigned int missing,
+      * stream doesn't contain any CPUID data.
+      */
+     if (missing & XGR_SDD_MISSING_CPUID)
+-        libxl__cpuid_legacy(ctx, dcs->guest_domid, true, info);
++        rc = libxl__cpuid_legacy(ctx, dcs->guest_domid, true, info);
+ 
+-    return 0;
++    return rc;
+ }
+ 
+ void libxl__srm_callout_callback_restore_results(xen_pfn_t store_mfn,
+@@ -2146,6 +2147,8 @@ static int do_domain_soft_reset(libxl_ctx *ctx,
+                               aop_console_how);
+     cdcs->domid_out = &domid_out;
+ 
++    state->soft_reset = true;
++
+     dom_path = libxl__xs_get_dompath(gc, domid);
+     if (!dom_path) {
+         LOGD(ERROR, domid, "failed to read domain path");
+diff --git a/tools/libs/light/libxl_dom.c b/tools/libs/light/libxl_dom.c
+index 842a51c86c..865b4623d8 100644
+--- a/tools/libs/light/libxl_dom.c
++++ b/tools/libs/light/libxl_dom.c
+@@ -379,13 +379,15 @@ int libxl__build_pre(libxl__gc *gc, uint32_t domid,
+     state->console_port = xc_evtchn_alloc_unbound(ctx->xch, domid, state->console_domid);
+ 
+     rc = libxl__arch_domain_create(gc, d_config, state, domid);
++    if (rc) goto out;
+ 
+     /* Construct a CPUID policy, but only for brand new domains.  Domains
+      * being migrated-in/restored have CPUID handled during the
+      * static_data_done() callback. */
+-    if (!state->restore)
+-        libxl__cpuid_legacy(ctx, domid, false, info);
++    if (!state->restore && !state->soft_reset)
++        rc = libxl__cpuid_legacy(ctx, domid, false, info);
+ 
++out:
+     return rc;
+ }
+ 
+diff --git a/tools/libs/light/libxl_internal.h b/tools/libs/light/libxl_internal.h
+index c114f6d399..ee6a251700 100644
+--- a/tools/libs/light/libxl_internal.h
++++ b/tools/libs/light/libxl_internal.h
+@@ -1407,6 +1407,7 @@ typedef struct {
+     /* Whether this domain is being migrated/restored, or booting fresh.  Only
+      * applicable to the primary domain, not support domains (e.g. stub QEMU). */
+     bool restore;
++    bool soft_reset;
+ } libxl__domain_build_state;
+ 
+ _hidden void libxl__domain_build_state_init(libxl__domain_build_state *s);
+@@ -2060,8 +2061,8 @@ typedef yajl_gen_status (*libxl__gen_json_callback)(yajl_gen hand, void *);
+ _hidden char *libxl__object_to_json(libxl_ctx *ctx, const char *type,
+                                     libxl__gen_json_callback gen, void *p);
+ 
+-_hidden void libxl__cpuid_legacy(libxl_ctx *ctx, uint32_t domid, bool retore,
+-                                 libxl_domain_build_info *info);
++_hidden int libxl__cpuid_legacy(libxl_ctx *ctx, uint32_t domid, bool retore,
++                                libxl_domain_build_info *info);
+ 
+ /* Calls poll() again - useful to check whether a signaled condition
+  * is still true.  Cannot fail.  Returns currently-true revents. */
+diff --git a/tools/libs/light/libxl_nocpuid.c b/tools/libs/light/libxl_nocpuid.c
+index f47336565b..0630959e76 100644
+--- a/tools/libs/light/libxl_nocpuid.c
++++ b/tools/libs/light/libxl_nocpuid.c
+@@ -34,9 +34,10 @@ int libxl_cpuid_parse_config_xend(libxl_cpuid_policy_list *cpuid,
+     return 0;
+ }
+ 
+-void libxl__cpuid_legacy(libxl_ctx *ctx, uint32_t domid, bool restore,
+-                         libxl_domain_build_info *info)
++int libxl__cpuid_legacy(libxl_ctx *ctx, uint32_t domid, bool restore,
++                        libxl_domain_build_info *info)
+ {
++    return 0;
+ }
+ 
+ yajl_gen_status libxl_cpuid_policy_list_gen_json(yajl_gen hand,
+-- 
+2.30.2
+

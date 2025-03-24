@@ -1,0 +1,93 @@
+From fe10c229a404594a7cd5f2aaf3bd909dfc4e14e8 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 5 Nov 2018 15:02:59 +0100
+Subject: [PATCH] x86/boot: Initialise the debug registers correctly
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+In particular, initialising %dr6 with the value 0 is buggy, because on
+hardware supporting Transactional Memory, it will cause the sticky RTM bit to
+be asserted, even though a debug exception from a transaction hasn't actually
+been observed.
+
+Move X86_DR6_DEFAULT into x86-defns.h along with the other architectural
+register constants, and introduce a new X86_DR7_DEFAULT.  Use the existing
+write_debugreg() helper, rather than opencoded inline assembly.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 721da6d41a70fe08b3fcd9c31a62f6709a54c6ba
+master date: 2018-10-24 14:43:05 +0100
+---
+ xen/arch/x86/cpu/common.c       | 12 ++++++++----
+ xen/include/asm-x86/debugreg.h  |  2 --
+ xen/include/asm-x86/x86-defns.h | 10 ++++++++++
+ 3 files changed, 18 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/x86/cpu/common.c b/xen/arch/x86/cpu/common.c
+index 72e65b6e1a..1d21ff9467 100644
+--- a/xen/arch/x86/cpu/common.c
++++ b/xen/arch/x86/cpu/common.c
+@@ -3,6 +3,7 @@
+ #include <xen/delay.h>
+ #include <xen/smp.h>
+ #include <asm/current.h>
++#include <asm/debugreg.h>
+ #include <asm/processor.h>
+ #include <asm/xstate.h>
+ #include <asm/msr.h>
+@@ -827,10 +828,13 @@ void cpu_init(void)
+ 	/* Ensure FPU gets initialised for each domain. */
+ 	stts();
+ 
+-	/* Clear all 6 debug registers: */
+-#define CD(register) asm volatile ( "mov %0,%%db" #register : : "r"(0UL) );
+-	CD(0); CD(1); CD(2); CD(3); /* no db4 and db5 */; CD(6); CD(7);
+-#undef CD
++	/* Reset debug registers: */
++	write_debugreg(0, 0);
++	write_debugreg(1, 0);
++	write_debugreg(2, 0);
++	write_debugreg(3, 0);
++	write_debugreg(6, X86_DR6_DEFAULT);
++	write_debugreg(7, X86_DR7_DEFAULT);
+ 
+ 	/* Enable NMIs.  Our loader (e.g. Tboot) may have left them disabled. */
+ 	enable_nmis();
+diff --git a/xen/include/asm-x86/debugreg.h b/xen/include/asm-x86/debugreg.h
+index b3b10eaf40..c57914efc6 100644
+--- a/xen/include/asm-x86/debugreg.h
++++ b/xen/include/asm-x86/debugreg.h
+@@ -24,8 +24,6 @@
+ #define DR_STATUS_RESERVED_ZERO (~0xffffeffful) /* Reserved, read as zero */
+ #define DR_STATUS_RESERVED_ONE  0xffff0ff0ul /* Reserved, read as one */
+ 
+-#define X86_DR6_DEFAULT 0xffff0ff0ul    /* Default %dr6 value. */
+-
+ /* Now define a bunch of things for manipulating the control register.
+    The top two bytes of the control register consist of 4 fields of 4
+    bits - each field corresponds to one of the four debug registers,
+diff --git a/xen/include/asm-x86/x86-defns.h b/xen/include/asm-x86/x86-defns.h
+index 904041e1ab..b80bbd80ad 100644
+--- a/xen/include/asm-x86/x86-defns.h
++++ b/xen/include/asm-x86/x86-defns.h
+@@ -97,4 +97,14 @@
+ #define X86_XCR0_LWP_POS          62
+ #define X86_XCR0_LWP              (1ULL << X86_XCR0_LWP_POS)
+ 
++/*
++ * Debug status flags in DR6.
++ */
++#define X86_DR6_DEFAULT         0xffff0ff0  /* Default %dr6 value. */
++
++/*
++ * Debug control flags in DR7.
++ */
++#define X86_DR7_DEFAULT         0x00000400  /* Default %dr7 value. */
++
+ #endif	/* __XEN_X86_DEFNS_H__ */
+-- 
+2.30.2
+

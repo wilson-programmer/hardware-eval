@@ -1,0 +1,40 @@
+From 2fb361c36aa965de09922d9f87a29769b029b2fb Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Thu, 19 Nov 2020 19:07:47 +0000
+Subject: [PATCH] xen/arm: mm: Remove ; at the end of mm_printk()
+
+The ; at the end of mm_printk() means the following code will not build
+correctly:
+
+if ( ... )
+    mm_printk(...);
+else
+    ...
+
+As we treat the macro as a function, we want to remove the ; at the end
+of it.
+
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+(cherry picked from commit bfe67a17d4df2efbedaaf5cfbadc8a8627debf5c)
+---
+ xen/arch/arm/mm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/mm.c b/xen/arch/arm/mm.c
+index 8958eefd13..67853d58d7 100644
+--- a/xen/arch/arm/mm.c
++++ b/xen/arch/arm/mm.c
+@@ -59,7 +59,7 @@ mm_printk(const char *fmt, ...) {}
+     {                                       \
+         dprintk(XENLOG_ERR, fmt, ## args);  \
+         WARN();                             \
+-    } while (0);
++    } while (0)
+ #endif
+ 
+ /*
+-- 
+2.30.2
+

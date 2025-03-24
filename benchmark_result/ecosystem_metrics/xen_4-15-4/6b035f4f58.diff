@@ -1,0 +1,61 @@
+From 6b035f4f5829eb213cb9fcbe83b5dfae05c857a6 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 31 Oct 2022 13:35:33 +0100
+Subject: [PATCH] vpci: don't assume that vpci per-device data exists
+ unconditionally
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+It's possible for a device to be assigned to a domain but have no
+vpci structure if vpci_process_pending() failed and called
+vpci_remove_device() as a result.  The unconditional accesses done by
+vpci_{read,write}() and vpci_remove_device() to pdev->vpci would
+then trigger a NULL pointer dereference.
+
+Add checks for pdev->vpci presence in the affected functions.
+
+Fixes: 9c244fdef7 ('vpci: add header handlers')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 6ccb5e308ceeb895fbccd87a528a8bd24325aa39
+master date: 2022-10-26 14:55:30 +0200
+---
+ xen/drivers/vpci/vpci.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/xen/drivers/vpci/vpci.c b/xen/drivers/vpci/vpci.c
+index a27c9e600d..6b90e4fa32 100644
+--- a/xen/drivers/vpci/vpci.c
++++ b/xen/drivers/vpci/vpci.c
+@@ -37,6 +37,9 @@ extern vpci_register_init_t *const __end_vpci_array[];
+ 
+ void vpci_remove_device(struct pci_dev *pdev)
+ {
++    if ( !pdev->vpci )
++        return;
++
+     spin_lock(&pdev->vpci->lock);
+     while ( !list_empty(&pdev->vpci->handlers) )
+     {
+@@ -320,7 +323,7 @@ uint32_t vpci_read(pci_sbdf_t sbdf, unsigned int reg, unsigned int size)
+ 
+     /* Find the PCI dev matching the address. */
+     pdev = pci_get_pdev_by_domain(d, sbdf.seg, sbdf.bus, sbdf.devfn);
+-    if ( !pdev )
++    if ( !pdev || !pdev->vpci )
+         return vpci_read_hw(sbdf, reg, size);
+ 
+     spin_lock(&pdev->vpci->lock);
+@@ -430,7 +433,7 @@ void vpci_write(pci_sbdf_t sbdf, unsigned int reg, unsigned int size,
+      * Passthrough everything that's not trapped.
+      */
+     pdev = pci_get_pdev_by_domain(d, sbdf.seg, sbdf.bus, sbdf.devfn);
+-    if ( !pdev )
++    if ( !pdev || !pdev->vpci )
+     {
+         vpci_write_hw(sbdf, reg, size, data);
+         return;
+-- 
+2.30.2
+

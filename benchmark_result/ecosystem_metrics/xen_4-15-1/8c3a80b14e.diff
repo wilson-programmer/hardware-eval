@@ -1,0 +1,66 @@
+From 8c3a80b14e0056bcae7c691b71be370c39a32f47 Mon Sep 17 00:00:00 2001
+From: Jane Malalane <jane.malalane@citrix.com>
+Date: Wed, 25 Aug 2021 14:49:47 +0200
+Subject: [PATCH] xen/lib: Fix strcmp() and strncmp()
+
+The C standard requires that each character be compared as unsigned
+char. Xen's current behaviour compares as signed char, which changes
+the answer when chars with a value greater than 0x7f are used.
+
+Suggested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jane Malalane <jane.malalane@citrix.com>
+Reviewed-by: Ian Jackson <iwj@xenproject.org>
+master commit: 3747a2bb67daa5a8baeff6cda57dc98a5ef79c3e
+master date: 2021-07-30 10:52:46 +0100
+---
+ xen/common/string.c | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/xen/common/string.c b/xen/common/string.c
+index af3d96ad0f..43624b1b45 100644
+--- a/xen/common/string.c
++++ b/xen/common/string.c
+@@ -119,14 +119,16 @@ EXPORT_SYMBOL(strlcat);
+  */
+ int (strcmp)(const char *cs, const char *ct)
+ {
+-	register signed char __res;
++	unsigned char *csu = (unsigned char *)cs;
++	unsigned char *ctu = (unsigned char *)ct;
++	int res;
+ 
+ 	while (1) {
+-		if ((__res = *cs - *ct++) != 0 || !*cs++)
++		if ((res = *csu - *ctu++) != 0 || !*csu++)
+ 			break;
+ 	}
+ 
+-	return __res;
++	return res;
+ }
+ #endif
+ 
+@@ -139,15 +141,17 @@ int (strcmp)(const char *cs, const char *ct)
+  */
+ int (strncmp)(const char *cs, const char *ct, size_t count)
+ {
+-	register signed char __res = 0;
++	unsigned char *csu = (unsigned char *)cs;
++	unsigned char *ctu = (unsigned char *)ct;
++	int res = 0;
+ 
+ 	while (count) {
+-		if ((__res = *cs - *ct++) != 0 || !*cs++)
++		if ((res = *csu - *ctu++) != 0 || !*csu++)
+ 			break;
+ 		count--;
+ 	}
+ 
+-	return __res;
++	return res;
+ }
+ #endif
+ 
+-- 
+2.30.2
+

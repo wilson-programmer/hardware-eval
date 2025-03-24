@@ -1,0 +1,58 @@
+From b2c4b77bffd3ac3e627de4dc535f624c52376d01 Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Tue, 22 Sep 2020 20:31:04 +0100
+Subject: [PATCH] xen/arm: sched: Ensure the vCPU context is seen before
+ vcpu_pause() returns
+
+Some callers of vcpu_pause() will expect to access the latest vcpu
+context when the function returns (see XENDOMCTL_{set,get}vcpucontext}.
+
+However, the latest vCPU context can only be observed after
+v->is_running has been observed to be false.
+
+As there is no memory barrier instruction generated, a processor could
+try to speculatively access the vCPU context before it was observed.
+
+To prevent the corruption of the vCPU context, we need to insert a
+memory barrier instruction after v->is_running is observed and before
+the context is accessed. This barrier is added in sync_vcpu_execstate()
+as it seems to be the place where we expect the synchronization to
+happen.
+
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit f6790389613cd54775ece6575013a679572b46b3)
+---
+ xen/arch/arm/domain.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/domain.c b/xen/arch/arm/domain.c
+index 283eb6bb43..4504c64467 100644
+--- a/xen/arch/arm/domain.c
++++ b/xen/arch/arm/domain.c
+@@ -371,7 +371,20 @@ void sync_local_execstate(void)
+ 
+ void sync_vcpu_execstate(struct vcpu *v)
+ {
+-    /* Nothing to do -- no lazy switching */
++    /*
++     * We don't support lazy switching.
++     *
++     * However the context may have been saved from a remote pCPU so we
++     * need a barrier to ensure it is observed before continuing.
++     *
++     * Per vcpu_context_saved(), the context can be observed when
++     * v->is_running is false (the caller should check it before calling
++     * this function).
++     *
++     * Note this is a full barrier to also prevent update of the context
++     * to happen before it was observed.
++     */
++    smp_mb();
+ }
+ 
+ #define NEXT_ARG(fmt, args)                                                 \
+-- 
+2.30.2
+

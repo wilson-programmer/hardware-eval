@@ -1,0 +1,49 @@
+From 0f4974e5be6c6572e10f8cb1760e4a49871984a6 Mon Sep 17 00:00:00 2001
+From: Tamas K Lengyel <tamas@tklengyel.com>
+Date: Tue, 4 Jun 2019 15:34:58 +0200
+Subject: [PATCH] x86/vmx: correctly gather gs_shadow value for current vCPU
+
+Currently the gs_shadow value is only cached when the vCPU is being scheduled
+out by Xen. Reporting this (usually) stale value through vm_event is incorrect,
+since it doesn't represent the actual state of the vCPU at the time the event
+was recorded. This prevents vm_event subscribers from correctly finding kernel
+structures in the guest when it is trapped while in ring3.
+
+Refresh shadow_gs value when the context being saved is for the current vCPU.
+
+Signed-off-by: Tamas K Lengyel <tamas@tklengyel.com>
+Acked-by: Razvan Cojocaru <rcojocaru@bitdefender.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Kevin Tian <kevin.tian@intel.com>
+master commit: f69fc1c2f36e8a74ba54c9c8fa5c904ea1ad319e
+master date: 2019-05-13 09:55:59 +0200
+---
+ xen/arch/x86/hvm/vmx/vmx.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index 725dd88c13..26b7ddb5fe 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -779,12 +779,18 @@ static void vmx_load_cpu_state(struct vcpu *v, struct hvm_hw_cpu *data)
+ 
+ static void vmx_save_vmcs_ctxt(struct vcpu *v, struct hvm_hw_cpu *ctxt)
+ {
++    if ( v == current )
++        vmx_save_guest_msrs(v);
++
+     vmx_save_cpu_state(v, ctxt);
+     vmx_vmcs_save(v, ctxt);
+ }
+ 
+ static int vmx_load_vmcs_ctxt(struct vcpu *v, struct hvm_hw_cpu *ctxt)
+ {
++    /* Not currently safe to use in current context. */
++    ASSERT(v != current);
++
+     vmx_load_cpu_state(v, ctxt);
+ 
+     if ( vmx_vmcs_restore(v, ctxt) )
+-- 
+2.30.2
+

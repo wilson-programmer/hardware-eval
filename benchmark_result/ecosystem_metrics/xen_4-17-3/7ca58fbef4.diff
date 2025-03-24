@@ -1,0 +1,53 @@
+From 7ca58fbef489fcb17631872a2bdc929823a2a494 Mon Sep 17 00:00:00 2001
+From: Jason Andryuk <jandryuk@gmail.com>
+Date: Tue, 5 Sep 2023 08:52:33 +0200
+Subject: [PATCH] tboot: Disable CET at shutdown
+
+tboot_shutdown() calls into tboot to perform the actual system shutdown.
+tboot isn't built with endbr annotations, and Xen has CET-IBT enabled on
+newer hardware.  shutdown_entry isn't annotated with endbr and Xen
+faults:
+
+Panic on CPU 0:
+CONTROL-FLOW PROTECTION FAULT: #CP[0003] endbranch
+
+And Xen hangs at this point.
+
+Disabling CET-IBT let Xen and tboot power off, but reboot was
+perfoming a poweroff instead of a warm reboot.  Disabling all of CET,
+i.e. shadow stacks as well, lets tboot reboot properly.
+
+Fixes: cdbe2b0a1aec ("x86: Enable CET Indirect Branch Tracking")
+Signed-off-by: Jason Andryuk <jandryuk@gmail.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Daniel P. Smith <dpsmith@apertussolutions.com>
+master commit: 0801868f550539d417d46f82c49307480947ccaa
+master date: 2023-08-17 16:24:49 +0200
+---
+ xen/arch/x86/tboot.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/xen/arch/x86/tboot.c b/xen/arch/x86/tboot.c
+index fe1abfdf08..a2e9e97ed7 100644
+--- a/xen/arch/x86/tboot.c
++++ b/xen/arch/x86/tboot.c
+@@ -398,6 +398,16 @@ void tboot_shutdown(uint32_t shutdown_type)
+         tboot_gen_xenheap_integrity(g_tboot_shared->s3_key, &xenheap_mac);
+     }
+ 
++    /*
++     * Disable CET - tboot may not be built with endbr, and it doesn't support
++     * shadow stacks.
++     */
++    if ( read_cr4() & X86_CR4_CET )
++    {
++        wrmsrl(MSR_S_CET, 0);
++        write_cr4(read_cr4() & ~X86_CR4_CET);
++    }
++
+     /*
+      * During early boot, we can be called by panic before idle_vcpu[0] is
+      * setup, but in that case we don't need to change page tables.
+-- 
+2.30.2
+

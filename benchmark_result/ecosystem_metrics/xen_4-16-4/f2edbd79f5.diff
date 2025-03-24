@@ -1,0 +1,34 @@
+From f2edbd79f5d5ce3b633885469852e1215dc0d4b5 Mon Sep 17 00:00:00 2001
+From: Per Bilse <per.bilse@citrix.com>
+Date: Tue, 20 Dec 2022 13:50:47 +0100
+Subject: [PATCH] ioreq_broadcast(): accept partial broadcast success
+
+Avoid incorrectly triggering an error when a broadcast buffered ioreq
+is not handled by all registered clients, as long as the failure is
+strictly because the client doesn't handle buffered ioreqs.
+
+Signed-off-by: Per Bilse <per.bilse@citrix.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+master commit: a44734df6c24fadbdb001f051cc5580c467caf7d
+master date: 2022-12-07 12:17:30 +0100
+---
+ xen/common/ioreq.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/common/ioreq.c b/xen/common/ioreq.c
+index 42414b750b..2a8d8de2d5 100644
+--- a/xen/common/ioreq.c
++++ b/xen/common/ioreq.c
+@@ -1322,7 +1322,8 @@ unsigned int ioreq_broadcast(ioreq_t *p, bool buffered)
+ 
+     FOR_EACH_IOREQ_SERVER(d, id, s)
+     {
+-        if ( !s->enabled )
++        if ( !s->enabled ||
++             (buffered && s->bufioreq_handling == HVM_IOREQSRV_BUFIOREQ_OFF) )
+             continue;
+ 
+         if ( ioreq_send(s, p, buffered) == IOREQ_STATUS_UNHANDLED )
+-- 
+2.30.2
+

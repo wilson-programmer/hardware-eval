@@ -1,0 +1,34 @@
+From d5be08064a42a8eb4f70701557942c039395137a Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 9 Apr 2020 09:18:11 +0200
+Subject: [PATCH] x86/HVM: fix AMD ECS handling for Fam10
+
+The involved comparison was, very likely inadvertently, converted from
+>= to > when making changes unrelated to the actual family range.
+
+Fixes: 9841eb71ea87 ("x86/cpuid: Drop a guests cached x86 family and model information")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+master commit: 5d515b1c296ebad6889748ea1e49e063453216a3
+master date: 2020-04-01 12:28:30 +0200
+---
+ xen/arch/x86/hvm/ioreq.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/ioreq.c b/xen/arch/x86/hvm/ioreq.c
+index e51aebd69a..0b54536bde 100644
+--- a/xen/arch/x86/hvm/ioreq.c
++++ b/xen/arch/x86/hvm/ioreq.c
+@@ -1283,7 +1283,7 @@ struct hvm_ioreq_server *hvm_select_ioreq_server(struct domain *d,
+         if ( CF8_ADDR_HI(cf8) &&
+              d->arch.cpuid->x86_vendor == X86_VENDOR_AMD &&
+              (x86_fam = get_cpu_family(
+-                 d->arch.cpuid->basic.raw_fms, NULL, NULL)) > 0x10 &&
++                 d->arch.cpuid->basic.raw_fms, NULL, NULL)) >= 0x10 &&
+              x86_fam < 0x17 )
+         {
+             uint64_t msr_val;
+-- 
+2.30.2
+

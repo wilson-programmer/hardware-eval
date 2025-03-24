@@ -1,0 +1,70 @@
+From c85cb312b9fd02df9f5c605c7753373de1256bf7 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 7 May 2020 14:56:03 +0200
+Subject: [PATCH] x86emul: extend x86_insn_is_mem_write() coverage
+
+Several insns were missed when this function was first added. As far as
+insns already supported by the emulator go - SMSW and {,V}STMXCSR were
+wrongly considered r/o insns so far.
+
+Insns like the VMX, SVM, or CET-SS ones, PTWRITE, or AMD's new SNP ones
+are intentionally not covered just yet. VMPTRST is put there just to
+complete the respective group.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: fc6fa977be54a24a1325e3f2d08b1b1dcb675f44
+master date: 2020-05-05 09:50:54 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 30 ++++++++++++++++++++++++--
+ 1 file changed, 28 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index 225931f5ac..facd88d2b8 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -10097,13 +10097,39 @@ x86_insn_is_mem_write(const struct x86_emulate_state *state,
+         break;
+ 
+     case X86EMUL_OPC(0x0f, 0x01):
+-        return !(state->modrm_reg & 6); /* SGDT / SIDT */
++        switch ( state->modrm_reg & 7 )
++        {
++        case 0: /* SGDT */
++        case 1: /* SIDT */
++        case 4: /* SMSW */
++            return true;
++        }
++        break;
++
++    case X86EMUL_OPC(0x0f, 0xae):
++        switch ( state->modrm_reg & 7 )
++        {
++        case 0: /* FXSAVE */
++        case 3: /* {,V}STMXCSR */
++        case 4: /* XSAVE */
++        case 6: /* XSAVEOPT */
++            return true;
++        }
++        break;
+ 
+     case X86EMUL_OPC(0x0f, 0xba):
+         return (state->modrm_reg & 7) > 4; /* BTS / BTR / BTC */
+ 
+     case X86EMUL_OPC(0x0f, 0xc7):
+-        return (state->modrm_reg & 7) == 1; /* CMPXCHG{8,16}B */
++        switch ( state->modrm_reg & 7 )
++        {
++        case 1: /* CMPXCHG{8,16}B */
++        case 4: /* XSAVEC */
++        case 5: /* XSAVES */
++        case 7: /* VMPTRST */
++            return true;
++        }
++        break;
+     }
+ 
+     return false;
+-- 
+2.30.2
+

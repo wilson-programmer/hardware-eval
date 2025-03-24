@@ -1,0 +1,37 @@
+From 95d43cdf6e81bea6fcc8fcad9f0b67d48913236a Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 5 Mar 2020 10:54:33 +0100
+Subject: [PATCH] build: fix dependency file generation with
+ ENFORCE_UNIQUE_SYMBOLS=y
+
+The recorded file, unless overridden by -MQ (or -MT) is that specified
+by -o, which doesn't produce correct dependencies and hence will cause
+failure to re-build when included files change.
+
+Fixes: 81ecb38b83b0 ("build: provide option to disambiguate symbol names")
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Tested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 17a6c03701bf65c0b4e8b5ed5a3970cd0248c47f
+master date: 2020-01-17 17:38:19 +0100
+---
+ xen/Rules.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/Rules.mk b/xen/Rules.mk
+index b0bc7601c1..9d0e6acc2e 100644
+--- a/xen/Rules.mk
++++ b/xen/Rules.mk
+@@ -202,7 +202,7 @@ SRCPATH := $(patsubst $(BASEDIR)/%,%,$(CURDIR))
+ 
+ %.o: %.c Makefile
+ ifeq ($(CONFIG_ENFORCE_UNIQUE_SYMBOLS),y)
+-	$(CC) $(CFLAGS) -c $< -o $(@D)/.$(@F).tmp
++	$(CC) $(CFLAGS) -c $< -o $(@D)/.$(@F).tmp -MQ $@
+ ifeq ($(clang),y)
+ 	$(OBJCOPY) --redefine-sym $<=$(SRCPATH)/$< $(@D)/.$(@F).tmp $@
+ else
+-- 
+2.30.2
+

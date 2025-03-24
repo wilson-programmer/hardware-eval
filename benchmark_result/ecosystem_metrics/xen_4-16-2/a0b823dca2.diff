@@ -1,0 +1,56 @@
+From a0b823dca2ecb1b0b0d78dfa46bb7445b60ac8bd Mon Sep 17 00:00:00 2001
+From: Bertrand Marquis <bertrand.marquis@arm.com>
+Date: Tue, 3 May 2022 10:38:30 +0100
+Subject: [PATCH] xen/arm: Advertise workaround 1 if we apply 3
+
+SMCC_WORKAROUND_3 is handling both Spectre v2 and spectre BHB.
+So when a guest is asking if we support workaround 1, tell yes if we
+apply workaround 3 on exception entry as it handles it.
+
+This will allow guests not supporting Spectre BHB but impacted by
+spectre v2 to still handle it correctly.
+The modified behaviour is coherent with what the Linux kernel does in
+KVM for guests.
+
+While there use ARM_SMCCC_SUCCESS instead of 0 for the return code value
+for workaround detection to be coherent with Workaround 2 handling.
+
+Signed-off-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit af570d1c90f1ed6040d724732f6c582383782e90)
+---
+ xen/arch/arm/vsmc.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/arm/vsmc.c b/xen/arch/arm/vsmc.c
+index b633ff2fe8..676740ef15 100644
+--- a/xen/arch/arm/vsmc.c
++++ b/xen/arch/arm/vsmc.c
+@@ -104,8 +104,13 @@ static bool handle_arch(struct cpu_user_regs *regs)
+         switch ( arch_func_id )
+         {
+         case ARM_SMCCC_ARCH_WORKAROUND_1_FID:
+-            if ( cpus_have_cap(ARM_HARDEN_BRANCH_PREDICTOR) )
+-                ret = 0;
++            /*
++             * Workaround 3 is also mitigating spectre v2 so advertise that we
++             * support Workaround 1 if we do Workaround 3 on exception entry.
++             */
++            if ( cpus_have_cap(ARM_HARDEN_BRANCH_PREDICTOR) ||
++                 cpus_have_cap(ARM_WORKAROUND_BHB_SMCC_3) )
++                ret = ARM_SMCCC_SUCCESS;
+             break;
+         case ARM_SMCCC_ARCH_WORKAROUND_2_FID:
+             switch ( get_ssbd_state() )
+@@ -126,7 +131,7 @@ static bool handle_arch(struct cpu_user_regs *regs)
+             break;
+         case ARM_SMCCC_ARCH_WORKAROUND_3_FID:
+             if ( cpus_have_cap(ARM_WORKAROUND_BHB_SMCC_3) )
+-                ret = 0;
++                ret = ARM_SMCCC_SUCCESS;
+             break;
+         }
+ 
+-- 
+2.30.2
+

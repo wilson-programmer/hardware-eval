@@ -1,0 +1,39 @@
+From 4dcddbba664cc91e2c1952498e80d8025891b9ad Mon Sep 17 00:00:00 2001
+From: Bjoern Doebel <doebel@amazon.de>
+Date: Wed, 9 Mar 2022 16:22:03 +0100
+Subject: [PATCH] livepatch: resolve old address before function verification
+
+When verifying that a livepatch can be applied, we may as well want to
+inspect the target function to be patched. To do so, we need to resolve
+this function's address before running the arch-specific
+livepatch_verify hook.
+
+Signed-off-by: Bjoern Doebel <doebel@amazon.de>
+Acked-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Reviewed-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+(cherry picked from commit 5142dc5c25e317c208e3dc16d16b664b9f05dab5)
+---
+ xen/common/livepatch.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/common/livepatch.c b/xen/common/livepatch.c
+index 7118551b27..329b01c1e8 100644
+--- a/xen/common/livepatch.c
++++ b/xen/common/livepatch.c
+@@ -685,11 +685,11 @@ static int prepare_payload(struct payload *payload,
+                 return -EINVAL;
+             }
+ 
+-            rc = arch_livepatch_verify_func(f);
++            rc = resolve_old_address(f, elf);
+             if ( rc )
+                 return rc;
+ 
+-            rc = resolve_old_address(f, elf);
++            rc = arch_livepatch_verify_func(f);
+             if ( rc )
+                 return rc;
+ 
+-- 
+2.30.2
+

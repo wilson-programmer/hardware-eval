@@ -1,0 +1,71 @@
+From 751efc5882f54f45d9c895d6745a1d95f1359dec Mon Sep 17 00:00:00 2001
+From: Dongli Zhang <dongli.zhang@oracle.com>
+Date: Fri, 19 Nov 2021 09:30:14 +0100
+Subject: [PATCH] update system time immediately when VCPUOP_register_vcpu_info
+
+The guest may access the pv vcpu_time_info immediately after
+VCPUOP_register_vcpu_info. This is to borrow the idea of
+VCPUOP_register_vcpu_time_memory_area, where the
+force_update_vcpu_system_time() is called immediately when the new memory
+area is registered.
+
+Otherwise, we may observe clock drift at the VM side if the VM accesses
+the clocksource immediately after VCPUOP_register_vcpu_info().
+
+Reference: https://lists.xenproject.org/archives/html/xen-devel/2021-10/msg00571.html
+Signed-off-by: Dongli Zhang <dongli.zhang@oracle.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: b67f09721f136cc3a9afcb6a82466d1bd27aa6c0
+master date: 2021-11-03 10:19:06 +0100
+---
+ xen/arch/arm/time.c        | 5 +++++
+ xen/common/domain.c        | 2 ++
+ xen/include/asm-arm/time.h | 2 ++
+ 3 files changed, 9 insertions(+)
+
+diff --git a/xen/arch/arm/time.c b/xen/arch/arm/time.c
+index b0021c2c69..620ac202f3 100644
+--- a/xen/arch/arm/time.c
++++ b/xen/arch/arm/time.c
+@@ -351,6 +351,11 @@ void update_vcpu_system_time(struct vcpu *v)
+     /* XXX update shared_info->wc_* */
+ }
+ 
++void force_update_vcpu_system_time(struct vcpu *v)
++{
++    update_vcpu_system_time(v);
++}
++
+ void domain_set_time_offset(struct domain *d, int64_t time_offset_seconds)
+ {
+     d->time_offset.seconds = time_offset_seconds;
+diff --git a/xen/common/domain.c b/xen/common/domain.c
+index fe39fb9177..17cc32fde3 100644
+--- a/xen/common/domain.c
++++ b/xen/common/domain.c
+@@ -1694,6 +1694,8 @@ long do_vcpu_op(int cmd, unsigned int vcpuid, XEN_GUEST_HANDLE_PARAM(void) arg)
+         rc = map_vcpu_info(v, info.mfn, info.offset);
+         domain_unlock(d);
+ 
++        force_update_vcpu_system_time(v);
++
+         break;
+     }
+ 
+diff --git a/xen/include/asm-arm/time.h b/xen/include/asm-arm/time.h
+index 6b8fd839dd..4b401c1110 100644
+--- a/xen/include/asm-arm/time.h
++++ b/xen/include/asm-arm/time.h
+@@ -105,6 +105,8 @@ extern uint64_t ns_to_ticks(s_time_t ns);
+ 
+ void preinit_xen_time(void);
+ 
++void force_update_vcpu_system_time(struct vcpu *v);
++
+ #endif /* __ARM_TIME_H__ */
+ /*
+  * Local variables:
+-- 
+2.30.2
+

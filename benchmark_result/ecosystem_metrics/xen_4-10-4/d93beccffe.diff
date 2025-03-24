@@ -1,0 +1,87 @@
+From d93beccffe155737574e2f0ecea5ddb6ed795ead Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 4 Jun 2019 15:53:50 +0200
+Subject: [PATCH] xen/sched: fix csched2_deinit_pdata()
+
+Commit 753ba43d6d16e688 ("xen/sched: fix credit2 smt idle handling")
+introduced a regression when switching cpus between cpupools.
+
+When assigning a cpu to a cpupool with credit2 being the default
+scheduler csched2_deinit_pdata() is called for the credit2 private data
+after the new scheduler's private data has been hooked to the per-cpu
+scheduler data. Unfortunately csched2_deinit_pdata() will cycle through
+all per-cpu scheduler areas it knows of for removing the cpu from the
+respective sibling masks including the area of the just moved cpu. This
+will (depending on the new scheduler) either clobber the data of the
+new scheduler or in case of sched_rt lead to a crash.
+
+Avoid that by removing the cpu from the list of active cpus in credit2
+data first.
+
+The opposite problem is occurring when removing a cpu from a cpupool:
+init_pdata() of credit2 will access the per-cpu data of the old
+scheduler.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: ffd3367ed682b6ac6f57fcb151921054dd4cce7e
+master date: 2019-05-17 15:41:17 +0200
+---
+ xen/common/sched_credit2.c | 23 +++++++++++------------
+ 1 file changed, 11 insertions(+), 12 deletions(-)
+
+diff --git a/xen/common/sched_credit2.c b/xen/common/sched_credit2.c
+index 0f4137ba86..8270dae666 100644
+--- a/xen/common/sched_credit2.c
++++ b/xen/common/sched_credit2.c
+@@ -3814,22 +3814,21 @@ init_pdata(struct csched2_private *prv, struct csched2_pcpu *spc,
+         activate_runqueue(prv, spc->runq_id);
+     }
+ 
+-    __cpumask_set_cpu(cpu, &rqd->idle);
+-    __cpumask_set_cpu(cpu, &rqd->active);
+-    __cpumask_set_cpu(cpu, &prv->initialized);
+-    __cpumask_set_cpu(cpu, &rqd->smt_idle);
++    __cpumask_set_cpu(cpu, &spc->sibling_mask);
+ 
+-    /* On the boot cpu we are called before cpu_sibling_mask has been set up. */
+-    if ( cpu == 0 && system_state < SYS_STATE_active )
+-        __cpumask_set_cpu(cpu, &csched2_pcpu(cpu)->sibling_mask);
+-    else
++    if ( cpumask_weight(&rqd->active) > 0 )
+         for_each_cpu ( rcpu, per_cpu(cpu_sibling_mask, cpu) )
+             if ( cpumask_test_cpu(rcpu, &rqd->active) )
+             {
+                 __cpumask_set_cpu(cpu, &csched2_pcpu(rcpu)->sibling_mask);
+-                __cpumask_set_cpu(rcpu, &csched2_pcpu(cpu)->sibling_mask);
++                __cpumask_set_cpu(rcpu, &spc->sibling_mask);
+             }
+ 
++    __cpumask_set_cpu(cpu, &rqd->idle);
++    __cpumask_set_cpu(cpu, &rqd->active);
++    __cpumask_set_cpu(cpu, &prv->initialized);
++    __cpumask_set_cpu(cpu, &rqd->smt_idle);
++
+     if ( cpumask_weight(&rqd->active) == 1 )
+         rqd->pick_bias = cpu;
+ 
+@@ -3938,13 +3937,13 @@ csched2_deinit_pdata(const struct scheduler *ops, void *pcpu, int cpu)
+ 
+     printk(XENLOG_INFO "Removing cpu %d from runqueue %d\n", cpu, spc->runq_id);
+ 
+-    for_each_cpu ( rcpu, &rqd->active )
+-        __cpumask_clear_cpu(cpu, &csched2_pcpu(rcpu)->sibling_mask);
+-
+     __cpumask_clear_cpu(cpu, &rqd->idle);
+     __cpumask_clear_cpu(cpu, &rqd->smt_idle);
+     __cpumask_clear_cpu(cpu, &rqd->active);
+ 
++    for_each_cpu ( rcpu, &rqd->active )
++        __cpumask_clear_cpu(cpu, &csched2_pcpu(rcpu)->sibling_mask);
++
+     if ( cpumask_empty(&rqd->active) )
+     {
+         printk(XENLOG_INFO " No cpus left on runqueue, disabling\n");
+-- 
+2.30.2
+

@@ -1,0 +1,42 @@
+From d4fe232a0f5502c7e6c607a188f388a77e2d5552 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 29 Oct 2019 14:35:08 +0100
+Subject: [PATCH] AMD/IOMMU: process softirqs while dumping IRTs
+
+When there are sufficiently many devices listed in the ACPI tables (no
+matter if they actually exist), output may take way longer than the
+watchdog would like.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Brian Woods <brian.woods@amd.com>
+master commit: df2030c34cc9161dd9e35c0e8c55057e101ac81a
+master date: 2019-07-22 12:03:46 +0200
+---
+ xen/drivers/passthrough/amd/iommu_intr.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_intr.c b/xen/drivers/passthrough/amd/iommu_intr.c
+index d4ff8c18f9..7daf3ec6a3 100644
+--- a/xen/drivers/passthrough/amd/iommu_intr.c
++++ b/xen/drivers/passthrough/amd/iommu_intr.c
+@@ -22,6 +22,7 @@
+ #include <asm/hvm/svm/amd-iommu-proto.h>
+ #include <asm/io_apic.h>
+ #include <xen/keyhandler.h>
++#include <xen/softirq.h>
+ 
+ #define INTREMAP_TABLE_ORDER    1
+ #define INTREMAP_LENGTH 0xB
+@@ -698,6 +699,8 @@ static int dump_intremap_mapping(u16 seg, struct ivrs_mappings *ivrs_mapping)
+     dump_intremap_table(ivrs_mapping->intremap_table);
+     spin_unlock_irqrestore(&(ivrs_mapping->intremap_lock), flags);
+ 
++    process_pending_softirqs();
++
+     return 0;
+ }
+ 
+-- 
+2.30.2
+

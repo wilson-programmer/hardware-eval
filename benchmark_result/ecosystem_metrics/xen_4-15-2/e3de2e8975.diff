@@ -1,0 +1,145 @@
+From e3de2e89751149eef28efa8692c6ec238e42bc7e Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 7 Jan 2022 08:12:28 +0100
+Subject: [PATCH] VT-d: split domid map cleanup check into a function
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+This logic will want invoking from elsewhere.
+
+No functional change intended.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 9fdc10abe9457e4c9879a266f82372cb08e88ffb
+master date: 2021-11-24 11:06:20 +0100
+---
+ xen/drivers/passthrough/vtd/iommu.c | 89 +++++++++++++++--------------
+ 1 file changed, 47 insertions(+), 42 deletions(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index abe7ea5ac9..6e4829465a 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -154,6 +154,51 @@ static void cleanup_domid_map(struct domain *domain, struct vtd_iommu *iommu)
+     }
+ }
+ 
++static bool any_pdev_behind_iommu(const struct domain *d,
++                                  const struct pci_dev *exclude,
++                                  const struct vtd_iommu *iommu)
++{
++    const struct pci_dev *pdev;
++
++    for_each_pdev ( d, pdev )
++    {
++        const struct acpi_drhd_unit *drhd;
++
++        if ( pdev == exclude )
++            continue;
++
++        drhd = acpi_find_matched_drhd_unit(pdev);
++        if ( drhd && drhd->iommu == iommu )
++            return true;
++    }
++
++    return false;
++}
++
++/*
++ * If no other devices under the same iommu owned by this domain,
++ * clear iommu in iommu_bitmap and clear domain_id in domid_bitmap.
++ */
++static void check_cleanup_domid_map(struct domain *d,
++                                    const struct pci_dev *exclude,
++                                    struct vtd_iommu *iommu)
++{
++    bool found = any_pdev_behind_iommu(d, exclude, iommu);
++
++    /*
++     * Hidden devices are associated with DomXEN but usable by the hardware
++     * domain. Hence they need considering here as well.
++     */
++    if ( !found && is_hardware_domain(d) )
++        found = any_pdev_behind_iommu(dom_xen, exclude, iommu);
++
++    if ( !found )
++    {
++        clear_bit(iommu->index, &dom_iommu(d)->arch.vtd.iommu_bitmap);
++        cleanup_domid_map(d, iommu);
++    }
++}
++
+ static void sync_cache(const void *addr, unsigned int size)
+ {
+     static unsigned long clflush_size = 0;
+@@ -1657,27 +1702,6 @@ int domain_context_unmap_one(
+     return rc;
+ }
+ 
+-static bool any_pdev_behind_iommu(const struct domain *d,
+-                                  const struct pci_dev *exclude,
+-                                  const struct vtd_iommu *iommu)
+-{
+-    const struct pci_dev *pdev;
+-
+-    for_each_pdev ( d, pdev )
+-    {
+-        const struct acpi_drhd_unit *drhd;
+-
+-        if ( pdev == exclude )
+-            continue;
+-
+-        drhd = acpi_find_matched_drhd_unit(pdev);
+-        if ( drhd && drhd->iommu == iommu )
+-            return true;
+-    }
+-
+-    return false;
+-}
+-
+ static int domain_context_unmap(struct domain *domain, u8 devfn,
+                                 struct pci_dev *pdev)
+ {
+@@ -1686,7 +1710,6 @@ static int domain_context_unmap(struct domain *domain, u8 devfn,
+     int ret = 0;
+     uint16_t seg = pdev->seg;
+     uint8_t bus = pdev->bus, tmp_bus, tmp_devfn, secbus;
+-    bool found;
+ 
+     drhd = acpi_find_matched_drhd_unit(pdev);
+     if ( !drhd )
+@@ -1764,26 +1787,8 @@ static int domain_context_unmap(struct domain *domain, u8 devfn,
+         goto out;
+     }
+ 
+-    if ( ret )
+-        goto out;
+-
+-    /*
+-     * If no other devices under the same iommu owned by this domain,
+-     * clear iommu in iommu_bitmap and clear domain_id in domid_bitmap.
+-     */
+-    found = any_pdev_behind_iommu(domain, pdev, iommu);
+-    /*
+-     * Hidden devices are associated with DomXEN but usable by the hardware
+-     * domain. Hence they need considering here as well.
+-     */
+-    if ( !found && is_hardware_domain(domain) )
+-        found = any_pdev_behind_iommu(dom_xen, pdev, iommu);
+-
+-    if ( !found )
+-    {
+-        clear_bit(iommu->index, &dom_iommu(domain)->arch.vtd.iommu_bitmap);
+-        cleanup_domid_map(domain, iommu);
+-    }
++    if ( !ret )
++        check_cleanup_domid_map(domain, pdev, iommu);
+ 
+ out:
+     return ret;
+-- 
+2.30.2
+

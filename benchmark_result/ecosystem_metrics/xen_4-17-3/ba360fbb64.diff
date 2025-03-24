@@ -1,0 +1,34 @@
+From ba360fbb6413231f84a7d68f5cb34858f81d4d23 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 5 Sep 2023 08:51:50 +0200
+Subject: [PATCH] build: correct gas --noexecstack check
+
+The check was missing an escape for the inner $, thus breaking things
+in the unlikely event that the underlying assembler doesn't support this
+option.
+
+Fixes: 62d22296a95d ("build: silence GNU ld warning about executable stacks")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: d1f6a58dfdc508c43a51c1865c826d519bf16493
+master date: 2023-08-14 09:58:19 +0200
+---
+ xen/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/Makefile b/xen/Makefile
+index 7bb9de7bdc..455916c757 100644
+--- a/xen/Makefile
++++ b/xen/Makefile
+@@ -405,7 +405,7 @@ endif
+ 
+ AFLAGS += -D__ASSEMBLY__
+ 
+-$(call cc-option-add,AFLAGS,CC,-Wa$(comma)--noexecstack)
++$(call cc-option-add,AFLAGS,CC,-Wa$$(comma)--noexecstack)
+ 
+ LDFLAGS-$(call ld-option,--warn-rwx-segments) += --no-warn-rwx-segments
+ 
+-- 
+2.30.2
+

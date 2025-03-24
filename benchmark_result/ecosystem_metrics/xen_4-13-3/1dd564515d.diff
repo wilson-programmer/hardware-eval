@@ -1,0 +1,33 @@
+From 1dd564515d0023332f9447a4c19e1df31b13da09 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 21 Jan 2021 16:25:35 +0100
+Subject: [PATCH] xen/memory: Fix compat XENMEM_acquire_resource for size
+ requests
+
+Copy the nr_frames from the structure which actually has the correct value, so
+the caller doesn't unconditionally receive 0.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+master commit: 414be7b66349e7dca42bc1fd47c2b2f5b2d27432
+master date: 2021-01-12 18:17:02 +0000
+---
+ xen/common/compat/memory.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/common/compat/memory.c b/xen/common/compat/memory.c
+index 3851f756c7..ed92e05b08 100644
+--- a/xen/common/compat/memory.c
++++ b/xen/common/compat/memory.c
+@@ -599,7 +599,7 @@ int compat_memory_op(unsigned int cmd, XEN_GUEST_HANDLE_PARAM(void) compat)
+                 if ( __copy_field_to_guest(
+                          guest_handle_cast(compat,
+                                            compat_mem_acquire_resource_t),
+-                         &cmp.mar, nr_frames) )
++                         nat.mar, nr_frames) )
+                     return -EFAULT;
+             }
+             else
+-- 
+2.30.2
+

@@ -1,0 +1,34 @@
+From 76f2b04c90413dd00a418f9fc957dc402951a2a5 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Fri, 15 Oct 2021 11:13:39 +0200
+Subject: [PATCH] build: set policy filename on make command line
+
+In order to avoid flask/Makefile.common calling `make xenversion`, we
+override POLICY_FILENAME with the value we are going to use anyway.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: c81e7efe2146c8f381fbdbb037b9d46866a6451e
+master date: 2021-09-08 14:40:00 +0200
+---
+ xen/xsm/flask/Makefile | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/xen/xsm/flask/Makefile b/xen/xsm/flask/Makefile
+index 07f36d075d..c8ed3a8385 100644
+--- a/xen/xsm/flask/Makefile
++++ b/xen/xsm/flask/Makefile
+@@ -46,7 +46,9 @@ FLASK_BUILD_DIR := $(CURDIR)
+ POLICY_SRC := $(FLASK_BUILD_DIR)/xenpolicy-$(XEN_FULLVERSION)
+ 
+ policy.bin: FORCE
+-	$(MAKE) -f $(XEN_ROOT)/tools/flask/policy/Makefile.common -C $(XEN_ROOT)/tools/flask/policy FLASK_BUILD_DIR=$(FLASK_BUILD_DIR)
++	$(MAKE) -f $(XEN_ROOT)/tools/flask/policy/Makefile.common \
++	        -C $(XEN_ROOT)/tools/flask/policy \
++	        FLASK_BUILD_DIR=$(FLASK_BUILD_DIR) POLICY_FILENAME=$(POLICY_SRC)
+ 	cmp -s $(POLICY_SRC) $@ || cp $(POLICY_SRC) $@
+ 
+ .PHONY: clean
+-- 
+2.30.2
+

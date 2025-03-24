@@ -1,0 +1,47 @@
+From 9d73672aa5aa2ca615fc55d912f7b81af5ba6a68 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 23 Sep 2019 14:25:35 +0200
+Subject: [PATCH] x86/cpuid: Fix handling of the CPUID.7[0].eax levelling MSR
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+7a0 is an integer field, not a mask - taking the logical and of the hardware
+and policy values results in nonsense.  Instead, take the policy value
+directly.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@cirtrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: b50d78d0eaffb43d5f5ceeda55fa22c11f47d01b
+master date: 2019-09-10 13:33:21 +0100
+---
+ xen/arch/x86/domctl.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/domctl.c b/xen/arch/x86/domctl.c
+index 9bf2d0820f..0a31f00016 100644
+--- a/xen/arch/x86/domctl.c
++++ b/xen/arch/x86/domctl.c
+@@ -217,11 +217,15 @@ static int update_domain_cpuid_info(struct domain *d,
+         if ( is_pv_domain(d) && ((levelling_caps & LCAP_7ab0) == LCAP_7ab0) )
+         {
+             uint64_t mask = cpuidmask_defaults._7ab0;
+-            uint32_t eax = ctl->eax;
+-            uint32_t ebx = p->feat._7b0;
+ 
++            /*
++             * Leaf 7[0].eax is max_subleaf, not a feature mask.  Take it
++             * wholesale from the policy, but clamp the features in 7[0].ebx
++             * per usual.
++             */
+             if ( boot_cpu_data.x86_vendor == X86_VENDOR_AMD )
+-                mask &= ((uint64_t)eax << 32) | ebx;
++                mask = (((uint64_t)p->feat.max_subleaf << 32) |
++                        ((uint32_t)mask & p->feat._7b0));
+ 
+             d->arch.pv.cpuidmasks->_7ab0 = mask;
+         }
+-- 
+2.30.2
+

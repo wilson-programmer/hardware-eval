@@ -1,0 +1,62 @@
+From e949445ce9d8075ff6c784c31f59bac224c1d8e7 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Tue, 11 May 2021 10:28:08 +0100
+Subject: [PATCH] libxl: Export libxl__qmp_ev_qemu_compare_version
+
+We are going to want to check QEMU's version in other places where we
+can use libxl__ev_qmp_send.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+
+Backport-requested-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+---
+ tools/libs/light/libxl_internal.h | 8 ++++++++
+ tools/libs/light/libxl_qmp.c      | 4 ++--
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/tools/libs/light/libxl_internal.h b/tools/libs/light/libxl_internal.h
+index c6a4a187f5..c114f6d399 100644
+--- a/tools/libs/light/libxl_internal.h
++++ b/tools/libs/light/libxl_internal.h
+@@ -492,6 +492,14 @@ _hidden int libxl__ev_qmp_send(libxl__egc *egc, libxl__ev_qmp *ev,
+                                const char *cmd, libxl__json_object *args);
+ _hidden void libxl__ev_qmp_dispose(libxl__gc *gc, libxl__ev_qmp *ev);
+ 
++/* return values:
++ *   < 0  if qemu's version <  asked version
++ *   = 0  if qemu's version == asked version
++ *   > 0  if qemu's version >  asked version
++ */
++_hidden int libxl__qmp_ev_qemu_compare_version(libxl__ev_qmp *ev, int major,
++                                               int minor, int micro);
++
+ typedef enum {
+     /* initial state */
+     qmp_state_disconnected = 1,
+diff --git a/tools/libs/light/libxl_qmp.c b/tools/libs/light/libxl_qmp.c
+index d0967c9f02..fb146a54cb 100644
+--- a/tools/libs/light/libxl_qmp.c
++++ b/tools/libs/light/libxl_qmp.c
+@@ -289,7 +289,7 @@ static int qmp_handle_response(libxl__gc *gc, libxl__qmp_handler *qmp,
+  *   = 0  if qemu's version == asked version
+  *   > 0  if qemu's version >  asked version
+  */
+-static int qmp_ev_qemu_compare_version(libxl__ev_qmp *ev, int major,
++int libxl__qmp_ev_qemu_compare_version(libxl__ev_qmp *ev, int major,
+                                        int minor, int micro)
+ {
+     assert(ev->state == qmp_state_connected);
+@@ -1073,7 +1073,7 @@ static void dm_state_save_to_fdset(libxl__egc *egc, libxl__ev_qmp *ev, int fdset
+     /* The `live` parameter was added to QEMU 2.11. It signals QEMU that
+      * the save operation is for a live migration rather than for taking a
+      * snapshot. */
+-    if (qmp_ev_qemu_compare_version(ev, 2, 11, 0) >= 0)
++    if (libxl__qmp_ev_qemu_compare_version(ev, 2, 11, 0) >= 0)
+         libxl__qmp_param_add_bool(gc, &args, "live", dsps->live);
+     QMP_PARAMETERS_SPRINTF(&args, "filename", "/dev/fdset/%d", fdset);
+     rc = libxl__ev_qmp_send(egc, ev, "xen-save-devices-state", args);
+-- 
+2.30.2
+

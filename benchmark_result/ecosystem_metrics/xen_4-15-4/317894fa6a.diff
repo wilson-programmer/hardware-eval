@@ -1,0 +1,40 @@
+From 317894fa6a067a7903199bc5c1e3e06a0436caf8 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 31 Oct 2022 13:36:50 +0100
+Subject: [PATCH] common: map_vcpu_info() wants to unshare the underlying page
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Not passing P2M_UNSHARE to get_page_from_gfn() means there won't even be
+an attempt to unshare the referenced page, without any indication to the
+caller (e.g. -EAGAIN). Note that guests have no direct control over
+which of their pages are shared (or paged out), and hence they have no
+way to make sure all on their own that the subsequent obtaining of a
+writable type reference can actually succeed.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+master commit: 48980cf24d5cf41fd644600f99c753419505e735
+master date: 2022-10-28 11:38:32 +0200
+---
+ xen/common/domain.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/common/domain.c b/xen/common/domain.c
+index 17cc32fde3..0fb7f9a622 100644
+--- a/xen/common/domain.c
++++ b/xen/common/domain.c
+@@ -1454,7 +1454,7 @@ int map_vcpu_info(struct vcpu *v, unsigned long gfn, unsigned offset)
+     if ( (v != current) && !(v->pause_flags & VPF_down) )
+         return -EINVAL;
+ 
+-    page = get_page_from_gfn(d, gfn, NULL, P2M_ALLOC);
++    page = get_page_from_gfn(d, gfn, NULL, P2M_UNSHARE);
+     if ( !page )
+         return -EINVAL;
+ 
+-- 
+2.30.2
+

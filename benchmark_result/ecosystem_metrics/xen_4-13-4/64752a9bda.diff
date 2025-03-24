@@ -1,0 +1,39 @@
+From 64752a9bda8dc80a02456405607aba2d085dd3f2 Mon Sep 17 00:00:00 2001
+From: George Dunlap <george.dunlap@citrix.com>
+Date: Thu, 15 Jul 2021 09:37:34 +0200
+Subject: [PATCH] SUPPORT.md: Un-shimmed 32-bit PV guests are no longer
+ supported
+
+The support status of 32-bit guests doesn't seem particularly useful.
+
+Reported-by: Jann Horn <jannh@google.com>
+Signed-off-by: George Dunlap <george.dunlap@citrix.com>
+master commit: 1a0f2fe2297d122a08fee2b26de5de995fdeca13
+master date: 2021-06-04 17:24:05 +0100
+---
+ SUPPORT.md | 9 +--------
+ 1 file changed, 1 insertion(+), 8 deletions(-)
+
+diff --git a/SUPPORT.md b/SUPPORT.md
+index b8fc04e934..3f4a01101e 100644
+--- a/SUPPORT.md
++++ b/SUPPORT.md
+@@ -82,14 +82,7 @@ No hardware requirements
+ 
+     Status, x86_64: Supported
+     Status, x86_32, shim: Supported
+-    Status, x86_32, without shim: Supported, with caveats
+-
+-Due to architectural limitations,
+-32-bit PV guests must be assumed to be able to read arbitrary host memory
+-using speculative execution attacks.
+-Advisories will continue to be issued
+-for new vulnerabilities related to un-shimmed 32-bit PV guests
+-enabling denial-of-service attacks or privilege escalation attacks.
++    Status, x86_32, without shim: Supported, not security supported
+ 
+ ### x86/HVM
+ 
+-- 
+2.30.2
+

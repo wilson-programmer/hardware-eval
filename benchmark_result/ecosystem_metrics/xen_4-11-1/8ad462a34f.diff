@@ -1,0 +1,32 @@
+From 8ad462a34f0654c256c197406587686fe4228546 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 6 Nov 2018 11:54:38 +0100
+Subject: [PATCH] Release: add release note link to SUPPORT.md
+
+In order to have a link to the release notes in the feature list
+generated from SUPPORT.md add that link in the "Release Support"
+section of that file.
+
+The real link needs to be adapted when the version is being released.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Wei Liu <wei.liu2@citrix.com>
+---
+ SUPPORT.md | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/SUPPORT.md b/SUPPORT.md
+index ff09e5ab6b..98ab52eda9 100644
+--- a/SUPPORT.md
++++ b/SUPPORT.md
+@@ -13,6 +13,7 @@ for the definitions of the support status levels etc.
+     Initial-Release: 2018-07-10
+     Supported-Until: 2020-01-10
+     Security-Support-Until: 2021-07-10
++    Release-Notes: <a href="https://wiki.xenproject.org/wiki/Xen_Project_4.11_Release_Notes">RN</a>
+ 
+ # Feature Support
+ 
+-- 
+2.30.2
+

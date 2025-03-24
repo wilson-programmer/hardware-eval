@@ -1,0 +1,72 @@
+From fbf016f2b289a762ac6cf46e6b9f8024794412cb Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 11 Sep 2020 14:59:48 +0200
+Subject: [PATCH] x86/intel: Expose MSR_ARCH_CAPS to dom0
+
+The overhead of (the lack of) MDS_NO alone has been measured at 30% on some
+workloads.  While we're not in a position yet to offer MSR_ARCH_CAPS generally
+to guests, dom0 doesn't migrate, so we can pass a subset of hardware values
+straight through.
+
+This will cause PVH dom0's not to use KPTI by default, and all dom0's not to
+use VERW flushing by default, and to use eIBRS in preference to retpoline on
+recent Intel CPUs.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: e46474278a0e87e2b32ad5dd5fc20e8d2cb0688b
+master date: 2020-08-31 13:43:26 +0100
+---
+ xen/arch/x86/cpuid.c |  8 ++++++++
+ xen/arch/x86/msr.c   | 16 ++++++++++++++++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/xen/arch/x86/cpuid.c b/xen/arch/x86/cpuid.c
+index 56072d4316..07f52e7130 100644
+--- a/xen/arch/x86/cpuid.c
++++ b/xen/arch/x86/cpuid.c
+@@ -634,6 +634,14 @@ int init_domain_cpuid_policy(struct domain *d)
+ 
+     recalculate_cpuid_policy(d);
+ 
++    /*
++     * Expose the "hardware speculation behaviour" bits of ARCH_CAPS to dom0,
++     * so dom0 can turn off workarounds as appropriate.  Temporary, until the
++     * domain policy logic gains a better understanding of MSRs.
++     */
++    if ( is_hardware_domain(d) && boot_cpu_has(X86_FEATURE_ARCH_CAPS) )
++        p->feat.arch_caps = true;
++
+     return 0;
+ }
+ 
+diff --git a/xen/arch/x86/msr.c b/xen/arch/x86/msr.c
+index 0579c6a396..4677222c40 100644
+--- a/xen/arch/x86/msr.c
++++ b/xen/arch/x86/msr.c
+@@ -95,6 +95,22 @@ int init_domain_msr_policy(struct domain *d)
+     if ( is_control_domain(d) )
+         mp->plaform_info.cpuid_faulting = false;
+ 
++    /*
++     * Expose the "hardware speculation behaviour" bits of ARCH_CAPS to dom0,
++     * so dom0 can turn off workarounds as appropriate.  Temporary, until the
++     * domain policy logic gains a better understanding of MSRs.
++     */
++    if ( is_hardware_domain(d) && boot_cpu_has(X86_FEATURE_ARCH_CAPS) )
++    {
++        uint64_t val;
++
++        rdmsrl(MSR_ARCH_CAPABILITIES, val);
++
++        mp->arch_caps.raw = val &
++            (ARCH_CAPS_RDCL_NO | ARCH_CAPS_IBRS_ALL | ARCH_CAPS_RSBA |
++             ARCH_CAPS_SSB_NO | ARCH_CAPS_MDS_NO | ARCH_CAPS_TAA_NO);
++    }
++
+     d->arch.msr = mp;
+ 
+     return 0;
+-- 
+2.30.2
+

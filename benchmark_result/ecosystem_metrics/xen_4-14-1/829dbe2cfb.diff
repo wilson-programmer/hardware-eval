@@ -1,0 +1,37 @@
+From 829dbe2cfb84b05f278de93d83dff2473f543789 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Tue, 20 Oct 2020 14:43:16 +0200
+Subject: [PATCH] xen/domain: check IOMMU options doesn't contain unknown bits
+ set
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 59b27f360e3d9dc0378c1288e67a91fa41a77158
+master date: 2020-10-02 08:38:50 +0200
+---
+ xen/common/domain.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/xen/common/domain.c b/xen/common/domain.c
+index a275a35c4f..7bacf7cfed 100644
+--- a/xen/common/domain.c
++++ b/xen/common/domain.c
+@@ -310,6 +310,12 @@ static int sanitise_domain_config(struct xen_domctl_createdomain *config)
+         return -EINVAL;
+     }
+ 
++    if ( config->iommu_opts & ~XEN_DOMCTL_IOMMU_no_sharept )
++    {
++        dprintk(XENLOG_INFO, "Unknown IOMMU options %#x\n", config->iommu_opts);
++        return -EINVAL;
++    }
++
+     if ( !(config->flags & XEN_DOMCTL_CDF_iommu) && config->iommu_opts )
+     {
+         dprintk(XENLOG_INFO,
+-- 
+2.30.2
+

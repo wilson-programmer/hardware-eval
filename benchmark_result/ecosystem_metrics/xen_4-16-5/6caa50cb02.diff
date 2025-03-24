@@ -1,0 +1,177 @@
+From 6caa50cb025cdeec8d36b1db910c825e12665413 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 3 Aug 2023 16:34:06 +0200
+Subject: [PATCH] amd: disable C6 after 1000 days on Zen2
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+As specified on Errata 1474:
+
+"A core will fail to exit CC6 after about 1044 days after the last
+system reset. The time of failure may vary depending on the spread
+spectrum and REFCLK frequency."
+
+Detect when running on AMD Zen2 and setup a timer to prevent entering
+C6 after 1000 days of uptime.  Take into account the TSC value at boot
+in order to account for any time elapsed before Xen has been booted.
+Worst case we end up disabling C6 before strictly necessary, but that
+would still be safe, and it's better than not taking the TSC value
+into account and hanging.
+
+Disable C6 by updating the MSR listed in the revision guide, this
+avoids applying workarounds in the CPU idle drivers, as the processor
+won't be allowed to enter C6 by the hardware itself.
+
+Print a message once C6 is disabled in order to let the user know.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: f7065b24f4fb8813a896b883e6ffd03d67f8a8f2
+master date: 2023-07-31 15:05:48 +0200
+---
+ xen/arch/x86/cpu/amd.c          | 74 +++++++++++++++++++++++++++++++++
+ xen/include/asm-x86/msr-index.h |  2 +
+ xen/include/xen/time.h          |  1 +
+ 3 files changed, 77 insertions(+)
+
+diff --git a/xen/arch/x86/cpu/amd.c b/xen/arch/x86/cpu/amd.c
+index 81008a2d94..60c6d88edf 100644
+--- a/xen/arch/x86/cpu/amd.c
++++ b/xen/arch/x86/cpu/amd.c
+@@ -1,8 +1,10 @@
++#include <xen/cpu.h>
+ #include <xen/init.h>
+ #include <xen/bitops.h>
+ #include <xen/mm.h>
+ #include <xen/param.h>
+ #include <xen/smp.h>
++#include <xen/softirq.h>
+ #include <xen/pci.h>
+ #include <xen/warning.h>
+ #include <asm/io.h>
+@@ -50,6 +52,8 @@ boolean_param("allow_unsafe", opt_allow_unsafe);
+ /* Signal whether the ACPI C1E quirk is required. */
+ bool __read_mostly amd_acpi_c1e_quirk;
+ 
++static bool __read_mostly zen2_c6_disabled;
++
+ static inline int rdmsr_amd_safe(unsigned int msr, unsigned int *lo,
+ 				 unsigned int *hi)
+ {
+@@ -836,6 +840,32 @@ void amd_check_zenbleed(void)
+ 		       val & chickenbit ? "chickenbit" : "microcode");
+ }
+ 
++static void zen2_disable_c6(void *arg)
++{
++	/* Disable C6 by clearing the CCR{0,1,2}_CC6EN bits. */
++	const uint64_t mask = ~((1ul << 6) | (1ul << 14) | (1ul << 22));
++	uint64_t val;
++
++	if (!zen2_c6_disabled) {
++		printk(XENLOG_WARNING
++    "Disabling C6 after 1000 days apparent uptime due to AMD errata 1474\n");
++		zen2_c6_disabled = true;
++		/*
++		 * Prevent CPU hotplug so that started CPUs will either see
++		 * zen2_c6_disabled set, or will be handled by
++		 * smp_call_function().
++		 */
++		while (!get_cpu_maps())
++			process_pending_softirqs();
++		smp_call_function(zen2_disable_c6, NULL, 0);
++		put_cpu_maps();
++	}
++
++	/* Update the MSR to disable C6, done on all threads. */
++	rdmsrl(MSR_AMD_CSTATE_CFG, val);
++	wrmsrl(MSR_AMD_CSTATE_CFG, val & mask);
++}
++
+ static void init_amd(struct cpuinfo_x86 *c)
+ {
+ 	u32 l, h;
+@@ -1110,6 +1140,9 @@ static void init_amd(struct cpuinfo_x86 *c)
+ 
+ 	amd_check_zenbleed();
+ 
++	if (zen2_c6_disabled)
++		zen2_disable_c6(NULL);
++
+ 	check_syscfg_dram_mod_en();
+ 
+ 	amd_log_freq(c);
+@@ -1119,3 +1152,44 @@ const struct cpu_dev amd_cpu_dev = {
+ 	.c_early_init	= early_init_amd,
+ 	.c_init		= init_amd,
+ };
++
++static int __init zen2_c6_errata_check(void)
++{
++	/*
++	 * Errata #1474: A Core May Hang After About 1044 Days
++	 * Set up a timer to disable C6 after 1000 days uptime.
++	 */
++	s_time_t delta;
++
++	/*
++	 * Zen1 vs Zen2 isn't a simple model number comparison, so use STIBP as
++	 * a heuristic to separate the two uarches in Fam17h.
++	 */
++	if (cpu_has_hypervisor || boot_cpu_data.x86 != 0x17 ||
++	    !boot_cpu_has(X86_FEATURE_AMD_STIBP))
++		return 0;
++
++	/*
++	 * Deduct current TSC value, this would be relevant if kexec'ed for
++	 * example.  Might not be accurate, but worst case we end up disabling
++	 * C6 before strictly required, which would still be safe.
++	 *
++	 * NB: all affected models (Zen2) have invariant TSC and TSC adjust
++	 * MSR, so early_time_init() will have already cleared any TSC offset.
++	 */
++	delta = DAYS(1000) - tsc_ticks2ns(rdtsc());
++	if (delta > 0) {
++		static struct timer errata_c6;
++
++		init_timer(&errata_c6, zen2_disable_c6, NULL, 0);
++		set_timer(&errata_c6, NOW() + delta);
++	} else
++		zen2_disable_c6(NULL);
++
++	return 0;
++}
++/*
++ * Must be executed after early_time_init() for tsc_ticks2ns() to have been
++ * calibrated.  That prevents us doing the check in init_amd().
++ */
++presmp_initcall(zen2_c6_errata_check);
+diff --git a/xen/include/asm-x86/msr-index.h b/xen/include/asm-x86/msr-index.h
+index 60c0bc7571..767e6a2061 100644
+--- a/xen/include/asm-x86/msr-index.h
++++ b/xen/include/asm-x86/msr-index.h
+@@ -192,6 +192,8 @@
+ 
+ #define MSR_VIRT_SPEC_CTRL                  0xc001011f /* Layout matches MSR_SPEC_CTRL */
+ 
++#define MSR_AMD_CSTATE_CFG                  0xc0010296
++
+ /*
+  * Legacy MSR constants in need of cleanup.  No new MSRs below this comment.
+  */
+diff --git a/xen/include/xen/time.h b/xen/include/xen/time.h
+index b7427460dd..9ceaec541f 100644
+--- a/xen/include/xen/time.h
++++ b/xen/include/xen/time.h
+@@ -53,6 +53,7 @@ struct tm wallclock_time(uint64_t *ns);
+ 
+ #define SYSTEM_TIME_HZ  1000000000ULL
+ #define NOW()           ((s_time_t)get_s_time())
++#define DAYS(_d)        SECONDS((_d) * 86400ULL)
+ #define SECONDS(_s)     ((s_time_t)((_s)  * 1000000000ULL))
+ #define MILLISECS(_ms)  ((s_time_t)((_ms) * 1000000ULL))
+ #define MICROSECS(_us)  ((s_time_t)((_us) * 1000ULL))
+-- 
+2.30.2
+

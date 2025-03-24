@@ -1,0 +1,45 @@
+From c3a0fc22af90ef28e68b116c6a49d9cec57f71cf Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 7 Aug 2020 17:11:44 +0200
+Subject: [PATCH] x86: comment update after "drop high compat r/o M2P table
+ address range"
+
+Commit 5af040ef8b57 clearly should also have updated the comment, not
+just the #define-s.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 2e98d0b1d09e99e3d1287cb13f42b604ebc3c29a
+master date: 2020-08-05 10:21:22 +0200
+---
+ xen/include/asm-x86/config.h | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/xen/include/asm-x86/config.h b/xen/include/asm-x86/config.h
+index 2ba234383d..665e9cc31d 100644
+--- a/xen/include/asm-x86/config.h
++++ b/xen/include/asm-x86/config.h
+@@ -144,18 +144,16 @@ extern unsigned char boot_edid_info[128];
+  *  0xffff82d000000000 - 0xffff82d03fffffff [1GB,   2^30 bytes, PML4:261]
+  *    Compatibility machine-to-phys translation table.
+  *  0xffff82d040000000 - 0xffff82d07fffffff [1GB,   2^30 bytes, PML4:261]
+- *    High read-only compatibility machine-to-phys translation table.
+- *  0xffff82d080000000 - 0xffff82d0bfffffff [1GB,   2^30 bytes, PML4:261]
+  *    Xen text, static data, bss.
+ #ifndef CONFIG_BIGMEM
+- *  0xffff82d0c0000000 - 0xffff82dfffffffff [61GB,              PML4:261]
++ *  0xffff82d080000000 - 0xffff82dfffffffff [62GB,              PML4:261]
+  *    Reserved for future use.
+  *  0xffff82e000000000 - 0xffff82ffffffffff [128GB, 2^37 bytes, PML4:261]
+  *    Page-frame information array.
+  *  0xffff830000000000 - 0xffff87ffffffffff [5TB, 5*2^40 bytes, PML4:262-271]
+  *    1:1 direct mapping of all physical memory.
+ #else
+- *  0xffff82d0c0000000 - 0xffff82ffffffffff [189GB,             PML4:261]
++ *  0xffff82d080000000 - 0xffff82ffffffffff [190GB,             PML4:261]
+  *    Reserved for future use.
+  *  0xffff830000000000 - 0xffff847fffffffff [1.5TB, 3*2^39 bytes, PML4:262-264]
+  *    Page-frame information array.
+-- 
+2.30.2
+

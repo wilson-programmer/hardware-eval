@@ -1,0 +1,41 @@
+From 699de512748d8e3bdcb3225b3b2a77c10cfd2408 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Tue, 5 Sep 2023 08:53:57 +0200
+Subject: [PATCH] x86/irq: fix reporting of spurious i8259 interrupts
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The return value of bogus_8259A_irq() is wrong: the function will
+return `true` when the IRQ is real and `false` when it's a spurious
+IRQ.  This causes the "No irq handler for vector ..." message in
+do_IRQ() to be printed for spurious i8259 interrupts which is not
+intended (and not helpful).
+
+Fix by inverting the return value of bogus_8259A_irq().
+
+Fixes: 132906348a14 ('x86/i8259: Handle bogus spurious interrupts more quietly')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 709f6c8ce6422475c372e67507606170a31ccb65
+master date: 2023-08-30 10:03:53 +0200
+---
+ xen/arch/x86/i8259.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/i8259.c b/xen/arch/x86/i8259.c
+index 6b35be10f0..ed9f55abe5 100644
+--- a/xen/arch/x86/i8259.c
++++ b/xen/arch/x86/i8259.c
+@@ -37,7 +37,7 @@ static bool _mask_and_ack_8259A_irq(unsigned int irq);
+ 
+ bool bogus_8259A_irq(unsigned int irq)
+ {
+-    return _mask_and_ack_8259A_irq(irq);
++    return !_mask_and_ack_8259A_irq(irq);
+ }
+ 
+ static void cf_check mask_and_ack_8259A_irq(struct irq_desc *desc)
+-- 
+2.30.2
+

@@ -1,0 +1,66 @@
+From 7824b9fc7e9c56ec80e0663ee5de2c5396c699b8 Mon Sep 17 00:00:00 2001
+From: Peng Fan <peng.fan@nxp.com>
+Date: Tue, 5 Feb 2019 05:55:35 +0000
+Subject: [PATCH] arm: gic-v3: deactivate interrupts during initialization
+
+On i.MX8, we implemented partition reboot which means Cortex-A reboot
+will not impact M4 cores and System control Unit core. However GICv3 is
+not reset because we also need to support A72 Cluster reboot without
+affecting A53 Cluster.
+
+The gic-v3 controller is configured with EOImode to 1, so during xen
+reboot, there is a function call "smp_call_function(halt_this_cpu, NULL, 0);"
+but halt_this_cpu never returns, that means other CPUs have no chance to
+deactivate the SGI interrupt, because the deactivate_irq operation is at
+the end of do_sgi. During the next boot of Xen, CPU0 will issue
+GIC_SGI_CALL_FUNCTION to other CPUs. As the Active state for SGI is left
+untouched during the reboot, the GIC_SGI_CALL_FUNCTION will still be active
+on the non-boot CPUs. This means the interrupt cannot be triggered again
+until it get deactivated.
+
+And according to IHI0069D_gic_architecture_specification, chapter
+"8.11.3 GICR_ICACTIVER0, Interrupt Clear-Active Register 0", the RW
+field of GICR_ICACTIVER0 resets to a value that is architecturally UNKNOWN.
+So make sure all interrupts are deactivated during initialization by
+clearing the state.
+
+Signed-off-by: Peng Fan <peng.fan@nxp.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 0322e0db5b29a0d1ce4b452885e34023e3a4b00e)
+---
+ xen/arch/arm/gic-v3.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/gic-v3.c b/xen/arch/arm/gic-v3.c
+index f53a3fe65e..7be1bcaade 100644
+--- a/xen/arch/arm/gic-v3.c
++++ b/xen/arch/arm/gic-v3.c
+@@ -628,9 +628,12 @@ static void __init gicv3_dist_init(void)
+         writel_relaxed(priority, GICD + GICD_IPRIORITYR + (i / 4) * 4);
+     }
+ 
+-    /* Disable all global interrupts */
++    /* Disable/deactivate all global interrupts */
+     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 32 )
++    {
+         writel_relaxed(0xffffffff, GICD + GICD_ICENABLER + (i / 32) * 4);
++        writel_relaxed(0xffffffff, GICD + GICD_ICACTIVER + (i / 32) * 4);
++    }
+ 
+     /*
+      * Configure SPIs as non-secure Group-1. This will only matter
+@@ -836,6 +839,11 @@ static int gicv3_cpu_init(void)
+         writel_relaxed(priority,
+                 GICD_RDIST_SGI_BASE + GICR_IPRIORITYR0 + (i / 4) * 4);
+ 
++    /*
++     * The activate state is unknown at boot, so make sure all
++     * SGIs and PPIs are de-activated.
++     */
++    writel_relaxed(0xffffffff, GICD_RDIST_SGI_BASE + GICR_ICACTIVER0);
+     /*
+      * Disable all PPI interrupts, ensure all SGI interrupts are
+      * enabled.
+-- 
+2.30.2
+

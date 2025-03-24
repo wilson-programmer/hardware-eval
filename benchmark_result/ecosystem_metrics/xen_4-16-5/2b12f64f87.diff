@@ -1,0 +1,111 @@
+From 2b12f64f87b326e9434b09f249af5e8b1e287e24 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 17 Jul 2023 09:41:22 +0200
+Subject: [PATCH] xen/x86: Remove the use of K&R functions
+
+Clang-15 (as seen in the FreeBSD 14 tests) complains:
+
+  arch/x86/time.c:1364:20: error: a function declaration without a
+  prototype is deprecated in all versions of C [-Werror,-Wstrict-prototypes]
+  s_time_t get_s_time()
+                     ^
+                      void
+
+The error message is a bit confusing but appears to new as part of
+-Wdeprecated-non-prototype which is part of supporting C2x which formally
+removes K&R syntax.
+
+Either way, fix the identified functions.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+
+Backport: Also deal with powernow_register_driver() and flush_all_cache().
+
+master commit: 22b2fa4766728c3057757c00e79da5f7803fff33
+master date: 2023-02-17 11:01:54 +0000
+---
+ xen/arch/x86/acpi/cpufreq/powernow.c  | 2 +-
+ xen/arch/x86/hvm/vmx/vmcs.c           | 2 +-
+ xen/arch/x86/time.c                   | 2 +-
+ xen/drivers/passthrough/iommu.c       | 4 ++--
+ xen/drivers/passthrough/vtd/x86/vtd.c | 2 +-
+ 5 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/x86/acpi/cpufreq/powernow.c b/xen/arch/x86/acpi/cpufreq/powernow.c
+index f620bebc7e..b17dc612ff 100644
+--- a/xen/arch/x86/acpi/cpufreq/powernow.c
++++ b/xen/arch/x86/acpi/cpufreq/powernow.c
+@@ -353,7 +353,7 @@ static const struct cpufreq_driver __initconstrel powernow_cpufreq_driver = {
+     .update = powernow_cpufreq_update
+ };
+ 
+-unsigned int __init powernow_register_driver()
++unsigned int __init powernow_register_driver(void)
+ {
+     unsigned int i, ret = 0;
+ 
+diff --git a/xen/arch/x86/hvm/vmx/vmcs.c b/xen/arch/x86/hvm/vmx/vmcs.c
+index 237b13459d..c2a1d7280d 100644
+--- a/xen/arch/x86/hvm/vmx/vmcs.c
++++ b/xen/arch/x86/hvm/vmx/vmcs.c
+@@ -774,7 +774,7 @@ static int _vmx_cpu_up(bool bsp)
+     return 0;
+ }
+ 
+-int vmx_cpu_up()
++int vmx_cpu_up(void)
+ {
+     return _vmx_cpu_up(false);
+ }
+diff --git a/xen/arch/x86/time.c b/xen/arch/x86/time.c
+index db0b149ec6..3fceb9a468 100644
+--- a/xen/arch/x86/time.c
++++ b/xen/arch/x86/time.c
+@@ -1265,7 +1265,7 @@ s_time_t get_s_time_fixed(u64 at_tsc)
+     return t->stamp.local_stime + scale_delta(delta, &t->tsc_scale);
+ }
+ 
+-s_time_t get_s_time()
++s_time_t get_s_time(void)
+ {
+     return get_s_time_fixed(0);
+ }
+diff --git a/xen/drivers/passthrough/iommu.c b/xen/drivers/passthrough/iommu.c
+index 287f63fc73..7d69b1134b 100644
+--- a/xen/drivers/passthrough/iommu.c
++++ b/xen/drivers/passthrough/iommu.c
+@@ -515,7 +515,7 @@ int __init iommu_setup(void)
+     return rc;
+ }
+ 
+-int iommu_suspend()
++int iommu_suspend(void)
+ {
+     if ( iommu_enabled )
+         return iommu_get_ops()->suspend();
+@@ -523,7 +523,7 @@ int iommu_suspend()
+     return 0;
+ }
+ 
+-void iommu_resume()
++void iommu_resume(void)
+ {
+     if ( iommu_enabled )
+         iommu_get_ops()->resume();
+diff --git a/xen/drivers/passthrough/vtd/x86/vtd.c b/xen/drivers/passthrough/vtd/x86/vtd.c
+index 55f0faa521..2665114f70 100644
+--- a/xen/drivers/passthrough/vtd/x86/vtd.c
++++ b/xen/drivers/passthrough/vtd/x86/vtd.c
+@@ -47,7 +47,7 @@ void unmap_vtd_domain_page(const void *va)
+     unmap_domain_page(va);
+ }
+ 
+-void flush_all_cache()
++void flush_all_cache(void)
+ {
+     wbinvd();
+ }
+-- 
+2.30.2
+

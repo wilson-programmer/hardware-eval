@@ -1,0 +1,78 @@
+From fd343ec092f3fac828f82d076ffaaca8ed3b61c9 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 25 Jan 2022 13:37:59 +0100
+Subject: [PATCH] x86/time: improve TSC / CPU freq calibration accuracy
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+While the problem report was for extreme errors, even smaller ones would
+better be avoided: The calculated period to run calibration loops over
+can (and usually will) be shorter than the actual time elapsed between
+first and last platform timer and TSC reads. Adjust values returned from
+the init functions accordingly.
+
+On a Skylake system I've tested this on accuracy (using HPET) went from
+detecting in some cases more than 220kHz too high a value to about
+Â±2kHz. On other systems (or on this system, but with PMTMR) the original
+error range was much smaller, with less (in some cases only very little)
+improvement.
+
+Reported-by: James Dingwall <james-xen@dingwall.me.uk>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: a5c9a80af34eefcd6e31d0ed2b083f452cd9076d
+master date: 2022-01-13 14:31:52 +0100
+---
+ xen/arch/x86/time.c | 21 +++++++++++++++++++--
+ 1 file changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/time.c b/xen/arch/x86/time.c
+index 84b62f2024..1daff92dca 100644
+--- a/xen/arch/x86/time.c
++++ b/xen/arch/x86/time.c
+@@ -287,6 +287,23 @@ static char *freq_string(u64 freq)
+     return s;
+ }
+ 
++static uint64_t adjust_elapsed(uint64_t elapsed, uint32_t actual,
++                               uint32_t target)
++{
++    if ( likely(actual > target) )
++    {
++        /*
++         * A (perhaps significant) delay before the last timer read (e.g. due
++         * to a SMI or NMI) can lead to (perhaps severe) inaccuracy if not
++         * accounting for the time elapsed beyond the originally calculated
++         * duration of the calibration interval.
++         */
++        elapsed = muldiv64(elapsed, target, actual);
++    }
++
++    return elapsed * CALIBRATE_FRAC;
++}
++
+ /************************************************************
+  * PLATFORM TIMER 1: PROGRAMMABLE INTERVAL TIMER (LEGACY PIT)
+  */
+@@ -455,7 +472,7 @@ static int64_t __init init_hpet(struct platform_timesource *pts)
+     while ( (elapsed = hpet_read32(HPET_COUNTER) - count) < target )
+         continue;
+ 
+-    return (rdtsc_ordered() - start) * CALIBRATE_FRAC;
++    return adjust_elapsed(rdtsc_ordered() - start, elapsed, target);
+ }
+ 
+ static void resume_hpet(struct platform_timesource *pts)
+@@ -505,7 +522,7 @@ static s64 __init init_pmtimer(struct platform_timesource *pts)
+     while ( (elapsed = (inl(pmtmr_ioport) - count) & mask) < target )
+         continue;
+ 
+-    return (rdtsc_ordered() - start) * CALIBRATE_FRAC;
++    return adjust_elapsed(rdtsc_ordered() - start, elapsed, target);
+ }
+ 
+ static struct platform_timesource __initdata plt_pmtimer =
+-- 
+2.30.2
+

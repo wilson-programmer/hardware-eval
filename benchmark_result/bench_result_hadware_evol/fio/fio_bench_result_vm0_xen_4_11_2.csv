@@ -1,0 +1,41 @@
+Op,IOPS,Throughput,latency_perc95
+rand_read_throughput_round0,2090,2095, 224
+rand_write_throughput_round0,298,303,3977
+seq_read_throughput_round0,2083,2088, 207
+seq_write_throughput_round0,550,554,2299
+rand_read_throughput_round1,2109,2114, 209
+rand_write_throughput_round1,480,484,3239
+seq_read_throughput_round1,2592,2597, 194
+seq_write_throughput_round1,813,818,2039
+rand_read_throughput_round2,2420,2425, 197
+rand_write_throughput_round2,197,202,4530
+seq_read_throughput_round2,2159,2164, 199
+seq_write_throughput_round2,280,285,4665
+rand_read_throughput_round3,2081,2086, 215
+rand_write_throughput_round3,224,229,4329
+seq_read_throughput_round3,2287,2292, 207
+seq_write_throughput_round3,388,392,3775
+rand_read_throughput_round4,1817,1818, 201
+rand_write_throughput_round4,334,339,3977
+seq_read_throughput_round4,2091,2095, 213
+seq_write_throughput_round4,793,798,1519
+rand_read_throughput_round5,2324,2329, 209
+rand_write_throughput_round5,285,289,4245
+seq_read_throughput_round5,2143,2148, 203
+seq_write_throughput_round5,231,235,4396
+rand_read_throughput_round6,2129,2134, 199
+rand_write_throughput_round6,226,230,4396
+seq_read_throughput_round6,2047,2047, 203
+seq_write_throughput_round6,440,445,2970
+rand_read_throughput_round7,2088,2092, 224
+rand_write_throughput_round7,163,168,4665
+seq_read_throughput_round7,2251,2256, 203
+seq_write_throughput_round7,225,230,4530
+rand_read_throughput_round8,2225,2229, 203
+rand_write_throughput_round8,159,163,4732
+seq_read_throughput_round8,2105,2110, 218
+seq_write_throughput_round8,248,253,4732
+rand_read_throughput_round9,2300,2304, 218
+rand_write_throughput_round9,306,311,3977
+seq_read_throughput_round9,2133,2138, 205
+seq_write_throughput_round9,310,315,4245

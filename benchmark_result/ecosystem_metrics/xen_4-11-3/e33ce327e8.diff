@@ -1,0 +1,91 @@
+From e33ce327e8dc61bd47d4a025709bd606ec1038d1 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 29 Oct 2019 14:33:52 +0100
+Subject: [PATCH] x86/svm: Fix svm_vmcb_dump() when used in current context
+
+VMExit doesn't switch all state.  The FS/GS/TS/LDTR/GSBASE segment
+information, and SYSCALL/SYSENTER MSRs may still be cached in hardware, rather
+than up-to-date in the VMCB.
+
+Export svm_sync_vmcb() via svmdebug.h so svm_vmcb_dump() can use it, and bring
+the VMCB into sync in current context.
+
+As a minor optimisation, switch svm_sync_vmcb() to use svm_vm{load,save}_pa(),
+as svm->vmcb_pa is always correct, and this avoids a redundant __pa()
+translation behind the scenes.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Brian Woods <brian.woods@amd.com>
+master commit: 7d161f6537557520b52c2c7fb8321460f37ff933
+master date: 2019-06-19 19:54:22 +0100
+---
+ xen/arch/x86/hvm/svm/svm.c             | 6 +++---
+ xen/arch/x86/hvm/svm/svmdebug.c        | 9 +++++++++
+ xen/include/asm-x86/hvm/svm/svmdebug.h | 1 +
+ 3 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/svm/svm.c b/xen/arch/x86/hvm/svm/svm.c
+index 5c09ec9794..905c88aa2a 100644
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -683,21 +683,21 @@ static void svm_cpuid_policy_changed(struct vcpu *v)
+                       cp->extd.ibpb ? MSR_INTERCEPT_NONE : MSR_INTERCEPT_RW);
+ }
+ 
+-static void svm_sync_vmcb(struct vcpu *v, enum vmcb_sync_state new_state)
++void svm_sync_vmcb(struct vcpu *v, enum vmcb_sync_state new_state)
+ {
+     struct arch_svm_struct *arch_svm = &v->arch.hvm_svm;
+ 
+     if ( new_state == vmcb_needs_vmsave )
+     {
+         if ( arch_svm->vmcb_sync_state == vmcb_needs_vmload )
+-            svm_vmload(arch_svm->vmcb);
++            svm_vmload_pa(arch_svm->vmcb_pa);
+ 
+         arch_svm->vmcb_sync_state = new_state;
+     }
+     else
+     {
+         if ( arch_svm->vmcb_sync_state == vmcb_needs_vmsave )
+-            svm_vmsave(arch_svm->vmcb);
++            svm_vmsave_pa(arch_svm->vmcb_pa);
+ 
+         if ( arch_svm->vmcb_sync_state != vmcb_needs_vmload )
+             arch_svm->vmcb_sync_state = new_state;
+diff --git a/xen/arch/x86/hvm/svm/svmdebug.c b/xen/arch/x86/hvm/svm/svmdebug.c
+index d35e40596b..2b453e0dd1 100644
+--- a/xen/arch/x86/hvm/svm/svmdebug.c
++++ b/xen/arch/x86/hvm/svm/svmdebug.c
+@@ -29,6 +29,15 @@ static void svm_dump_sel(const char *name, const struct segment_register *s)
+ 
+ void svm_vmcb_dump(const char *from, const struct vmcb_struct *vmcb)
+ {
++    struct vcpu *curr = current;
++
++    /*
++     * If we are dumping the VMCB currently in context, some guest state may
++     * still be cached in hardware.  Retrieve it.
++     */
++    if ( vmcb == curr->arch.hvm_svm.vmcb )
++        svm_sync_vmcb(curr, vmcb_in_sync);
++
+     printk("Dumping guest's current state at %s...\n", from);
+     printk("Size of VMCB = %zu, paddr = %"PRIpaddr", vaddr = %p\n",
+            sizeof(struct vmcb_struct), virt_to_maddr(vmcb), vmcb);
+diff --git a/xen/include/asm-x86/hvm/svm/svmdebug.h b/xen/include/asm-x86/hvm/svm/svmdebug.h
+index 658cdd3836..330c1d91aa 100644
+--- a/xen/include/asm-x86/hvm/svm/svmdebug.h
++++ b/xen/include/asm-x86/hvm/svm/svmdebug.h
+@@ -22,6 +22,7 @@
+ #include <asm/types.h>
+ #include <asm/hvm/svm/vmcb.h>
+ 
++void svm_sync_vmcb(struct vcpu *v, enum vmcb_sync_state new_state);
+ void svm_vmcb_dump(const char *from, const struct vmcb_struct *vmcb);
+ bool svm_vmcb_isvalid(const char *from, const struct vmcb_struct *vmcb,
+                       const struct vcpu *v, bool verbose);
+-- 
+2.30.2
+

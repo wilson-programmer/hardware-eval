@@ -1,0 +1,40 @@
+From 0a9bf01eab595b00c1f717b81dce442850da23fb Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Fri, 15 Jan 2021 19:11:32 +0000
+Subject: [PATCH] tools/oxenstored: Fix quota calculation for mkdir EEXIST
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+We increment the domain's quota on mkdir even when the node already exists.
+This results in a quota inconsistency after live update, where reconstructing
+the tree from scratch results in a different quota.
+
+Not a security issue because the domain uses up quota faster, so it will only
+get a Quota error sooner than it should.
+
+Found by the structured fuzzer.
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+Release-Acked-by: Ian Jackson <iwj@xenproject.org>
+(cherry picked from commit c8b96708252a436da44005307f7c195d699bd7c5)
+---
+ tools/ocaml/xenstored/store.ml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/ocaml/xenstored/store.ml b/tools/ocaml/xenstored/store.ml
+index e20767372f..328d3a5198 100644
+--- a/tools/ocaml/xenstored/store.ml
++++ b/tools/ocaml/xenstored/store.ml
+@@ -421,6 +421,7 @@ let mkdir store perm path =
+ 	(* It's upt to the mkdir logic to decide what to do with existing path *)
+ 	if not (existing || (Perms.Connection.is_dom0 perm)) then Quota.check store.quota owner 0;
+ 	store.root <- path_mkdir store perm path;
++	if not existing then
+ 	Quota.add_entry store.quota owner
+ 
+ let rm store perm path =
+-- 
+2.30.2
+

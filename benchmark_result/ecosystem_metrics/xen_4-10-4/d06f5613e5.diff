@@ -1,0 +1,118 @@
+From d06f5613e5df529f3e6aea94d648a3c62e65a403 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Fri, 3 May 2019 11:03:52 +0200
+Subject: [PATCH] iommu: leave IOMMU enabled by default during kexec crash
+ transition
+
+It's unsafe to disable IOMMU on a live system which is the case
+if we're crashing since remapping hardware doesn't usually know what
+to do with ongoing bus transactions and frequently raises NMI/MCE/SMI,
+etc. (depends on the firmware configuration) to signal these abnormalities.
+This, in turn, doesn't play well with kexec transition process as there is
+no handling available at the moment for this kind of events resulting
+in failures to enter the kernel.
+
+Modern Linux kernels taught to copy all the necessary DMAR/IR tables
+following kexec from the previous kernel (Xen in our case) - so it's
+currently normal to keep IOMMU enabled. It might require minor changes to
+kdump command line that enables IOMMU drivers (e.g. intel_iommu=on /
+intremap=on) but recent kernels don't require any additional changes for
+the transition to be transparent.
+
+A fallback option is still left for compatibility with ancient crash
+kernels which didn't like to have IOMMU active under their feet on boot.
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 12c36f577d454996c882ecdc5da8113ca2613646
+master date: 2019-03-12 14:38:12 +0100
+---
+ docs/misc/xen-command-line.markdown | 12 +++++++++++-
+ xen/arch/x86/crash.c                |  7 +++++--
+ xen/drivers/passthrough/iommu.c     |  8 ++++++++
+ 3 files changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/docs/misc/xen-command-line.markdown b/docs/misc/xen-command-line.markdown
+index 470da80174..ffa55a8345 100644
+--- a/docs/misc/xen-command-line.markdown
++++ b/docs/misc/xen-command-line.markdown
+@@ -1078,7 +1078,7 @@ debug hypervisor only).
+ > Default: `new` unless directed-EOI is supported
+ 
+ ### iommu
+-> `= List of [ <boolean> | force | required | intremap | intpost | qinval | snoop | sharept | dom0-passthrough | dom0-strict | amd-iommu-perdev-intremap | workaround_bios_bug | igfx | verbose | debug ]`
++> `= List of [ <boolean> | force | required | intremap | intpost | qinval | snoop | sharept | dom0-passthrough | dom0-strict | amd-iommu-perdev-intremap | workaround_bios_bug | igfx | crash-disable | verbose | debug ]`
+ 
+ > Sub-options:
+ 
+@@ -1168,6 +1168,16 @@ debug hypervisor only).
+ >> to workaround graphics issues. If adding `no-igfx` fixes anything, you
+ >> should file a bug reporting the problem.
+ 
++> `crash-disable`
++
++> Default: `false`
++
++>> This option controls disabling IOMMU functionality (DMAR/IR/QI) before
++>> switching to a crash kernel. This option is inactive by default and
++>> is for compatibility with older kdump kernels only. Modern kernels copy
++>> all the necessary tables from the previous one following kexec which makes
++>>  the transition transparent for them with IOMMU functions still on.
++
+ > `verbose`
+ 
+ > Default: `false`
+diff --git a/xen/arch/x86/crash.c b/xen/arch/x86/crash.c
+index 82535c4df0..b3337afcff 100644
+--- a/xen/arch/x86/crash.c
++++ b/xen/arch/x86/crash.c
+@@ -168,8 +168,11 @@ static void nmi_shootdown_cpus(void)
+         printk("Failed to shoot down CPUs {%s}\n", keyhandler_scratch);
+     }
+ 
+-    /* Crash shutdown any IOMMU functionality as the crashdump kernel is not
+-     * happy when booting if interrupt/dma remapping is still enabled */
++    /*
++     * Try to crash shutdown IOMMU functionality as some old crashdump
++     * kernels are not happy when booting if interrupt/dma remapping
++     * is still enabled.
++     */
+     iommu_crash_shutdown();
+ 
+     __stop_this_cpu();
+diff --git a/xen/drivers/passthrough/iommu.c b/xen/drivers/passthrough/iommu.c
+index 98fdb14b40..b5f8044439 100644
+--- a/xen/drivers/passthrough/iommu.c
++++ b/xen/drivers/passthrough/iommu.c
+@@ -60,6 +60,7 @@ bool_t __read_mostly iommu_passthrough;
+ bool_t __read_mostly iommu_snoop = 1;
+ bool_t __read_mostly iommu_qinval = 1;
+ bool_t __read_mostly iommu_intremap = 1;
++bool_t __read_mostly iommu_crash_disable;
+ 
+ /*
+  * In the current implementation of VT-d posted interrupts, in some extreme
+@@ -112,6 +113,10 @@ static int __init parse_iommu_param(const char *s)
+             iommu_intremap = val;
+         else if ( !cmdline_strcmp(s, "intpost") )
+             iommu_intpost = val;
++#ifdef CONFIG_KEXEC
++        else if ( !cmdline_strcmp(s, "crash-disable") )
++            iommu_crash_disable = val;
++#endif
+         else if ( !cmdline_strcmp(s, "debug") )
+         {
+             iommu_debug = val;
+@@ -452,6 +457,9 @@ void iommu_share_p2m_table(struct domain* d)
+ 
+ void iommu_crash_shutdown(void)
+ {
++    if ( !iommu_crash_disable )
++        return;
++
+     if ( iommu_enabled )
+         iommu_get_ops()->crash_shutdown();
+     iommu_enabled = iommu_intremap = iommu_intpost = 0;
+-- 
+2.30.2
+

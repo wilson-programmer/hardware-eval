@@ -1,0 +1,80 @@
+From 6a7e21a135148ef5bf6a62177dfbd5c104e3db13 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 4 Jun 2021 14:47:14 +0200
+Subject: [PATCH] firmware/shim: update linkfarm exclusions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Some intermediate files weren't considered at all at the time. Also
+after its introduction, various changes to the build environment have
+rendered the exclusion sets stale. For example, we now have some .*.cmd
+files in the build tree. Combine all respective patterns into a single
+.* one, seeing that we don't have any actual source files matching this
+pattern in the tree. Add other patterns as well as individual files.
+Also introduce LINK_EXCLUDE_PATHS to deal with entire directories full
+of generated headers as well as a few specific files the names of which
+are too generic to list under LINK_EXCLUDES.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 022da003747a7f4336f8c581fdf898a7d5cd47e4
+master date: 2021-05-26 09:34:07 +0200
+---
+ tools/firmware/xen-dir/Makefile | 26 +++++++++++++++++++-------
+ 1 file changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/tools/firmware/xen-dir/Makefile b/tools/firmware/xen-dir/Makefile
+index 5413f86790..afc651f861 100644
+--- a/tools/firmware/xen-dir/Makefile
++++ b/tools/firmware/xen-dir/Makefile
+@@ -15,9 +15,19 @@ DEP_DIRS=$(foreach i, $(LINK_DIRS), $(XEN_ROOT)/$(i))
+ DEP_FILES=$(foreach i, $(LINK_FILES), $(XEN_ROOT)/$(i))
+ 
+ # Exclude some intermediate files and final build products
+-LINK_EXCLUDES := '*.[isoa]' '.*.d' '.*.d2' '.config'
+-LINK_EXCLUDES += '*.map' 'xen' 'xen.gz' 'xen.efi' 'xen-syms'
+-LINK_EXCLUDES += '.*.tmp'
++LINK_EXCLUDES := '*.[isoa]' '*.bin' '*.chk' '*.lnk' '*.gz' '.*'
++LINK_EXCLUDES += lexer.lex.? parser.tab.? conf
++LINK_EXCLUDES += asm-offsets.h asm-macros.h compile.h '*-autogen.h'
++LINK_EXCLUDES += mkelf32 mkreloc symbols config_data.S xen.lds efi.lds
++LINK_EXCLUDES += '*.map' xen xen.gz xen.efi xen-syms check.efi
++
++# To exclude full subtrees or individual files of not sufficiently specific
++# names, regular expressions are used:
++LINK_EXCLUDE_PATHS := xen/include/compat/.*
++LINK_EXCLUDE_PATHS += xen/include/config/.*
++LINK_EXCLUDE_PATHS += xen/include/generated/.*
++LINK_EXCLUDE_PATHS += xen/arch/x86/boot/reloc[.]S
++LINK_EXCLUDE_PATHS += xen/arch/x86/boot/cmdline[.]S
+ 
+ # This is all a giant mess and doesn't really work.
+ #
+@@ -32,9 +42,10 @@ LINK_EXCLUDES += '.*.tmp'
+ # support easy development of the shim, but has a side effect of clobbering
+ # the already-built shim.
+ #
+-# $(LINK_EXCLUDES) should be set such that a parallel build of shim and xen/
+-# doesn't cause a subsequent `make install` to decide to regenerate the
+-# linkfarm.  This means that all final build artefacts must be excluded.
++# $(LINK_EXCLUDES) and $(LINK_EXCLUDE_DIRS) should be set such that a parallel
++# build of shim and xen/ doesn't cause a subsequent `make install` to decide to
++# regenerate the linkfarm.  This means that all intermediate and final build
++# artefacts must be excluded.
+ linkfarm.stamp: $(DEP_DIRS) $(DEP_FILES) FORCE
+ 	mkdir -p $(D)
+ 	rm -f linkfarm.stamp.tmp
+@@ -46,7 +57,8 @@ linkfarm.stamp: $(DEP_DIRS) $(DEP_FILES) FORCE
+ 			sed 's,^$(XEN_ROOT)/$(d)/,,g' | xargs mkdir -p .);) \
+ 	$(foreach d, $(LINK_DIRS), \
+ 		(cd $(XEN_ROOT); \
+-		 find $(d) ! -type l -type f $(addprefix ! -name ,$(LINK_EXCLUDES))) \
++		 find $(d) ! -type l -type f $(addprefix ! -name ,$(LINK_EXCLUDES)) \
++		 | grep -v $(patsubst %,-e '^%$$',$(LINK_EXCLUDE_PATHS))) \
+ 		 >> linkfarm.stamp.tmp ; ) \
+ 	$(foreach f, $(LINK_FILES), \
+ 		echo $(f) >> linkfarm.stamp.tmp ;)
+-- 
+2.30.2
+

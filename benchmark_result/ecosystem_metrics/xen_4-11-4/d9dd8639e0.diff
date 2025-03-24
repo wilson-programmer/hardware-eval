@@ -1,0 +1,69 @@
+From d9dd8639e0493ce9249b61992770675810ec7dd5 Mon Sep 17 00:00:00 2001
+From: Yi Sun <yi.y.sun@linux.intel.com>
+Date: Wed, 11 Dec 2019 15:31:40 +0100
+Subject: [PATCH] x86/psr: fix bug which may cause crash
+
+During test, we found a crash on Xen with below trace.
+(XEN) Xen call trace:
+(XEN)    [<ffff82d0802a065a>] R psr.c#l3_cdp_write_msr+0x1e/0x22
+(XEN)    [<ffff82d0802a0858>] F psr.c#do_write_psr_msrs+0x6d/0x109
+(XEN)    [<ffff82d08023e000>] F smp_call_function_interrupt+0x5a/0xac
+(XEN)    [<ffff82d0802a2b89>] F call_function_interrupt+0x20/0x34
+(XEN)    [<ffff82d080282c64>] F do_IRQ+0x175/0x6ae
+(XEN)    [<ffff82d08038b8ba>] F common_interrupt+0x10a/0x120
+(XEN)    [<ffff82d0802ec616>] F cpu_idle.c#acpi_idle_do_entry+0x9d/0xb1
+(XEN)    [<ffff82d0802ecc01>] F cpu_idle.c#acpi_processor_idle+0x41d/0x626
+(XEN)    [<ffff82d08027353b>] F domain.c#idle_loop+0xa5/0xa7
+(XEN)
+(XEN)
+(XEN) ****************************************
+(XEN) Panic on CPU 20:
+(XEN) GENERAL PROTECTION FAULT
+(XEN) [error_code=0000]
+(XEN) ****************************************
+
+The bug happens when CDP and MBA co-exist and MBA COS_MAX is bigger
+than CDP COS_MAX. E.g. MBA has 8 COS registers but CDP only have 6.
+When setting MBA throttling value for the 7th guest, the value array
+would be:
+    +------------------+------------------+--------------+
+    | Data default val | Code default val | MBA throttle |
+    +------------------+------------------+--------------+
+
+Then, COS id 7 will be selected for writting the values. We should
+avoid writting CDP data/code valules to COS id 7 MSR because it
+exceeds the CDP COS_MAX.
+
+Signed-off-by: Yi Sun <yi.y.sun@linux.intel.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 42c8cdc039d6dc7d6aea8008bb24622eaf4b7bc8
+master date: 2019-12-02 15:15:18 +0000
+---
+ xen/arch/x86/psr.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 5866a261e3..8bf1c23751 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -1269,6 +1269,17 @@ static void do_write_psr_msrs(void *data)
+         cos_num = props->cos_num;
+         ASSERT(info->array_len >= index + cos_num);
+ 
++        /*
++         * Multiple RDT features may co-exist and their COS_MAX may be
++         * different. So we should prevent one feature to write COS
++         * register which exceeds its COS_MAX.
++         */
++        if ( cos > feat->cos_max )
++        {
++            index += cos_num;
++            continue;
++        }
++
+         for ( j = 0; j < cos_num; j++, index++ )
+         {
+             if ( feat->cos_reg_val[cos * cos_num + j] != info->val[index] )
+-- 
+2.30.2
+

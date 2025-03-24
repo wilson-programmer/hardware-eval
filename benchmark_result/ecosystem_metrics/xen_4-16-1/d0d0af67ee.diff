@@ -1,0 +1,36 @@
+From d0d0af67eede560faab58f161d9608a69c779d41 Mon Sep 17 00:00:00 2001
+From: Luca Fancellu <luca.fancellu@arm.com>
+Date: Thu, 2 Dec 2021 15:05:17 +0000
+Subject: [PATCH] docs/efi: Fix wrong compatible in dts example
+
+The example in section "UEFI boot and dom0less on ARM" has a wrong
+compatible for the DTB passthrough, it is "ramdisk" instead of
+"device-tree".
+
+This patch fixes the example.
+
+Fixes: a1743fc3a9fe ("arm/efi: Use dom0less configuration when using EFI boot")
+Signed-off-by: Luca Fancellu <luca.fancellu@arm.com>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 620ed2c8c777282154a91abca69083a40c9d918d)
+---
+ docs/misc/efi.pandoc | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/docs/misc/efi.pandoc b/docs/misc/efi.pandoc
+index 4abbb5bb82..abafb34527 100644
+--- a/docs/misc/efi.pandoc
++++ b/docs/misc/efi.pandoc
+@@ -222,7 +222,7 @@ domU1 {
+ 		xen,uefi-binary = "initrd-3.0.31-0.4-xen";
+ 	};
+ 	module@3 {
+-		compatible = "multiboot,ramdisk", "multiboot,module";
++		compatible = "multiboot,device-tree", "multiboot,module";
+ 		xen,uefi-binary = "passthrough.dtb";
+ 	};
+ };
+-- 
+2.30.2
+

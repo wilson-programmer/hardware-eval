@@ -1,0 +1,307 @@
+From d17680808b4c8015e31070c971e1ee548170ae34 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 11 Oct 2022 15:15:41 +0200
+Subject: [PATCH] xen/sched: fix cpu hotplug
+
+Cpu unplugging is calling schedule_cpu_rm() via stop_machine_run() with
+interrupts disabled, thus any memory allocation or freeing must be
+avoided.
+
+Since commit 5047cd1d5dea ("xen/common: Use enhanced
+ASSERT_ALLOC_CONTEXT in xmalloc()") this restriction is being enforced
+via an assertion, which will now fail.
+
+Fix this by allocating needed memory before entering stop_machine_run()
+and freeing any memory only after having finished stop_machine_run().
+
+Fixes: 1ec410112cdd ("xen/sched: support differing granularity in schedule_cpu_[add/rm]()")
+Reported-by: Gao Ruifeng <ruifeng.gao@intel.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Tested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: d84473689611eed32fd90b27e614f28af767fa3f
+master date: 2022-09-05 11:42:30 +0100
+---
+ xen/common/sched/core.c    | 25 +++++++++++---
+ xen/common/sched/cpupool.c | 69 +++++++++++++++++++++++++++++---------
+ xen/common/sched/private.h |  5 +--
+ 3 files changed, 77 insertions(+), 22 deletions(-)
+
+diff --git a/xen/common/sched/core.c b/xen/common/sched/core.c
+index 2decb1161a..900aab8f66 100644
+--- a/xen/common/sched/core.c
++++ b/xen/common/sched/core.c
+@@ -3231,7 +3231,7 @@ out:
+  * by alloc_cpu_rm_data() is modified only in case the cpu in question is
+  * being moved from or to a cpupool.
+  */
+-struct cpu_rm_data *alloc_cpu_rm_data(unsigned int cpu)
++struct cpu_rm_data *alloc_cpu_rm_data(unsigned int cpu, bool aff_alloc)
+ {
+     struct cpu_rm_data *data;
+     const struct sched_resource *sr;
+@@ -3244,6 +3244,17 @@ struct cpu_rm_data *alloc_cpu_rm_data(unsigned int cpu)
+     if ( !data )
+         goto out;
+ 
++    if ( aff_alloc )
++    {
++        if ( !alloc_affinity_masks(&data->affinity) )
++        {
++            XFREE(data);
++            goto out;
++        }
++    }
++    else
++        memset(&data->affinity, 0, sizeof(data->affinity));
++
+     data->old_ops = sr->scheduler;
+     data->vpriv_old = idle_vcpu[cpu]->sched_unit->priv;
+     data->ppriv_old = sr->sched_priv;
+@@ -3264,6 +3275,7 @@ struct cpu_rm_data *alloc_cpu_rm_data(unsigned int cpu)
+         {
+             while ( idx > 0 )
+                 sched_res_free(&data->sr[--idx]->rcu);
++            free_affinity_masks(&data->affinity);
+             XFREE(data);
+             goto out;
+         }
+@@ -3286,6 +3298,7 @@ void free_cpu_rm_data(struct cpu_rm_data *mem, unsigned int cpu)
+ {
+     sched_free_udata(mem->old_ops, mem->vpriv_old);
+     sched_free_pdata(mem->old_ops, mem->ppriv_old, cpu);
++    free_affinity_masks(&mem->affinity);
+ 
+     xfree(mem);
+ }
+@@ -3296,17 +3309,18 @@ void free_cpu_rm_data(struct cpu_rm_data *mem, unsigned int cpu)
+  * The cpu is already marked as "free" and not valid any longer for its
+  * cpupool.
+  */
+-int schedule_cpu_rm(unsigned int cpu)
++int schedule_cpu_rm(unsigned int cpu, struct cpu_rm_data *data)
+ {
+     struct sched_resource *sr;
+-    struct cpu_rm_data *data;
+     struct sched_unit *unit;
+     spinlock_t *old_lock;
+     unsigned long flags;
+     int idx = 0;
+     unsigned int cpu_iter;
++    bool free_data = !data;
+ 
+-    data = alloc_cpu_rm_data(cpu);
++    if ( !data )
++        data = alloc_cpu_rm_data(cpu, false);
+     if ( !data )
+         return -ENOMEM;
+ 
+@@ -3374,7 +3388,8 @@ int schedule_cpu_rm(unsigned int cpu)
+     sched_deinit_pdata(data->old_ops, data->ppriv_old, cpu);
+ 
+     rcu_read_unlock(&sched_res_rculock);
+-    free_cpu_rm_data(data, cpu);
++    if ( free_data )
++        free_cpu_rm_data(data, cpu);
+ 
+     return 0;
+ }
+diff --git a/xen/common/sched/cpupool.c b/xen/common/sched/cpupool.c
+index 45b6ff9956..b5a948639a 100644
+--- a/xen/common/sched/cpupool.c
++++ b/xen/common/sched/cpupool.c
+@@ -402,22 +402,28 @@ int cpupool_move_domain(struct domain *d, struct cpupool *c)
+ }
+ 
+ /* Update affinities of all domains in a cpupool. */
+-static void cpupool_update_node_affinity(const struct cpupool *c)
++static void cpupool_update_node_affinity(const struct cpupool *c,
++                                         struct affinity_masks *masks)
+ {
+-    struct affinity_masks masks;
++    struct affinity_masks local_masks;
+     struct domain *d;
+ 
+-    if ( !alloc_affinity_masks(&masks) )
+-        return;
++    if ( !masks )
++    {
++        if ( !alloc_affinity_masks(&local_masks) )
++            return;
++        masks = &local_masks;
++    }
+ 
+     rcu_read_lock(&domlist_read_lock);
+ 
+     for_each_domain_in_cpupool(d, c)
+-        domain_update_node_aff(d, &masks);
++        domain_update_node_aff(d, masks);
+ 
+     rcu_read_unlock(&domlist_read_lock);
+ 
+-    free_affinity_masks(&masks);
++    if ( masks == &local_masks )
++        free_affinity_masks(masks);
+ }
+ 
+ /*
+@@ -451,15 +457,17 @@ static int cpupool_assign_cpu_locked(struct cpupool *c, unsigned int cpu)
+ 
+     rcu_read_unlock(&sched_res_rculock);
+ 
+-    cpupool_update_node_affinity(c);
++    cpupool_update_node_affinity(c, NULL);
+ 
+     return 0;
+ }
+ 
+-static int cpupool_unassign_cpu_finish(struct cpupool *c)
++static int cpupool_unassign_cpu_finish(struct cpupool *c,
++                                       struct cpu_rm_data *mem)
+ {
+     int cpu = cpupool_moving_cpu;
+     const cpumask_t *cpus;
++    struct affinity_masks *masks = mem ? &mem->affinity : NULL;
+     int ret;
+ 
+     if ( c != cpupool_cpu_moving )
+@@ -482,7 +490,7 @@ static int cpupool_unassign_cpu_finish(struct cpupool *c)
+      */
+     if ( !ret )
+     {
+-        ret = schedule_cpu_rm(cpu);
++        ret = schedule_cpu_rm(cpu, mem);
+         if ( ret )
+             cpumask_andnot(&cpupool_free_cpus, &cpupool_free_cpus, cpus);
+         else
+@@ -494,7 +502,7 @@ static int cpupool_unassign_cpu_finish(struct cpupool *c)
+     }
+     rcu_read_unlock(&sched_res_rculock);
+ 
+-    cpupool_update_node_affinity(c);
++    cpupool_update_node_affinity(c, masks);
+ 
+     return ret;
+ }
+@@ -558,7 +566,7 @@ static long cpupool_unassign_cpu_helper(void *info)
+                       cpupool_cpu_moving->cpupool_id, cpupool_moving_cpu);
+     spin_lock(&cpupool_lock);
+ 
+-    ret = cpupool_unassign_cpu_finish(c);
++    ret = cpupool_unassign_cpu_finish(c, NULL);
+ 
+     spin_unlock(&cpupool_lock);
+     debugtrace_printk("cpupool_unassign_cpu ret=%ld\n", ret);
+@@ -701,7 +709,7 @@ static int cpupool_cpu_add(unsigned int cpu)
+  * This function is called in stop_machine context, so we can be sure no
+  * non-idle vcpu is active on the system.
+  */
+-static void cpupool_cpu_remove(unsigned int cpu)
++static void cpupool_cpu_remove(unsigned int cpu, struct cpu_rm_data *mem)
+ {
+     int ret;
+ 
+@@ -709,7 +717,7 @@ static void cpupool_cpu_remove(unsigned int cpu)
+ 
+     if ( !cpumask_test_cpu(cpu, &cpupool_free_cpus) )
+     {
+-        ret = cpupool_unassign_cpu_finish(cpupool0);
++        ret = cpupool_unassign_cpu_finish(cpupool0, mem);
+         BUG_ON(ret);
+     }
+     cpumask_clear_cpu(cpu, &cpupool_free_cpus);
+@@ -775,7 +783,7 @@ static void cpupool_cpu_remove_forced(unsigned int cpu)
+         {
+             ret = cpupool_unassign_cpu_start(c, master_cpu);
+             BUG_ON(ret);
+-            ret = cpupool_unassign_cpu_finish(c);
++            ret = cpupool_unassign_cpu_finish(c, NULL);
+             BUG_ON(ret);
+         }
+     }
+@@ -993,12 +1001,24 @@ void dump_runq(unsigned char key)
+ static int cpu_callback(
+     struct notifier_block *nfb, unsigned long action, void *hcpu)
+ {
++    static struct cpu_rm_data *mem;
++
+     unsigned int cpu = (unsigned long)hcpu;
+     int rc = 0;
+ 
+     switch ( action )
+     {
+     case CPU_DOWN_FAILED:
++        if ( system_state <= SYS_STATE_active )
++        {
++            if ( mem )
++            {
++                free_cpu_rm_data(mem, cpu);
++                mem = NULL;
++            }
++            rc = cpupool_cpu_add(cpu);
++        }
++        break;
+     case CPU_ONLINE:
+         if ( system_state <= SYS_STATE_active )
+             rc = cpupool_cpu_add(cpu);
+@@ -1006,12 +1026,31 @@ static int cpu_callback(
+     case CPU_DOWN_PREPARE:
+         /* Suspend/Resume don't change assignments of cpus to cpupools. */
+         if ( system_state <= SYS_STATE_active )
++        {
+             rc = cpupool_cpu_remove_prologue(cpu);
++            if ( !rc )
++            {
++                ASSERT(!mem);
++                mem = alloc_cpu_rm_data(cpu, true);
++                rc = mem ? 0 : -ENOMEM;
++            }
++        }
+         break;
+     case CPU_DYING:
+         /* Suspend/Resume don't change assignments of cpus to cpupools. */
+         if ( system_state <= SYS_STATE_active )
+-            cpupool_cpu_remove(cpu);
++        {
++            ASSERT(mem);
++            cpupool_cpu_remove(cpu, mem);
++        }
++        break;
++    case CPU_DEAD:
++        if ( system_state <= SYS_STATE_active )
++        {
++            ASSERT(mem);
++            free_cpu_rm_data(mem, cpu);
++            mem = NULL;
++        }
+         break;
+     case CPU_RESUME_FAILED:
+         cpupool_cpu_remove_forced(cpu);
+diff --git a/xen/common/sched/private.h b/xen/common/sched/private.h
+index ff31854252..3bab78ccb2 100644
+--- a/xen/common/sched/private.h
++++ b/xen/common/sched/private.h
+@@ -603,6 +603,7 @@ void free_affinity_masks(struct affinity_masks *affinity);
+ 
+ /* Memory allocation related data for schedule_cpu_rm(). */
+ struct cpu_rm_data {
++    struct affinity_masks affinity;
+     const struct scheduler *old_ops;
+     void *ppriv_old;
+     void *vpriv_old;
+@@ -617,9 +618,9 @@ struct scheduler *scheduler_alloc(unsigned int sched_id);
+ void scheduler_free(struct scheduler *sched);
+ int cpu_disable_scheduler(unsigned int cpu);
+ int schedule_cpu_add(unsigned int cpu, struct cpupool *c);
+-struct cpu_rm_data *alloc_cpu_rm_data(unsigned int cpu);
++struct cpu_rm_data *alloc_cpu_rm_data(unsigned int cpu, bool aff_alloc);
+ void free_cpu_rm_data(struct cpu_rm_data *mem, unsigned int cpu);
+-int schedule_cpu_rm(unsigned int cpu);
++int schedule_cpu_rm(unsigned int cpu, struct cpu_rm_data *mem);
+ int sched_move_domain(struct domain *d, struct cpupool *c);
+ struct cpupool *cpupool_get_by_id(unsigned int poolid);
+ void cpupool_put(struct cpupool *pool);
+-- 
+2.30.2
+

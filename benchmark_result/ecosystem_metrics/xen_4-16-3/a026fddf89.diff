@@ -1,0 +1,55 @@
+From a026fddf89420dd25c5a9574d88aeab7c5711f6c Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Thu, 29 Sep 2022 13:07:35 +0200
+Subject: [PATCH] SUPPORT.md: clarify support of untrusted driver domains with
+ oxenstored
+
+Add a support statement for the scope of support regarding different
+Xenstore variants. Especially oxenstored does not (yet) have security
+support of untrusted driver domains, as those might drive oxenstored
+out of memory by creating lots of watch events for the guests they are
+servicing.
+
+Add a statement regarding Live Update support of oxenstored.
+
+This is part of XSA-326.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: George Dunlap <george.dunlap@citrix.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Christian Lindig <christian.lindig@citrix.com>
+(cherry picked from commit c7bc20d8d123851a468402bbfc9e3330efff21ec)
+---
+ SUPPORT.md | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/SUPPORT.md b/SUPPORT.md
+index 85726102ea..7d0cb34c8f 100644
+--- a/SUPPORT.md
++++ b/SUPPORT.md
+@@ -179,13 +179,18 @@ Support for running qemu-xen device model in a linux stubdomain.
+ 
+     Status: Tech Preview
+ 
+-## Liveupdate of C xenstored daemon
++## Xenstore
+ 
+-    Status: Tech Preview
++### C xenstored daemon
+ 
+-## Liveupdate of OCaml xenstored daemon
++    Status: Supported
++    Status, Liveupdate: Tech Preview
+ 
+-    Status: Tech Preview
++### OCaml xenstored daemon
++
++    Status: Supported
++    Status, untrusted driver domains: Supported, not security supported
++    Status, Liveupdate: Not functional
+ 
+ ## Toolstack/3rd party
+ 
+-- 
+2.30.2
+

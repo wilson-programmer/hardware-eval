@@ -1,0 +1,36 @@
+From 41339ecb5f18ca7ec7b0c914c952a0e1715ae511 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Tue, 5 Jun 2018 17:39:38 +0100
+Subject: [PATCH] scripts/add_maintainers.pl: Don't call get_maintainers.pl
+ with -f
+
+The option -f of scripts/get_maintainers.pl will return the maintainers
+of a given file, *not* the list of maintainers if the file was a patch.
+
+The output expected of add_maintainers is the latter, so drop the option
+-f.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Lars Kurth <lars.kurth@citrix.com>
+Acked-by: Ian Jackson <ian.jackson@eu.citrix.com>
+---
+ scripts/add_maintainers.pl | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/scripts/add_maintainers.pl b/scripts/add_maintainers.pl
+index 99e4724112..09e9f6609f 100755
+--- a/scripts/add_maintainers.pl
++++ b/scripts/add_maintainers.pl
+@@ -420,7 +420,7 @@ sub ismailinglist ($) {
+ sub getmaintainers ($$$) {
+     my ($file, $rto, $rcc) = @_;
+     my $fh;
+-    open($fh, "-|", $get_maintainer, @get_maintainer_args, '-f', $file)
++    open($fh, "-|", $get_maintainer, @get_maintainer_args, $file)
+         or die "Failed to open '$get_maintainer'\n";
+     while(my $line = <$fh>) {
+         chomp $line;
+-- 
+2.30.2
+

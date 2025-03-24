@@ -1,0 +1,179 @@
+From c1a1c4e8fb54038aee36305531426da4e3ad3872 Mon Sep 17 00:00:00 2001
+From: Dario Faggioli <dfaggioli@suse.com>
+Date: Thu, 9 Apr 2020 09:36:51 +0200
+Subject: [PATCH] credit2: fix credit reset happening too few times
+
+There is a bug in commit 5e4b4199667b9 ("xen: credit2: only reset
+credit on reset condition"). In fact, the aim of that commit was to
+make sure that we do not perform too many credit reset operations
+(which are not super cheap, and in an hot-path). But the check used
+to determine whether a reset is necessary was the wrong one.
+
+In fact, knowing just that some vCPUs have been skipped, while
+traversing the runqueue (in runq_candidate()), is not enough. We
+need to check explicitly whether the first vCPU in the runqueue
+has a negative amount of credit.
+
+Since a trace record is changed, this patch updates xentrace format file
+and xenalyze as well
+
+This should be backported.
+
+Signed-off-by: Dario Faggioli <dfaggioli@suse.com>
+Acked-by: George Dunlap <george.dunlap@citrix.com>
+master commit: dae7b62e976b28af9c8efa150618c25501bf1650
+master date: 2020-04-03 10:46:53 +0200
+---
+ tools/xentrace/formats     |  2 +-
+ tools/xentrace/xenalyze.c  |  8 +++-----
+ xen/common/sched_credit2.c | 28 ++++++++++++----------------
+ 3 files changed, 16 insertions(+), 22 deletions(-)
+
+diff --git a/tools/xentrace/formats b/tools/xentrace/formats
+index 8f126f65f1..deac4d8598 100644
+--- a/tools/xentrace/formats
++++ b/tools/xentrace/formats
+@@ -67,7 +67,7 @@
+ 0x00022210  CPU%(cpu)d  %(tsc)d (+%(reltsc)8d)  csched2:load_check     [ lrq_id[16]:orq_id[16] = 0x%(1)08x, delta = %(2)d ]
+ 0x00022211  CPU%(cpu)d  %(tsc)d (+%(reltsc)8d)  csched2:load_balance   [ l_bavgload = 0x%(2)08x%(1)08x, o_bavgload = 0x%(4)08x%(3)08x, lrq_id[16]:orq_id[16] = 0x%(5)08x ]
+ 0x00022212  CPU%(cpu)d  %(tsc)d (+%(reltsc)8d)  csched2:pick_cpu       [ b_avgload = 0x%(2)08x%(1)08x, dom:vcpu = 0x%(3)08x, rq_id[16]:new_cpu[16] = %(4)d ]
+-0x00022213  CPU%(cpu)d  %(tsc)d (+%(reltsc)8d)  csched2:runq_candidate [ dom:vcpu = 0x%(1)08x, credit = %(4)d, skipped_vcpus = %(3)d, tickled_cpu = %(2)d ]
++0x00022213  CPU%(cpu)d  %(tsc)d (+%(reltsc)8d)  csched2:runq_candidate [ dom:vcpu = 0x%(1)08x, credit = %(3)d, tickled_cpu = %(2)d ]
+ 0x00022214  CPU%(cpu)d  %(tsc)d (+%(reltsc)8d)  csched2:schedule       [ rq:cpu = 0x%(1)08x, tasklet[8]:idle[8]:smt_idle[8]:tickled[8] = %(2)08x ]
+ 0x00022215  CPU%(cpu)d  %(tsc)d (+%(reltsc)8d)  csched2:ratelimit      [ dom:vcpu = 0x%(1)08x, runtime = %(2)d ]
+ 0x00022216  CPU%(cpu)d  %(tsc)d (+%(reltsc)8d)  csched2:runq_cand_chk  [ dom:vcpu = 0x%(1)08x ]
+diff --git a/tools/xentrace/xenalyze.c b/tools/xentrace/xenalyze.c
+index d3c8368e9d..b7f4e2bea8 100644
+--- a/tools/xentrace/xenalyze.c
++++ b/tools/xentrace/xenalyze.c
+@@ -7855,14 +7855,12 @@ void sched_process(struct pcpu_info *p)
+             if (opt.dump_all) {
+                 struct {
+                     unsigned vcpuid:16, domid:16;
+-                    unsigned tickled_cpu, skipped;
++                    unsigned tickled_cpu;
+                     int credit;
+                 } *r = (typeof(r))ri->d;
+ 
+-                printf(" %s csched2:runq_candidate d%uv%u, credit = %d, "
+-                       "%u vcpus skipped, ",
+-                       ri->dump_header, r->domid, r->vcpuid,
+-                       r->credit, r->skipped);
++                printf(" %s csched2:runq_candidate d%uv%u, credit = %d, ",
++                       ri->dump_header, r->domid, r->vcpuid, r->credit);
+                 if (r->tickled_cpu == (unsigned)-1)
+                     printf("no cpu was tickled\n");
+                 else
+diff --git a/xen/common/sched_credit2.c b/xen/common/sched_credit2.c
+index 4e7f0aa29e..d6ebd126de 100644
+--- a/xen/common/sched_credit2.c
++++ b/xen/common/sched_credit2.c
+@@ -3260,16 +3260,13 @@ csched2_runtime(const struct scheduler *ops, int cpu,
+ static struct csched2_vcpu *
+ runq_candidate(struct csched2_runqueue_data *rqd,
+                struct csched2_vcpu *scurr,
+-               int cpu, s_time_t now,
+-               unsigned int *skipped)
++               int cpu, s_time_t now)
+ {
+     struct list_head *iter, *temp;
+     struct csched2_vcpu *snext = NULL;
+     struct csched2_private *prv = csched2_priv(per_cpu(scheduler, cpu));
+     bool yield = false, soft_aff_preempt = false;
+ 
+-    *skipped = 0;
+-
+     if ( unlikely(is_idle_vcpu(scurr->vcpu)) )
+     {
+         snext = scurr;
+@@ -3366,10 +3363,7 @@ runq_candidate(struct csched2_runqueue_data *rqd,
+ 
+         /* Only consider vcpus that are allowed to run on this processor. */
+         if ( !cpumask_test_cpu(cpu, svc->vcpu->cpu_hard_affinity) )
+-        {
+-            (*skipped)++;
+             continue;
+-        }
+ 
+         /*
+          * If a vcpu is meant to be picked up by another processor, and such
+@@ -3378,7 +3372,6 @@ runq_candidate(struct csched2_runqueue_data *rqd,
+         if ( svc->tickled_cpu != -1 && svc->tickled_cpu != cpu &&
+              cpumask_test_cpu(svc->tickled_cpu, &rqd->tickled) )
+         {
+-            (*skipped)++;
+             SCHED_STAT_CRANK(deferred_to_tickled_cpu);
+             continue;
+         }
+@@ -3390,7 +3383,6 @@ runq_candidate(struct csched2_runqueue_data *rqd,
+         if ( svc->vcpu->processor != cpu
+              && snext->credit + CSCHED2_MIGRATE_RESIST > svc->credit )
+         {
+-            (*skipped)++;
+             SCHED_STAT_CRANK(migrate_resisted);
+             continue;
+         }
+@@ -3413,14 +3405,13 @@ runq_candidate(struct csched2_runqueue_data *rqd,
+     {
+         struct {
+             unsigned vcpu:16, dom:16;
+-            unsigned tickled_cpu, skipped;
++            unsigned tickled_cpu;
+             int credit;
+         } d;
+         d.dom = snext->vcpu->domain->domain_id;
+         d.vcpu = snext->vcpu->vcpu_id;
+         d.credit = snext->credit;
+         d.tickled_cpu = snext->tickled_cpu;
+-        d.skipped = *skipped;
+         __trace_var(TRC_CSCHED2_RUNQ_CANDIDATE, 1,
+                     sizeof(d),
+                     (unsigned char *)&d);
+@@ -3451,7 +3442,6 @@ csched2_schedule(
+     struct csched2_runqueue_data *rqd;
+     struct csched2_vcpu * const scurr = csched2_vcpu(current);
+     struct csched2_vcpu *snext = NULL;
+-    unsigned int skipped_vcpus = 0;
+     struct task_slice ret;
+     bool tickled;
+ 
+@@ -3529,7 +3519,7 @@ csched2_schedule(
+         snext = csched2_vcpu(idle_vcpu[cpu]);
+     }
+     else
+-        snext = runq_candidate(rqd, scurr, cpu, now, &skipped_vcpus);
++        snext = runq_candidate(rqd, scurr, cpu, now);
+ 
+     /* If switching from a non-idle runnable vcpu, put it
+      * back on the runqueue. */
+@@ -3543,6 +3533,8 @@ csched2_schedule(
+     /* Accounting for non-idle tasks */
+     if ( !is_idle_vcpu(snext->vcpu) )
+     {
++        int top_credit;
++
+         /* If switching, remove this from the runqueue and mark it scheduled */
+         if ( snext != scurr )
+         {
+@@ -3570,11 +3562,15 @@ csched2_schedule(
+          *  2) no other vcpu with higher credits wants to run.
+          *
+          * Here, where we want to check for reset, we need to make sure the
+-         * proper vcpu is being used. In fact, runqueue_candidate() may have
+-         * not returned the first vcpu in the runqueue, for various reasons
++         * proper vcpu is being used. In fact, runq_candidate() may have not
++         * returned the first vcpu in the runqueue, for various reasons
+          * (e.g., affinity). Only trigger a reset when it does.
+          */
+-        if ( skipped_vcpus == 0 && snext->credit <= CSCHED2_CREDIT_RESET )
++        if ( list_empty(&rqd->runq) )
++            top_credit = snext->credit;
++        else
++            top_credit = max(snext->credit, runq_elem(rqd->runq.next)->credit);
++        if ( top_credit <= CSCHED2_CREDIT_RESET )
+         {
+             reset_credit(ops, cpu, now, snext);
+             balance_load(ops, cpu, now);
+-- 
+2.30.2
+

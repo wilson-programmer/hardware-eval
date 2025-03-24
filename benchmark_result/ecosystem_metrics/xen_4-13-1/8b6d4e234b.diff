@@ -1,0 +1,59 @@
+From 8b6d4e234b51e24bd35ffbd0448380d49347473e Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Thu, 7 May 2020 14:45:17 +0200
+Subject: [PATCH] xen/grants: fix hypercall continuation for
+ GNTTABOP_cache_flush
+
+The GNTTABOP_cache_flush hypercall has a wrong test for hypercall
+continuation, the test today is:
+
+    if ( rc > 0 || opaque_out != 0 )
+
+Unfortunately this will be true even in case of an error (rc < 0),
+possibly leading to very long lasting hypercalls (times of more
+than an hour have been observed in a test case).
+
+Correct the test condition to result in false with rc < 0 and set
+opaque_out only if no error occurred, to be on the safe side.
+
+Partially-suggested-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+master commit: 46d8f69d466a05863737fb81d8c9ef39c3be8b45
+master date: 2020-04-29 14:12:50 +0100
+---
+ xen/common/grant_table.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/common/grant_table.c b/xen/common/grant_table.c
+index 917e63d370..41fd89f5d9 100644
+--- a/xen/common/grant_table.c
++++ b/xen/common/grant_table.c
+@@ -3633,12 +3633,12 @@ do_grant_table_op(
+         if ( unlikely(!guest_handle_okay(cflush, count)) )
+             goto out;
+         rc = gnttab_cache_flush(cflush, &opaque_in, count);
+-        if ( rc > 0 )
++        if ( rc >= 0 )
+         {
+             guest_handle_add_offset(cflush, rc);
+             uop = guest_handle_cast(cflush, void);
++            opaque_out = opaque_in;
+         }
+-        opaque_out = opaque_in;
+         break;
+     }
+ 
+@@ -3648,7 +3648,7 @@ do_grant_table_op(
+     }
+ 
+   out:
+-    if ( rc > 0 || opaque_out != 0 )
++    if ( rc > 0 || (opaque_out != 0 && rc == 0) )
+     {
+         /* Adjust rc, see gnttab_copy() for why this is needed. */
+         if ( cmd == GNTTABOP_copy )
+-- 
+2.30.2
+

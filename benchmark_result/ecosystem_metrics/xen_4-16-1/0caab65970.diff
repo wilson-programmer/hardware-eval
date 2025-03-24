@@ -1,0 +1,68 @@
+From 0caab659704bb0944a62f7535f3c726f5db922c5 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 31 Mar 2022 10:54:08 +0200
+Subject: [PATCH] x86/retpoline: split retpoline compiler support into separate
+ option
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Keep the previous option as a way to signal generic retpoline support
+regardless of the underlying compiler, while introducing a new
+CC_HAS_INDIRECT_THUNK that signals whether the underlying compiler
+supports retpoline.
+
+No functional change intended.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: e245bc154300b5d0367b64e8b937c9d1da508ad3
+master date: 2022-02-21 18:17:56 +0000
+---
+ xen/arch/x86/Kconfig |  6 +++++-
+ xen/arch/x86/arch.mk | 10 ++++++----
+ 2 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/x86/Kconfig b/xen/arch/x86/Kconfig
+index ef72e7821b..e20e53edfc 100644
+--- a/xen/arch/x86/Kconfig
++++ b/xen/arch/x86/Kconfig
+@@ -32,9 +32,13 @@ config ARCH_DEFCONFIG
+ 	string
+ 	default "arch/x86/configs/x86_64_defconfig"
+ 
+-config INDIRECT_THUNK
++config CC_HAS_INDIRECT_THUNK
+ 	def_bool $(cc-option,-mindirect-branch-register)
+ 
++config INDIRECT_THUNK
++	def_bool y
++	depends on CC_HAS_INDIRECT_THUNK
++
+ config HAS_AS_CET_SS
+ 	# binutils >= 2.29 or LLVM >= 6
+ 	def_bool $(as-instr,wrssq %rax$(comma)0;setssbsy)
+diff --git a/xen/arch/x86/arch.mk b/xen/arch/x86/arch.mk
+index 456e5d5c1a..abb55b4408 100644
+--- a/xen/arch/x86/arch.mk
++++ b/xen/arch/x86/arch.mk
+@@ -41,10 +41,12 @@ CFLAGS += -mno-red-zone -fpic
+ # SSE setup for variadic function calls.
+ CFLAGS += -mno-sse $(call cc-option,$(CC),-mskip-rax-setup)
+ 
+-# Compile with thunk-extern, indirect-branch-register if avaiable.
+-CFLAGS-$(CONFIG_INDIRECT_THUNK) += -mindirect-branch=thunk-extern
+-CFLAGS-$(CONFIG_INDIRECT_THUNK) += -mindirect-branch-register
+-CFLAGS-$(CONFIG_INDIRECT_THUNK) += -fno-jump-tables
++ifeq ($(CONFIG_INDIRECT_THUNK),y)
++# Compile with gcc thunk-extern, indirect-branch-register if available.
++CFLAGS-$(CONFIG_CC_IS_GCC) += -mindirect-branch=thunk-extern
++CFLAGS-$(CONFIG_CC_IS_GCC) += -mindirect-branch-register
++CFLAGS-$(CONFIG_CC_IS_GCC) += -fno-jump-tables
++endif
+ 
+ ifdef CONFIG_XEN_IBT
+ # Force -fno-jump-tables to work around
+-- 
+2.30.2
+

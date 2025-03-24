@@ -1,0 +1,813 @@
+From 480168fcb3135f0da6e7a6b3b754c78fabc24d4f Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 6 Dec 2023 10:38:03 +0100
+Subject: [PATCH] livepatch: do not use .livepatch.funcs section to store
+ internal state
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Currently the livepatch logic inside of Xen will use fields of struct
+livepatch_func in order to cache internal state of patched functions.  Note
+this is a field that is part of the payload, and is loaded as an ELF section
+(.livepatch.funcs), taking into account the SHF_* flags in the section
+header.
+
+The flags for the .livepatch.funcs section, as set by livepatch-build-tools,
+are SHF_ALLOC, which leads to its contents (the array of livepatch_func
+structures) being placed in read-only memory:
+
+Section Headers:
+  [Nr] Name              Type             Address           Offset
+       Size              EntSize          Flags  Link  Info  Align
+[...]
+  [ 4] .livepatch.funcs  PROGBITS         0000000000000000  00000080
+       0000000000000068  0000000000000000   A       0     0     8
+
+This previously went unnoticed, as all writes to the fields of livepatch_func
+happen in the critical region that had WP disabled in CR0.  After 8676092a0f16
+however WP is no longer toggled in CR0 for patch application, and only the
+hypervisor .text mappings are made write-accessible.  That leads to the
+following page fault when attempting to apply a livepatch:
+
+----[ Xen-4.19-unstable  x86_64  debug=y  Tainted:   C    ]----
+CPU:    4
+RIP:    e008:[<ffff82d040221e81>] common/livepatch.c#apply_payload+0x45/0x1e1
+[...]
+Xen call trace:
+   [<ffff82d040221e81>] R common/livepatch.c#apply_payload+0x45/0x1e1
+   [<ffff82d0402235b2>] F check_for_livepatch_work+0x385/0xaa5
+   [<ffff82d04032508f>] F arch/x86/domain.c#idle_loop+0x92/0xee
+
+Pagetable walk from ffff82d040625079:
+ L4[0x105] = 000000008c6c9063 ffffffffffffffff
+ L3[0x141] = 000000008c6c6063 ffffffffffffffff
+ L2[0x003] = 000000086a1e7063 ffffffffffffffff
+ L1[0x025] = 800000086ca5d121 ffffffffffffffff
+
+****************************************
+Panic on CPU 4:
+FATAL PAGE FAULT
+[error_code=0003]
+Faulting linear address: ffff82d040625079
+****************************************
+
+Fix this by moving the internal Xen function patching state out of
+livepatch_func into an area not allocated as part of the ELF payload.  While
+there also constify the array of livepatch_func structures in order to prevent
+further surprises.
+
+Note there's still one field (old_addr) that gets set during livepatch load.  I
+consider this fine since the field is read-only after load, and at the point
+the field gets set the underlying mapping hasn't been made read-only yet.
+
+Fixes: 8676092a0f16 ('x86/livepatch: Fix livepatch application when CET is active')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+
+xen/livepatch: fix livepatch tests
+
+The current set of in-tree livepatch tests in xen/test/livepatch started
+failing after the constify of the payload funcs array, and the movement of the
+status data into a separate array.
+
+Fix the tests so they respect the constness of the funcs array and also make
+use of the new location of the per-func state data.
+
+Fixes: 82182ad7b46e ('livepatch: do not use .livepatch.funcs section to store internal state')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+master commit: 82182ad7b46e0f7a3856bb12c7a9bf2e2a4570bc
+master date: 2023-11-27 15:16:01 +0100
+master commit: 902377b690f42ddf44ae91c4b0751d597f1cd694
+master date: 2023-11-29 10:46:42 +0000
+---
+ xen/arch/arm/arm32/livepatch.c                |  9 +++--
+ xen/arch/arm/arm64/livepatch.c                |  9 +++--
+ xen/arch/arm/livepatch.c                      |  9 +++--
+ xen/arch/x86/livepatch.c                      | 26 +++++++------
+ xen/common/livepatch.c                        | 25 ++++++++----
+ xen/include/public/sysctl.h                   |  5 +--
+ xen/include/xen/livepatch.h                   | 38 +++++++++++++------
+ xen/include/xen/livepatch_payload.h           |  3 +-
+ xen/test/livepatch/xen_action_hooks.c         | 12 +++---
+ xen/test/livepatch/xen_action_hooks_marker.c  | 20 ++++++----
+ xen/test/livepatch/xen_action_hooks_noapply.c | 22 ++++++-----
+ xen/test/livepatch/xen_action_hooks_nofunc.c  |  6 +--
+ .../livepatch/xen_action_hooks_norevert.c     | 24 +++++++-----
+ xen/test/livepatch/xen_prepost_hooks.c        |  8 ++--
+ xen/test/livepatch/xen_prepost_hooks_fail.c   |  2 +-
+ 15 files changed, 130 insertions(+), 88 deletions(-)
+
+diff --git a/xen/arch/arm/arm32/livepatch.c b/xen/arch/arm/arm32/livepatch.c
+index 3c50283b2a..80d2659b78 100644
+--- a/xen/arch/arm/arm32/livepatch.c
++++ b/xen/arch/arm/arm32/livepatch.c
+@@ -11,23 +11,24 @@
+ #include <asm/page.h>
+ #include <asm/livepatch.h>
+ 
+-void arch_livepatch_apply(struct livepatch_func *func)
++void arch_livepatch_apply(const struct livepatch_func *func,
++                          struct livepatch_fstate *state)
+ {
+     uint32_t insn;
+     uint32_t *new_ptr;
+     unsigned int i, len;
+ 
+-    BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE > sizeof(func->opaque));
++    BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE > sizeof(state->insn_buffer));
+     BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE != sizeof(insn));
+ 
+     ASSERT(vmap_of_xen_text);
+ 
+-    len = livepatch_insn_len(func);
++    len = livepatch_insn_len(func, state);
+     if ( !len )
+         return;
+ 
+     /* Save old ones. */
+-    memcpy(func->opaque, func->old_addr, len);
++    memcpy(state->insn_buffer, func->old_addr, len);
+ 
+     if ( func->new_addr )
+     {
+diff --git a/xen/arch/arm/arm64/livepatch.c b/xen/arch/arm/arm64/livepatch.c
+index 62d2ef373a..df2cebedde 100644
+--- a/xen/arch/arm/arm64/livepatch.c
++++ b/xen/arch/arm/arm64/livepatch.c
+@@ -15,23 +15,24 @@
+ #include <asm/insn.h>
+ #include <asm/livepatch.h>
+ 
+-void arch_livepatch_apply(struct livepatch_func *func)
++void arch_livepatch_apply(const struct livepatch_func *func,
++                          struct livepatch_fstate *state)
+ {
+     uint32_t insn;
+     uint32_t *new_ptr;
+     unsigned int i, len;
+ 
+-    BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE > sizeof(func->opaque));
++    BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE > sizeof(state->insn_buffer));
+     BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE != sizeof(insn));
+ 
+     ASSERT(vmap_of_xen_text);
+ 
+-    len = livepatch_insn_len(func);
++    len = livepatch_insn_len(func, state);
+     if ( !len )
+         return;
+ 
+     /* Save old ones. */
+-    memcpy(func->opaque, func->old_addr, len);
++    memcpy(state->insn_buffer, func->old_addr, len);
+ 
+     if ( func->new_addr )
+         insn = aarch64_insn_gen_branch_imm((unsigned long)func->old_addr,
+diff --git a/xen/arch/arm/livepatch.c b/xen/arch/arm/livepatch.c
+index d646379c8c..bbca1e5a5e 100644
+--- a/xen/arch/arm/livepatch.c
++++ b/xen/arch/arm/livepatch.c
+@@ -69,7 +69,7 @@ void arch_livepatch_revive(void)
+ int arch_livepatch_verify_func(const struct livepatch_func *func)
+ {
+     /* If NOPing only do up to maximum amount we can put in the ->opaque. */
+-    if ( !func->new_addr && (func->new_size > sizeof(func->opaque) ||
++    if ( !func->new_addr && (func->new_size > LIVEPATCH_OPAQUE_SIZE ||
+          func->new_size % ARCH_PATCH_INSN_SIZE) )
+         return -EOPNOTSUPP;
+ 
+@@ -79,15 +79,16 @@ int arch_livepatch_verify_func(const struct livepatch_func *func)
+     return 0;
+ }
+ 
+-void arch_livepatch_revert(const struct livepatch_func *func)
++void arch_livepatch_revert(const struct livepatch_func *func,
++                           struct livepatch_fstate *state)
+ {
+     uint32_t *new_ptr;
+     unsigned int len;
+ 
+     new_ptr = func->old_addr - (void *)_start + vmap_of_xen_text;
+ 
+-    len = livepatch_insn_len(func);
+-    memcpy(new_ptr, func->opaque, len);
++    len = livepatch_insn_len(func, state);
++    memcpy(new_ptr, state->insn_buffer, len);
+ 
+     clean_and_invalidate_dcache_va_range(new_ptr, len);
+ }
+diff --git a/xen/arch/x86/livepatch.c b/xen/arch/x86/livepatch.c
+index a54d991c5f..ee539f001b 100644
+--- a/xen/arch/x86/livepatch.c
++++ b/xen/arch/x86/livepatch.c
+@@ -95,7 +95,7 @@ int arch_livepatch_verify_func(const struct livepatch_func *func)
+     if ( !func->new_addr )
+     {
+         /* Only do up to maximum amount we can put in the ->opaque. */
+-        if ( func->new_size > sizeof(func->opaque) )
++        if ( func->new_size > LIVEPATCH_OPAQUE_SIZE )
+             return -EOPNOTSUPP;
+ 
+         if ( func->old_size < func->new_size )
+@@ -123,13 +123,14 @@ int arch_livepatch_verify_func(const struct livepatch_func *func)
+  * "noinline" to cause control flow change and thus invalidate I$ and
+  * cause refetch after modification.
+  */
+-void noinline arch_livepatch_apply(struct livepatch_func *func)
++void noinline arch_livepatch_apply(const struct livepatch_func *func,
++                                   struct livepatch_fstate *state)
+ {
+     uint8_t *old_ptr;
+-    uint8_t insn[sizeof(func->opaque)];
++    uint8_t insn[sizeof(state->insn_buffer)];
+     unsigned int len;
+ 
+-    func->patch_offset = 0;
++    state->patch_offset = 0;
+     old_ptr = func->old_addr;
+ 
+     /*
+@@ -141,14 +142,14 @@ void noinline arch_livepatch_apply(struct livepatch_func *func)
+      * ENDBR64 or similar instructions).
+      */
+     if ( is_endbr64(old_ptr) || is_endbr64_poison(func->old_addr) )
+-        func->patch_offset += ENDBR64_LEN;
++        state->patch_offset += ENDBR64_LEN;
+ 
+     /* This call must be done with ->patch_offset already set. */
+-    len = livepatch_insn_len(func);
++    len = livepatch_insn_len(func, state);
+     if ( !len )
+         return;
+ 
+-    memcpy(func->opaque, old_ptr + func->patch_offset, len);
++    memcpy(state->insn_buffer, old_ptr + state->patch_offset, len);
+     if ( func->new_addr )
+     {
+         int32_t val;
+@@ -156,7 +157,7 @@ void noinline arch_livepatch_apply(struct livepatch_func *func)
+         BUILD_BUG_ON(ARCH_PATCH_INSN_SIZE != (1 + sizeof(val)));
+ 
+         insn[0] = 0xe9; /* Relative jump. */
+-        val = func->new_addr - (func->old_addr + func->patch_offset +
++        val = func->new_addr - (func->old_addr + state->patch_offset +
+                                 ARCH_PATCH_INSN_SIZE);
+ 
+         memcpy(&insn[1], &val, sizeof(val));
+@@ -164,17 +165,18 @@ void noinline arch_livepatch_apply(struct livepatch_func *func)
+     else
+         add_nops(insn, len);
+ 
+-    memcpy(old_ptr + func->patch_offset, insn, len);
++    memcpy(old_ptr + state->patch_offset, insn, len);
+ }
+ 
+ /*
+  * "noinline" to cause control flow change and thus invalidate I$ and
+  * cause refetch after modification.
+  */
+-void noinline arch_livepatch_revert(const struct livepatch_func *func)
++void noinline arch_livepatch_revert(const struct livepatch_func *func,
++                                    struct livepatch_fstate *state)
+ {
+-    memcpy(func->old_addr + func->patch_offset, func->opaque,
+-           livepatch_insn_len(func));
++    memcpy(func->old_addr + state->patch_offset, state->insn_buffer,
++           livepatch_insn_len(func, state));
+ }
+ 
+ /*
+diff --git a/xen/common/livepatch.c b/xen/common/livepatch.c
+index d89a904bd4..e635606c10 100644
+--- a/xen/common/livepatch.c
++++ b/xen/common/livepatch.c
+@@ -260,6 +260,9 @@ static void free_payload_data(struct payload *payload)
+     vfree((void *)payload->text_addr);
+ 
+     payload->pages = 0;
++
++    /* fstate gets allocated strictly after move_payload. */
++    XFREE(payload->fstate);
+ }
+ 
+ /*
+@@ -656,6 +659,7 @@ static int prepare_payload(struct payload *payload,
+ {
+     const struct livepatch_elf_sec *sec;
+     unsigned int i;
++    struct livepatch_func *funcs;
+     struct livepatch_func *f;
+     struct virtual_region *region;
+     const Elf_Note *n;
+@@ -666,14 +670,19 @@ static int prepare_payload(struct payload *payload,
+         if ( !section_ok(elf, sec, sizeof(*payload->funcs)) )
+             return -EINVAL;
+ 
+-        payload->funcs = sec->load_addr;
++        payload->funcs = funcs = sec->load_addr;
+         payload->nfuncs = sec->sec->sh_size / sizeof(*payload->funcs);
+ 
++        payload->fstate = xzalloc_array(typeof(*payload->fstate),
++                                        payload->nfuncs);
++        if ( !payload->fstate )
++            return -ENOMEM;
++
+         for ( i = 0; i < payload->nfuncs; i++ )
+         {
+             int rc;
+ 
+-            f = &(payload->funcs[i]);
++            f = &(funcs[i]);
+ 
+             if ( f->version != LIVEPATCH_PAYLOAD_VERSION )
+             {
+@@ -1361,7 +1370,7 @@ static int apply_payload(struct payload *data)
+     ASSERT(!local_irq_is_enabled());
+ 
+     for ( i = 0; i < data->nfuncs; i++ )
+-        common_livepatch_apply(&data->funcs[i]);
++        common_livepatch_apply(&data->funcs[i], &data->fstate[i]);
+ 
+     arch_livepatch_revive();
+ 
+@@ -1397,7 +1406,7 @@ static int revert_payload(struct payload *data)
+     }
+ 
+     for ( i = 0; i < data->nfuncs; i++ )
+-        common_livepatch_revert(&data->funcs[i]);
++        common_livepatch_revert(&data->funcs[i], &data->fstate[i]);
+ 
+     /*
+      * Since we are running with IRQs disabled and the hooks may call common
+@@ -1438,9 +1447,10 @@ static inline bool was_action_consistent(const struct payload *data, livepatch_f
+ 
+     for ( i = 0; i < data->nfuncs; i++ )
+     {
+-        struct livepatch_func *f = &(data->funcs[i]);
++        const struct livepatch_func *f = &(data->funcs[i]);
++        const struct livepatch_fstate *s = &(data->fstate[i]);
+ 
+-        if ( f->applied != expected_state )
++        if ( s->applied != expected_state )
+         {
+             printk(XENLOG_ERR LIVEPATCH "%s: Payload has a function: '%s' with inconsistent applied state.\n",
+                    data->name, f->name ?: "noname");
+@@ -2157,7 +2167,8 @@ static void cf_check livepatch_printall(unsigned char key)
+ 
+         for ( i = 0; i < data->nfuncs; i++ )
+         {
+-            struct livepatch_func *f = &(data->funcs[i]);
++            const struct livepatch_func *f = &(data->funcs[i]);
++
+             printk("    %s patch %p(%u) with %p (%u)\n",
+                    f->name, f->old_addr, f->old_size, f->new_addr, f->new_size);
+ 
+diff --git a/xen/include/public/sysctl.h b/xen/include/public/sysctl.h
+index f1eba78405..9b19679cae 100644
+--- a/xen/include/public/sysctl.h
++++ b/xen/include/public/sysctl.h
+@@ -991,10 +991,7 @@ struct livepatch_func {
+     uint32_t new_size;
+     uint32_t old_size;
+     uint8_t version;        /* MUST be LIVEPATCH_PAYLOAD_VERSION. */
+-    uint8_t opaque[LIVEPATCH_OPAQUE_SIZE];
+-    uint8_t applied;
+-    uint8_t patch_offset;
+-    uint8_t _pad[6];
++    uint8_t _pad[39];
+     livepatch_expectation_t expect;
+ };
+ typedef struct livepatch_func livepatch_func_t;
+diff --git a/xen/include/xen/livepatch.h b/xen/include/xen/livepatch.h
+index 9fdb29c382..537d3d58b6 100644
+--- a/xen/include/xen/livepatch.h
++++ b/xen/include/xen/livepatch.h
+@@ -13,6 +13,9 @@ struct xen_sysctl_livepatch_op;
+ 
+ #include <xen/elfstructs.h>
+ #include <xen/errno.h> /* For -ENOSYS or -EOVERFLOW */
++
++#include <public/sysctl.h> /* For LIVEPATCH_OPAQUE_SIZE */
++
+ #ifdef CONFIG_LIVEPATCH
+ 
+ /*
+@@ -51,6 +54,12 @@ struct livepatch_symbol {
+     bool_t new_symbol;
+ };
+ 
++struct livepatch_fstate {
++    unsigned int patch_offset;
++    enum livepatch_func_state applied;
++    uint8_t insn_buffer[LIVEPATCH_OPAQUE_SIZE];
++};
++
+ int livepatch_op(struct xen_sysctl_livepatch_op *);
+ void check_for_livepatch_work(void);
+ unsigned long livepatch_symbols_lookup_by_name(const char *symname);
+@@ -87,10 +96,11 @@ void arch_livepatch_init(void);
+ int arch_livepatch_verify_func(const struct livepatch_func *func);
+ 
+ static inline
+-unsigned int livepatch_insn_len(const struct livepatch_func *func)
++unsigned int livepatch_insn_len(const struct livepatch_func *func,
++                                const struct livepatch_fstate *state)
+ {
+     if ( !func->new_addr )
+-        return func->new_size - func->patch_offset;
++        return func->new_size - state->patch_offset;
+ 
+     return ARCH_PATCH_INSN_SIZE;
+ }
+@@ -117,39 +127,43 @@ int arch_livepatch_safety_check(void);
+ int arch_livepatch_quiesce(void);
+ void arch_livepatch_revive(void);
+ 
+-void arch_livepatch_apply(struct livepatch_func *func);
+-void arch_livepatch_revert(const struct livepatch_func *func);
++void arch_livepatch_apply(const struct livepatch_func *func,
++                          struct livepatch_fstate *state);
++void arch_livepatch_revert(const struct livepatch_func *func,
++                           struct livepatch_fstate *state);
+ void arch_livepatch_post_action(void);
+ 
+ void arch_livepatch_mask(void);
+ void arch_livepatch_unmask(void);
+ 
+-static inline void common_livepatch_apply(struct livepatch_func *func)
++static inline void common_livepatch_apply(const struct livepatch_func *func,
++                                          struct livepatch_fstate *state)
+ {
+     /* If the action has been already executed on this function, do nothing. */
+-    if ( func->applied == LIVEPATCH_FUNC_APPLIED )
++    if ( state->applied == LIVEPATCH_FUNC_APPLIED )
+     {
+         printk(XENLOG_WARNING LIVEPATCH "%s: %s has been already applied before\n",
+                 __func__, func->name);
+         return;
+     }
+ 
+-    arch_livepatch_apply(func);
+-    func->applied = LIVEPATCH_FUNC_APPLIED;
++    arch_livepatch_apply(func, state);
++    state->applied = LIVEPATCH_FUNC_APPLIED;
+ }
+ 
+-static inline void common_livepatch_revert(struct livepatch_func *func)
++static inline void common_livepatch_revert(const struct livepatch_func *func,
++                                           struct livepatch_fstate *state)
+ {
+     /* If the apply action hasn't been executed on this function, do nothing. */
+-    if ( !func->old_addr || func->applied == LIVEPATCH_FUNC_NOT_APPLIED )
++    if ( !func->old_addr || state->applied == LIVEPATCH_FUNC_NOT_APPLIED )
+     {
+         printk(XENLOG_WARNING LIVEPATCH "%s: %s has not been applied before\n",
+                 __func__, func->name);
+         return;
+     }
+ 
+-    arch_livepatch_revert(func);
+-    func->applied = LIVEPATCH_FUNC_NOT_APPLIED;
++    arch_livepatch_revert(func, state);
++    state->applied = LIVEPATCH_FUNC_NOT_APPLIED;
+ }
+ #else
+ 
+diff --git a/xen/include/xen/livepatch_payload.h b/xen/include/xen/livepatch_payload.h
+index 9f5f064205..b9cd4f2096 100644
+--- a/xen/include/xen/livepatch_payload.h
++++ b/xen/include/xen/livepatch_payload.h
+@@ -52,7 +52,8 @@ struct payload {
+     size_t ro_size;                      /* .. and its size (if any). */
+     unsigned int pages;                  /* Total pages for [text,rw,ro]_addr */
+     struct list_head applied_list;       /* Linked to 'applied_list'. */
+-    struct livepatch_func *funcs;        /* The array of functions to patch. */
++    const struct livepatch_func *funcs;  /* The array of functions to patch. */
++    struct livepatch_fstate *fstate;     /* State of patched functions. */
+     unsigned int nfuncs;                 /* Nr of functions to patch. */
+     const struct livepatch_symbol *symtab; /* All symbols. */
+     const char *strtab;                  /* Pointer to .strtab. */
+diff --git a/xen/test/livepatch/xen_action_hooks.c b/xen/test/livepatch/xen_action_hooks.c
+index 39b5313027..fa0b3ab35f 100644
+--- a/xen/test/livepatch/xen_action_hooks.c
++++ b/xen/test/livepatch/xen_action_hooks.c
+@@ -26,9 +26,10 @@ static int apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        func->applied = LIVEPATCH_FUNC_APPLIED;
++        fstate->applied = LIVEPATCH_FUNC_APPLIED;
+         apply_cnt++;
+ 
+         printk(KERN_DEBUG "%s: applying: %s\n", __func__, func->name);
+@@ -47,9 +48,10 @@ static int revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        func->applied = LIVEPATCH_FUNC_NOT_APPLIED;
++        fstate->applied = LIVEPATCH_FUNC_NOT_APPLIED;
+         revert_cnt++;
+ 
+         printk(KERN_DEBUG "%s: reverting: %s\n", __func__, func->name);
+@@ -68,7 +70,7 @@ static void post_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         printk(KERN_DEBUG "%s: reverted: %s\n", __func__, func->name);
+     }
+diff --git a/xen/test/livepatch/xen_action_hooks_marker.c b/xen/test/livepatch/xen_action_hooks_marker.c
+index 4f807a577f..d2e22f70d1 100644
+--- a/xen/test/livepatch/xen_action_hooks_marker.c
++++ b/xen/test/livepatch/xen_action_hooks_marker.c
+@@ -23,9 +23,10 @@ static int pre_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied == LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied == LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: pre applied: %s\n", __func__, func->name);
+     }
+ 
+@@ -42,9 +43,10 @@ static void post_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied != LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied != LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: post applied: %s\n", __func__, func->name);
+     }
+ 
+@@ -59,9 +61,10 @@ static int pre_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied != LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied != LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: pre reverted: %s\n", __func__, func->name);
+     }
+ 
+@@ -78,9 +81,10 @@ static void post_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied == LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied == LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: post reverted: %s\n", __func__, func->name);
+     }
+ 
+diff --git a/xen/test/livepatch/xen_action_hooks_noapply.c b/xen/test/livepatch/xen_action_hooks_noapply.c
+index 4c55c156a6..646a5fd2f0 100644
+--- a/xen/test/livepatch/xen_action_hooks_noapply.c
++++ b/xen/test/livepatch/xen_action_hooks_noapply.c
+@@ -25,9 +25,10 @@ static int pre_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied == LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied == LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: pre applied: %s\n", __func__, func->name);
+     }
+ 
+@@ -44,7 +45,7 @@ static int apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         apply_cnt++;
+         printk(KERN_DEBUG "%s: applying: %s\n", __func__, func->name);
+@@ -63,10 +64,11 @@ static void post_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+         BUG_ON(apply_cnt != 1);
+-        BUG_ON(func->applied == LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied == LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: post applied: %s\n", __func__, func->name);
+     }
+ 
+@@ -81,9 +83,10 @@ static int pre_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied == LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied == LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: pre reverted: %s\n", __func__, func->name);
+     }
+ 
+@@ -100,9 +103,10 @@ static void post_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied == LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied == LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: post reverted: %s\n", __func__, func->name);
+     }
+ 
+diff --git a/xen/test/livepatch/xen_action_hooks_nofunc.c b/xen/test/livepatch/xen_action_hooks_nofunc.c
+index 2b4e90436f..077c4c1738 100644
+--- a/xen/test/livepatch/xen_action_hooks_nofunc.c
++++ b/xen/test/livepatch/xen_action_hooks_nofunc.c
+@@ -23,7 +23,7 @@ static int apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         apply_cnt++;
+         printk(KERN_DEBUG "%s: applying: %s\n", __func__, func->name);
+@@ -42,7 +42,7 @@ static int revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         revert_cnt++;
+         printk(KERN_DEBUG "%s: reverting: %s\n", __func__, func->name);
+@@ -61,7 +61,7 @@ static void post_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         printk(KERN_DEBUG "%s: reverted: %s\n", __func__, func->name);
+     }
+diff --git a/xen/test/livepatch/xen_action_hooks_norevert.c b/xen/test/livepatch/xen_action_hooks_norevert.c
+index ef77e72071..3e21ade6ab 100644
+--- a/xen/test/livepatch/xen_action_hooks_norevert.c
++++ b/xen/test/livepatch/xen_action_hooks_norevert.c
+@@ -25,9 +25,10 @@ static int pre_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied == LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied == LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: pre applied: %s\n", __func__, func->name);
+     }
+ 
+@@ -44,9 +45,10 @@ static void post_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied != LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied != LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: post applied: %s\n", __func__, func->name);
+     }
+ 
+@@ -61,9 +63,10 @@ static int pre_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+-        BUG_ON(func->applied != LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied != LIVEPATCH_FUNC_APPLIED);
+         printk(KERN_DEBUG "%s: pre reverted: %s\n", __func__, func->name);
+     }
+ 
+@@ -80,7 +83,7 @@ static int revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         revert_cnt++;
+         printk(KERN_DEBUG "%s: reverting: %s\n", __func__, func->name);
+@@ -99,16 +102,17 @@ static void post_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
++        struct livepatch_fstate *fstate = &payload->fstate[i];
+ 
+         BUG_ON(revert_cnt != 1);
+-        BUG_ON(func->applied != LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied != LIVEPATCH_FUNC_APPLIED);
+ 
+         /* Outside of quiesce zone: MAY TRIGGER HOST CRASH/UNDEFINED BEHAVIOR */
+         arch_livepatch_quiesce();
+         common_livepatch_revert(payload);
+         arch_livepatch_revive();
+-        BUG_ON(func->applied == LIVEPATCH_FUNC_APPLIED);
++        BUG_ON(fstate->applied == LIVEPATCH_FUNC_APPLIED);
+ 
+         printk(KERN_DEBUG "%s: post reverted: %s\n", __func__, func->name);
+     }
+diff --git a/xen/test/livepatch/xen_prepost_hooks.c b/xen/test/livepatch/xen_prepost_hooks.c
+index 889377d6eb..17f5af6a19 100644
+--- a/xen/test/livepatch/xen_prepost_hooks.c
++++ b/xen/test/livepatch/xen_prepost_hooks.c
+@@ -30,7 +30,7 @@ static int pre_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         pre_apply_cnt++;
+         printk(KERN_DEBUG "%s: applying: %s\n", __func__, func->name);
+@@ -49,7 +49,7 @@ static void post_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         post_apply_cnt++;
+         printk(KERN_DEBUG "%s: applied: %s\n", __func__, func->name);
+@@ -66,7 +66,7 @@ static int pre_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         pre_revert_cnt++;
+         printk(KERN_DEBUG "%s: reverting: %s\n", __func__, func->name);
+@@ -86,7 +86,7 @@ static void post_revert_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         post_revert_cnt++;
+         printk(KERN_DEBUG "%s: reverted: %s\n", __func__, func->name);
+diff --git a/xen/test/livepatch/xen_prepost_hooks_fail.c b/xen/test/livepatch/xen_prepost_hooks_fail.c
+index c6feb5d32d..52fd7f642e 100644
+--- a/xen/test/livepatch/xen_prepost_hooks_fail.c
++++ b/xen/test/livepatch/xen_prepost_hooks_fail.c
+@@ -24,7 +24,7 @@ static int pre_apply_hook(livepatch_payload_t *payload)
+ 
+     for (i = 0; i < payload->nfuncs; i++)
+     {
+-        struct livepatch_func *func = &payload->funcs[i];
++        const struct livepatch_func *func = &payload->funcs[i];
+ 
+         printk(KERN_DEBUG "%s: pre applying: %s\n", __func__, func->name);
+     }
+-- 
+2.30.2
+

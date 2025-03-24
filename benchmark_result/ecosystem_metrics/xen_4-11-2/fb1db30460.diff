@@ -1,0 +1,104 @@
+From fb1db3046029fc71cfc3b9ccb1e1ff3917f2e944 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Fri, 25 Oct 2019 12:02:44 +0200
+Subject: [PATCH] pci: clear {host/guest}_maskall field on assign
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The current implementation of host_maskall makes it sticky across
+assign and deassign calls, which means that once a guest forces Xen to
+set host_maskall the maskall bit is not going to be cleared until a
+call to PHYSDEVOP_prepare_msix is performed. Such call however
+shouldn't be part of the normal flow when doing PCI passthrough, and
+hence the flag needs to be cleared when assigning in order to prevent
+host_maskall being carried over from previous assignations.
+
+Note that the entry maskbit is reset when the msix capability is
+initialized, and the guest_maskall field is also cleared so that the
+hardware value matches Xen's internal state (hardware maskall =
+host_maskall | guest_maskall).
+
+Also note that doing the reset of host_maskall there would allow the
+guest to reset such field by enabling and disabling MSIX, which is not
+intended.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Tested-by: Chao Gao <chao.gao@intel.com>
+master commit: 575e18d54d19eda787f6477a4acd3c50f72751a9
+master date: 2019-10-10 10:59:27 +0200
+---
+ xen/arch/x86/msi.c            | 25 +++++++++++++++++++++++++
+ xen/drivers/passthrough/pci.c |  5 +++++
+ xen/include/asm-x86/msi.h     |  1 +
+ 3 files changed, 31 insertions(+)
+
+diff --git a/xen/arch/x86/msi.c b/xen/arch/x86/msi.c
+index a978fa5c29..2bec43e416 100644
+--- a/xen/arch/x86/msi.c
++++ b/xen/arch/x86/msi.c
+@@ -1268,6 +1268,31 @@ void pci_cleanup_msi(struct pci_dev *pdev)
+     msi_free_irqs(pdev);
+ }
+ 
++int pci_reset_msix_state(struct pci_dev *pdev)
++{
++    uint8_t slot = PCI_SLOT(pdev->devfn);
++    uint8_t func = PCI_FUNC(pdev->devfn);
++    unsigned int pos = pci_find_cap_offset(pdev->seg, pdev->bus, slot, func,
++                                           PCI_CAP_ID_MSIX);
++
++    ASSERT(pos);
++    /*
++     * Xen expects the device state to be the after reset one, and hence
++     * host_maskall = guest_maskall = false and all entries should have the
++     * mask bit set. Test that the maskall bit is not set, having it set could
++     * signal that the device hasn't been reset properly.
++     */
++    if ( pci_conf_read16(pdev->seg, pdev->bus, slot, func,
++                         msix_control_reg(pos)) &
++         PCI_MSIX_FLAGS_MASKALL )
++        return -EBUSY;
++
++    pdev->msix->host_maskall = false;
++    pdev->msix->guest_maskall = false;
++
++    return 0;
++}
++
+ int pci_msi_conf_write_intercept(struct pci_dev *pdev, unsigned int reg,
+                                  unsigned int size, uint32_t *data)
+ {
+diff --git a/xen/drivers/passthrough/pci.c b/xen/drivers/passthrough/pci.c
+index 037aba7c94..f73123761d 100644
+--- a/xen/drivers/passthrough/pci.c
++++ b/xen/drivers/passthrough/pci.c
+@@ -1440,7 +1440,12 @@ static int assign_device(struct domain *d, u16 seg, u8 bus, u8 devfn, u32 flag)
+     }
+ 
+     if ( pdev->msix )
++    {
++        rc = pci_reset_msix_state(pdev);
++        if ( rc )
++            goto done;
+         msixtbl_init(d);
++    }
+ 
+     pdev->fault.count = 0;
+ 
+diff --git a/xen/include/asm-x86/msi.h b/xen/include/asm-x86/msi.h
+index 10387dce2e..d27a20774a 100644
+--- a/xen/include/asm-x86/msi.h
++++ b/xen/include/asm-x86/msi.h
+@@ -92,6 +92,7 @@ extern int __setup_msi_irq(struct irq_desc *, struct msi_desc *,
+ extern void teardown_msi_irq(int irq);
+ extern int msi_free_vector(struct msi_desc *entry);
+ extern int pci_restore_msi_state(struct pci_dev *pdev);
++extern int pci_reset_msix_state(struct pci_dev *pdev);
+ 
+ struct msi_desc {
+ 	struct msi_attrib {
+-- 
+2.30.2
+

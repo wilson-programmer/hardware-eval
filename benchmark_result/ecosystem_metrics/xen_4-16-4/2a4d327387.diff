@@ -1,0 +1,28 @@
+From 2a4d327387601b60c9844a5b0cc44de28792ea52 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 6 May 2022 14:46:52 +0200
+Subject: [PATCH] bump default SeaBIOS version to 1.16.0
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 944e389daa133dd310d87c4eebacba9f6da76018)
+---
+ Config.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Config.mk b/Config.mk
+index 1215c2725b..073715c28d 100644
+--- a/Config.mk
++++ b/Config.mk
+@@ -241,7 +241,7 @@ OVMF_UPSTREAM_REVISION ?= 7b4a99be8a39c12d3a7fc4b8db9f0eab4ac688d5
+ QEMU_UPSTREAM_REVISION ?= qemu-xen-4.16.3
+ MINIOS_UPSTREAM_REVISION ?= xen-RELEASE-4.16.3
+ 
+-SEABIOS_UPSTREAM_REVISION ?= rel-1.14.0
++SEABIOS_UPSTREAM_REVISION ?= rel-1.16.0
+ 
+ ETHERBOOT_NICS ?= rtl8139 8086100e
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,219 @@
+From 4e893a424a449b4319f33307263e2f751eea2429 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Thu, 31 Oct 2019 15:09:12 +0000
+Subject: [PATCH] xen/arm: traps: Rework entry/exit from the guest path
+
+At the moment, enter_hypervisor_head() and leave_hypervisor_tail() are
+used to deal with actions to be done before/after any guest request is
+handled.
+
+While they are meant to work in pair, the former is called for most of
+the traps, including traps from the same exception level (i.e.
+hypervisor) whilst the latter will only be called when returning to the
+guest.
+
+As pointed out, the enter_hypervisor_head() is not called from all the
+traps, so this makes potentially difficult to extend it for the dealing
+with same exception level.
+
+Furthermore, some assembly only path will require to call
+enter_hypervisor_tail(). So the function is now directly call by
+assembly in for guest vector only. This means that the check whether we
+are called in a guest trap can now be removed.
+
+Take the opportunity to rename enter_hypervisor_tail() and
+leave_hypervisor_tail() to something more meaningful and document them.
+This should help everyone to understand the purpose of the two
+functions.
+
+Note that enter_hypervisor_tail() does not take any parameters anymore
+as after the rework, the code does not use them anymore.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit adaecef58e293333c9cdf7780118e8b125ed2634)
+---
+ xen/arch/arm/arm32/entry.S |  5 ++-
+ xen/arch/arm/arm64/entry.S |  3 +-
+ xen/arch/arm/traps.c       | 71 ++++++++++++++++++--------------------
+ 3 files changed, 40 insertions(+), 39 deletions(-)
+
+diff --git a/xen/arch/arm/arm32/entry.S b/xen/arch/arm/arm32/entry.S
+index ec90cca093..5abff24e91 100644
+--- a/xen/arch/arm/arm32/entry.S
++++ b/xen/arch/arm/arm32/entry.S
+@@ -177,6 +177,9 @@ skip_check:
+         .if     \guest_iflags != n
+         cpsie   \guest_iflags
+         .endif
++
++        bl      enter_hypervisor_from_guest
++
+ 2:
+         /* We are ready to handle the trap, setup the registers and jump. */
+         adr     lr, return_from_trap
+@@ -332,7 +335,7 @@ ENTRY(return_to_new_vcpu32)
+ return_to_guest:
+         mov r11, sp
+         bic sp, #7 /* Align the stack pointer */
+-        bl leave_hypervisor_tail /* Disables interrupts on return */
++        bl leave_hypervisor_to_guest /* Mask IRQ on return */
+         mov sp, r11
+         RESTORE_ONE_BANKED(SP_usr)
+         /* LR_usr is the same physical register as lr and is restored below */
+diff --git a/xen/arch/arm/arm64/entry.S b/xen/arch/arm/arm64/entry.S
+index c22e54b22a..8c9963c50b 100644
+--- a/xen/arch/arm/arm64/entry.S
++++ b/xen/arch/arm/arm64/entry.S
+@@ -170,7 +170,7 @@ lr      .req    x30             /* link register */
+ 
+         .if \hyp == 0         /* Guest mode */
+ 
+-        bl      leave_hypervisor_tail /* Disables interrupts on return */
++        bl      leave_hypervisor_to_guest /* Mask IRQ on return */
+ 
+         exit_guest \compat
+ 
+@@ -197,6 +197,7 @@ lr      .req    x30             /* link register */
+                     "nop; nop",
+                     SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT)
+         msr     daifclr, \iflags
++        bl      enter_hypervisor_from_guest
+         mov     x0, sp
+         bl      do_trap_\trap
+ 1:
+diff --git a/xen/arch/arm/traps.c b/xen/arch/arm/traps.c
+index 5c45d382d7..53cbaca400 100644
+--- a/xen/arch/arm/traps.c
++++ b/xen/arch/arm/traps.c
+@@ -1976,47 +1976,46 @@ static inline bool needs_ssbd_flip(struct vcpu *v)
+              cpu_require_ssbd_mitigation();
+ }
+ 
+-static void enter_hypervisor_head(struct cpu_user_regs *regs)
++/*
++ * Actions that needs to be done after entering the hypervisor from the
++ * guest and before we handle any request.
++ */
++void enter_hypervisor_from_guest(void)
+ {
+-    if ( guest_mode(regs) )
+-    {
+-        struct vcpu *v = current;
++    struct vcpu *v = current;
+ 
+-        /* If the guest has disabled the workaround, bring it back on. */
+-        if ( needs_ssbd_flip(v) )
+-            arm_smccc_1_1_smc(ARM_SMCCC_ARCH_WORKAROUND_2_FID, 1, NULL);
++    /* If the guest has disabled the workaround, bring it back on. */
++    if ( needs_ssbd_flip(v) )
++        arm_smccc_1_1_smc(ARM_SMCCC_ARCH_WORKAROUND_2_FID, 1, NULL);
+ 
+-        /*
+-         * If we pended a virtual abort, preserve it until it gets cleared.
+-         * See ARM ARM DDI 0487A.j D1.14.3 (Virtual Interrupts) for details,
+-         * but the crucial bit is "On taking a vSError interrupt, HCR_EL2.VSE
+-         * (alias of HCR.VA) is cleared to 0."
+-         */
+-        if ( v->arch.hcr_el2 & HCR_VA )
+-            v->arch.hcr_el2 = READ_SYSREG(HCR_EL2);
++    /*
++     * If we pended a virtual abort, preserve it until it gets cleared.
++     * See ARM ARM DDI 0487A.j D1.14.3 (Virtual Interrupts) for details,
++     * but the crucial bit is "On taking a vSError interrupt, HCR_EL2.VSE
++     * (alias of HCR.VA) is cleared to 0."
++     */
++    if ( v->arch.hcr_el2 & HCR_VA )
++        v->arch.hcr_el2 = READ_SYSREG(HCR_EL2);
+ 
+ #ifdef CONFIG_NEW_VGIC
+-        /*
+-         * We need to update the state of our emulated devices using level
+-         * triggered interrupts before syncing back the VGIC state.
+-         *
+-         * TODO: Investigate whether this is necessary to do on every
+-         * trap and how it can be optimised.
+-         */
+-        vtimer_update_irqs(v);
+-        vcpu_update_evtchn_irq(v);
++    /*
++     * We need to update the state of our emulated devices using level
++     * triggered interrupts before syncing back the VGIC state.
++     *
++     * TODO: Investigate whether this is necessary to do on every
++     * trap and how it can be optimised.
++     */
++    vtimer_update_irqs(v);
++    vcpu_update_evtchn_irq(v);
+ #endif
+ 
+-        vgic_sync_from_lrs(v);
+-    }
++    vgic_sync_from_lrs(v);
+ }
+ 
+ void do_trap_guest_sync(struct cpu_user_regs *regs)
+ {
+     const union hsr hsr = { .bits = regs->hsr };
+ 
+-    enter_hypervisor_head(regs);
+-
+     switch ( hsr.ec )
+     {
+     case HSR_EC_WFI_WFE:
+@@ -2150,8 +2149,6 @@ void do_trap_hyp_sync(struct cpu_user_regs *regs)
+ {
+     const union hsr hsr = { .bits = regs->hsr };
+ 
+-    enter_hypervisor_head(regs);
+-
+     switch ( hsr.ec )
+     {
+ #ifdef CONFIG_ARM_64
+@@ -2188,27 +2185,21 @@ void do_trap_hyp_sync(struct cpu_user_regs *regs)
+ 
+ void do_trap_hyp_serror(struct cpu_user_regs *regs)
+ {
+-    enter_hypervisor_head(regs);
+-
+     __do_trap_serror(regs, VABORT_GEN_BY_GUEST(regs));
+ }
+ 
+ void do_trap_guest_serror(struct cpu_user_regs *regs)
+ {
+-    enter_hypervisor_head(regs);
+-
+     __do_trap_serror(regs, true);
+ }
+ 
+ void do_trap_irq(struct cpu_user_regs *regs)
+ {
+-    enter_hypervisor_head(regs);
+     gic_interrupt(regs, 0);
+ }
+ 
+ void do_trap_fiq(struct cpu_user_regs *regs)
+ {
+-    enter_hypervisor_head(regs);
+     gic_interrupt(regs, 1);
+ }
+ 
+@@ -2251,7 +2242,13 @@ static void check_for_vcpu_work(void)
+     local_irq_disable();
+ }
+ 
+-void leave_hypervisor_tail(void)
++/*
++ * Actions that needs to be done before entering the guest. This is the
++ * last thing executed before the guest context is fully restored.
++ *
++ * The function will return with IRQ masked.
++ */
++void leave_hypervisor_to_guest(void)
+ {
+     local_irq_disable();
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,65 @@
+From 864d5701ec5dc5af028d415e86bf5cf6aaed3a7c Mon Sep 17 00:00:00 2001
+From: Paul Durrant <pdurrant@amazon.com>
+Date: Fri, 7 Aug 2020 17:11:10 +0200
+Subject: [PATCH] x86/hvm: set 'ipat' in EPT for special pages
+
+All non-MMIO ranges (i.e those not mapping real device MMIO regions) that
+map valid MFNs are normally marked MTRR_TYPE_WRBACK and 'ipat' is set. Hence
+when PV drivers running in a guest populate the BAR space of the Xen Platform
+PCI Device with pages such as the Shared Info page or Grant Table pages,
+accesses to these pages will be cachable.
+
+However, should IOMMU mappings be enabled be enabled for the guest then these
+accesses become uncachable. This has a substantial negative effect on I/O
+throughput of PV devices. Arguably PV drivers should bot be using BAR space to
+host the Shared Info and Grant Table pages but it is currently commonplace for
+them to do this and so this problem needs mitigation. Hence this patch makes
+sure the 'ipat' bit is set for any special page regardless of where in GFN
+space it is mapped.
+
+NOTE: Clearly this mitigation only applies to Intel EPT. It is not obvious
+      that there is any similar mitigation possible for AMD NPT. Downstreams
+      such as Citrix XenServer have been carrying a patch similar to this for
+      several releases though.
+
+Signed-off-by: Paul Durrant <pdurrant@amazon.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: ca24b2ffdbd9a25b2d313a547ccbe97baf3e5a8d
+master date: 2020-07-31 17:42:47 +0200
+---
+ xen/arch/x86/hvm/mtrr.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/mtrr.c b/xen/arch/x86/hvm/mtrr.c
+index 511c3be1c8..2bd64e8025 100644
+--- a/xen/arch/x86/hvm/mtrr.c
++++ b/xen/arch/x86/hvm/mtrr.c
+@@ -794,6 +794,7 @@ int epte_get_entry_emt(struct domain *d, unsigned long gfn, mfn_t mfn,
+ {
+     int gmtrr_mtype, hmtrr_mtype;
+     struct vcpu *v = current;
++    unsigned long i;
+ 
+     *ipat = 0;
+ 
+@@ -836,6 +837,17 @@ int epte_get_entry_emt(struct domain *d, unsigned long gfn, mfn_t mfn,
+         return MTRR_TYPE_WRBACK;
+     }
+ 
++    for ( i = 0; i < (1ul << order); i++ )
++    {
++        if ( is_special_page(mfn_to_page(mfn_add(mfn, i))) )
++        {
++            if ( order )
++                return -1;
++            *ipat = 1;
++            return MTRR_TYPE_WRBACK;
++        }
++    }
++
+     gmtrr_mtype = hvm_get_mem_pinned_cacheattr(d, _gfn(gfn), order);
+     if ( gmtrr_mtype >= 0 )
+     {
+-- 
+2.30.2
+

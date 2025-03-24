@@ -1,0 +1,173 @@
+From eccd4d0d75a75b6cc59f2a55488e906c7fb52991 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 21 Apr 2021 10:16:13 +0100
+Subject: [PATCH] CI: Drop TravisCI
+
+Travis-ci.org is shutting down shortly.  The arm cross-compile testing has
+been broken for a long time now, and all testing has now been superseded by
+our Gitlab infrastructure.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Wei Liu <wl@xen.org>
+(cherry picked from commit e0dc9b095e7c73dcf6dbfe5c87c33c4708da4d1f)
+
+CI: Drop more TravisCI remnants
+
+This was missed from previous attempts to remove Travis.
+
+Fixes: e0dc9b095e7c ("CI: Drop TravisCI")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Henry Wang <Henry.Wang@arm.com>
+(cherry picked from commit bad4832710c7261fad1abe2d0e8e2e1d259b3e8d)
+---
+ .travis.yml          | 87 --------------------------------------------
+ MAINTAINERS          |  1 -
+ scripts/travis-build | 27 --------------
+ 3 files changed, 115 deletions(-)
+ delete mode 100644 .travis.yml
+ delete mode 100755 scripts/travis-build
+
+diff --git a/.travis.yml b/.travis.yml
+deleted file mode 100644
+index dd1cf4709a..0000000000
+--- a/.travis.yml
++++ /dev/null
+@@ -1,87 +0,0 @@
+-language: c
+-dist: trusty
+-sudo: required
+-# don't test master, smoke and coverity branches
+-branches:
+-    except:
+-        - master
+-        - smoke
+-        - /^coverity-tested\/.*/
+-        - /^stable-.*/
+-matrix:
+-    include:
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=x86_64 debug=n
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=x86_64 XEN_CONFIG_EXPERT=y RANDCONFIG=y debug=n
+-        - compiler: gcc-5
+-          env: XEN_TARGET_ARCH=x86_64 debug=n
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=x86_64 debug=y
+-        - compiler: gcc-5
+-          env: XEN_TARGET_ARCH=x86_64 debug=y
+-        - compiler: clang
+-          env: XEN_TARGET_ARCH=x86_64 clang=y debug=n
+-        - compiler: clang
+-          env: XEN_TARGET_ARCH=x86_64 clang=y debug=y
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=arm32 CROSS_COMPILE=arm-linux-gnueabihf- debug=n
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=arm32 CROSS_COMPILE=arm-linux-gnueabihf- XEN_CONFIG_EXPERT=y RANDCONFIG=y debug=n
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=arm32 CROSS_COMPILE=arm-linux-gnueabihf- debug=y
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- debug=n
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- XEN_CONFIG_EXPERT=y RANDCONFIG=y debug=n
+-        - compiler: gcc
+-          env: XEN_TARGET_ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- debug=y
+-addons:
+-    apt:
+-        sources:
+-            - ubuntu-toolchain-r-test
+-        packages:
+-            - zlib1g-dev
+-            - libncurses5-dev
+-            - libssl-dev
+-            - python-dev
+-            - xorg-dev
+-            - uuid-dev
+-            - libyajl-dev
+-            - libaio-dev
+-            - libglib2.0-dev
+-            - libpixman-1-dev
+-            - pkg-config
+-            - flex
+-            - bison
+-            - acpica-tools
+-            - bin86
+-            - bcc
+-            - libc6-dev-i386
+-            - libnl-3-dev
+-            - ocaml-nox
+-            - libfindlib-ocaml-dev
+-            - transfig
+-            - pandoc
+-            - gcc-arm-linux-gnueabihf
+-            - gcc-aarch64-linux-gnu
+-            - gcc-5
+-            - g++-5
+-            - seabios
+-            - checkpolicy
+-            - ghostscript
+-# we must set CXX manually instead of using 'language: cpp' due to
+-# travis-ci/travis-ci#3871
+-before_script:
+-    - export CXX=${CC/cc/++}
+-    - export CXX=${CXX/clang/clang++}
+-script:
+-    - ./scripts/travis-build
+-after_script:
+-    - cat xen/.config
+-    - cat tools/config.log
+-    - cat docs/config.log
+-notifications:
+-    irc:
+-        channels:
+-            - secure: "mPIFllF6eW3F3talvccMy55Tfcid66IPkkXZYCxDKRF2DQrMyvmg4qt0xN6gGZsdfOBMNr+/YfO5PxusBCUkVdBGBzd3QhFoIDYZbJZgzVh3yNDQ+x4L7p1cZNrwJ2loMmSX6KxGKZxZX9NRStrTUkVyp0jGZB9xkwT8Rl6jXj7EQkgQ95K1Wqafx0ycLfyDQmzX9bzi/3KIBFKMGmK18AFMh+R30zK0FPUUsS4+VhepIkVqO5puU3OYePd34wRnWlt7hjU2Vj5vYmVXp3UOE+E8/Lf9IGVAhitDi+EC35b8zo2BHJ9z6xZARYPvfSqbXcXV20RycabI+e3ufZJ40eatssly5QjWH+HhKS42C4gV1psmQhkTCNCM62Ty5uf6R1hsZJQuiOZrc8ojdje8ey2MxJk4R+Xz+Igg1/kD6+WX9/Y6Y3iRuj5HL1xCYfpTbK4mC7ofw0SofW2aAGI68jHpCqJdQCDzMl6748PlDMM0eKe0MPKIEenYHcoBnOEC/jciXUDa6wduV75EEip7oq2i+m44MopcsEDTpdliH077GhKapF0ActjvBTLpyoTRSfkKm0NZol/dgwd3PGG/mY8clIoeXWRb4opk93ejPC967KmSNC68SlfwaJmFZS5T9vAgb6k7r6i9G3dmYtrLKzws8IV1CPWqLzk58+v4pRk="
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 04eb361222..e1e6ea0707 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -189,7 +189,6 @@ S:	Supported
+ F:	.gitlab-ci.yml
+ F:	.travis.yml
+ F:	automation/
+-F:	scripts/travis-build
+ 
+ CPU POOLS
+ M:	Juergen Gross <jgross@suse.com>
+diff --git a/scripts/travis-build b/scripts/travis-build
+deleted file mode 100755
+index 0cb15a89e4..0000000000
+--- a/scripts/travis-build
++++ /dev/null
+@@ -1,27 +0,0 @@
+-#!/bin/bash -ex
+-
+-$CC --version
+-
+-# random config or default config
+-if [[ "${RANDCONFIG}" == "y" ]]; then
+-    make -C xen KCONFIG_ALLCONFIG=tools/kconfig/allrandom.config randconfig
+-else
+-    make -C xen defconfig
+-fi
+-
+-# build up our configure options
+-cfgargs=()
+-cfgargs+=("--disable-stubdom") # more work needed into building this
+-cfgargs+=("--disable-rombios")
+-cfgargs+=("--enable-docs")
+-cfgargs+=("--with-system-seabios=/usr/share/seabios/bios.bin")
+-
+-if [[ "${XEN_TARGET_ARCH}" == "x86_64" ]]; then
+-    cfgargs+=("--enable-tools")
+-else
+-    cfgargs+=("--disable-tools") # we don't have the cross depends installed
+-fi
+-
+-./configure "${cfgargs[@]}"
+-
+-make dist
+-- 
+2.30.2
+

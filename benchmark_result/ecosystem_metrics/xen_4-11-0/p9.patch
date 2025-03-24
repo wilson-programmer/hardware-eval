@@ -1,0 +1,37 @@
+From 688e0c364efa93f5882e2788134b693d0f65254b Mon Sep 17 00:00:00 2001
+From: Ian Jackson <ian.jackson@eu.citrix.com>
+Date: Mon, 25 Jun 2018 15:40:02 +0100
+Subject: [PATCH] MAINTAINERS: Update info for stable branch
+
+Signed-off-by: Ian Jackson <Ian.Jackson@eu.citrix.com>
+---
+ MAINTAINERS | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index c5dc4791fd..e85d2b104b 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -50,9 +50,16 @@ Please see http://wiki.xen.org/wiki/Xen_Maintenance_Releases for more
+ information.
+ 
+ Backport requests should be made on the xen-devel@lists.xenproject.org
+-list. Remember to copy the appropriate stable branch maintainer who
+-will be listed in this section of the MAINTAINERS file in the
+-appropriate branch.
++list. Remember to copy the appropriate stable branch maintainer.
++
++The maintainer for this branch is:
++
++	Jan Beulich <jbeulich@suse.com>
++
++Tools backport requests should also be copied to:
++
++	Ian Jackson <Ian.Jackson@eu.citrix.com>
++
+ 
+ 	Unstable Subsystem Maintainers
+ 	==============================
+-- 
+2.30.2
+

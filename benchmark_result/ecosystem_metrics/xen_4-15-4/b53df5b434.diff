@@ -1,0 +1,36 @@
+From b53df5b4341fa97614ad064a7c8e781c88b6ed71 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Marek=20Marczykowski-G=C3=B3recki?=
+ <marmarek@invisiblethingslab.com>
+Date: Tue, 12 Jul 2022 11:22:09 +0200
+Subject: [PATCH] ehci-dbgp: fix selecting n-th ehci controller
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The ehci<n> number was parsed but ignored.
+
+Fixes: 322ecbe4ac85 ("console: add EHCI debug port based serial console")
+Signed-off-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: d6d0cb659fda64430d4649f8680c5cead32da8fd
+master date: 2022-06-16 14:23:37 +0100
+---
+ xen/drivers/char/ehci-dbgp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/drivers/char/ehci-dbgp.c b/xen/drivers/char/ehci-dbgp.c
+index c893d246de..66b4811af2 100644
+--- a/xen/drivers/char/ehci-dbgp.c
++++ b/xen/drivers/char/ehci-dbgp.c
+@@ -1478,7 +1478,7 @@ void __init ehci_dbgp_init(void)
+         unsigned int num = 0;
+ 
+         if ( opt_dbgp[4] )
+-            simple_strtoul(opt_dbgp + 4, &e, 10);
++            num = simple_strtoul(opt_dbgp + 4, &e, 10);
+ 
+         dbgp->cap = find_dbgp(dbgp, num);
+         if ( !dbgp->cap )
+-- 
+2.30.2
+

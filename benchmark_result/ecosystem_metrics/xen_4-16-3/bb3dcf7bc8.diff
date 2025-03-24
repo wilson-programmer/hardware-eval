@@ -1,0 +1,64 @@
+From bb3dcf7bc89c6263cdf4ee82de9edfe58f369e2b Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 30 Nov 2022 14:56:43 +0000
+Subject: [PATCH] tools/oxenstored: Style fixes to Domain
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+This file has some style problems so severe that they interfere with the
+readability of the subsequent bugfix patches.
+
+Fix these issues ahead of time, to make the subsequent changes more readable.
+
+No functional change.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+(cherry picked from commit b45bfaf359e4821b1bf98a4fcd194d7fd176f167)
+---
+ tools/ocaml/xenstored/domain.ml | 16 +++++++---------
+ 1 file changed, 7 insertions(+), 9 deletions(-)
+
+diff --git a/tools/ocaml/xenstored/domain.ml b/tools/ocaml/xenstored/domain.ml
+index 81cb59b8f1..ab08dcf37f 100644
+--- a/tools/ocaml/xenstored/domain.ml
++++ b/tools/ocaml/xenstored/domain.ml
+@@ -57,17 +57,16 @@ let is_paused_for_conflict dom = dom.conflict_credit <= 0.0
+ let is_free_to_conflict = is_dom0
+ 
+ let string_of_port = function
+-| None -> "None"
+-| Some x -> string_of_int (Xeneventchn.to_int x)
++	| None -> "None"
++	| Some x -> string_of_int (Xeneventchn.to_int x)
+ 
+ let dump d chan =
+ 	fprintf chan "dom,%d,%nd,%d\n" d.id d.mfn d.remote_port
+ 
+-let notify dom = match dom.port with
+-| None ->
+-	warn "domain %d: attempt to notify on unknown port" dom.id
+-| Some port ->
+-	Event.notify dom.eventchn port
++let notify dom =
++	match dom.port with
++	| None -> warn "domain %d: attempt to notify on unknown port" dom.id
++	| Some port -> Event.notify dom.eventchn port
+ 
+ let bind_interdomain dom =
+ 	begin match dom.port with
+@@ -84,8 +83,7 @@ let close dom =
+ 	| None -> ()
+ 	| Some port -> Event.unbind dom.eventchn port
+ 	end;
+-	Xenmmap.unmap dom.interface;
+-	()
++	Xenmmap.unmap dom.interface
+ 
+ let make id mfn remote_port interface eventchn = {
+ 	id = id;
+-- 
+2.30.2
+

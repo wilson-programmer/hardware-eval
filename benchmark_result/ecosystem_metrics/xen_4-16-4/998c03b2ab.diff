@@ -1,0 +1,50 @@
+From 998c03b2abfbf17ff96bccad1512de1ea18d0d75 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Tue, 7 Feb 2023 17:03:51 +0100
+Subject: [PATCH] tools: Fix build with recent QEMU, use
+ "--enable-trace-backends"
+
+The configure option "--enable-trace-backend" isn't accepted anymore
+and we should use "--enable-trace-backends" instead which was
+introduce in 2014 and allow multiple backends.
+
+"--enable-trace-backends" was introduced by:
+    5b808275f3bb ("trace: Multi-backend tracing")
+The backward compatible option "--enable-trace-backend" is removed by
+    10229ec3b0ff ("configure: remove backwards-compatibility and obsolete options")
+
+As we already use ./configure options that wouldn't be accepted by
+older version of QEMU's configure, we will simply use the new spelling
+for the option and avoid trying to detect which spelling to use.
+
+We already make use if "--firmwarepath=" which was introduced by
+    3d5eecab4a5a ("Add --firmwarepath to configure")
+which already include the new spelling for "--enable-trace-backends".
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+master commit: e66d450b6e0ffec635639df993ab43ce28b3383f
+master date: 2023-01-11 10:45:29 +0100
+---
+ tools/Makefile | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/Makefile b/tools/Makefile
+index 757a560be0..9b6b605ec9 100644
+--- a/tools/Makefile
++++ b/tools/Makefile
+@@ -218,9 +218,9 @@ subdir-all-qemu-xen-dir: qemu-xen-dir-find
+ 	mkdir -p qemu-xen-build; \
+ 	cd qemu-xen-build; \
+ 	if $$source/scripts/tracetool.py --check-backend --backend log ; then \
+-		enable_trace_backend='--enable-trace-backend=log'; \
++		enable_trace_backend="--enable-trace-backends=log"; \
+ 	elif $$source/scripts/tracetool.py --check-backend --backend stderr ; then \
+-		enable_trace_backend='--enable-trace-backend=stderr'; \
++		enable_trace_backend='--enable-trace-backends=stderr'; \
+ 	else \
+ 		enable_trace_backend='' ; \
+ 	fi ; \
+-- 
+2.30.2
+

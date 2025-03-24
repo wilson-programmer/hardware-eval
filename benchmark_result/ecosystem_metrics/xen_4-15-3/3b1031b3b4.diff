@@ -1,0 +1,112 @@
+From 3b1031b3b4e26db93b532c83e9a4e5f5f33f9f73 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 7 Jun 2022 14:18:01 +0200
+Subject: [PATCH] xen/iommu: cleanup iommu related domctl handling
+
+Today iommu_do_domctl() is being called from arch_do_domctl() in the
+"default:" case of a switch statement. This has led already to crashes
+due to unvalidated parameters.
+
+Fix that by moving the call of iommu_do_domctl() to the main switch
+statement of do_domctl().
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org> # Arm
+master commit: 9cd7e31b3f584e97a138a770cfb031a91a867936
+master date: 2022-04-26 10:23:58 +0200
+---
+ xen/arch/arm/domctl.c   | 11 +----------
+ xen/arch/x86/domctl.c   |  2 +-
+ xen/common/domctl.c     |  7 +++++++
+ xen/include/xen/iommu.h | 12 +++++++++---
+ 4 files changed, 18 insertions(+), 14 deletions(-)
+
+diff --git a/xen/arch/arm/domctl.c b/xen/arch/arm/domctl.c
+index b7d27f37df..a8c48b0bea 100644
+--- a/xen/arch/arm/domctl.c
++++ b/xen/arch/arm/domctl.c
+@@ -174,16 +174,7 @@ long arch_do_domctl(struct xen_domctl *domctl, struct domain *d,
+         return rc;
+     }
+     default:
+-    {
+-        int rc;
+-
+-        rc = subarch_do_domctl(domctl, d, u_domctl);
+-
+-        if ( rc == -ENOSYS )
+-            rc = iommu_do_domctl(domctl, d, u_domctl);
+-
+-        return rc;
+-    }
++        return subarch_do_domctl(domctl, d, u_domctl);
+     }
+ }
+ 
+diff --git a/xen/arch/x86/domctl.c b/xen/arch/x86/domctl.c
+index b129d2cc2f..8dc84796b9 100644
+--- a/xen/arch/x86/domctl.c
++++ b/xen/arch/x86/domctl.c
+@@ -1374,7 +1374,7 @@ long arch_do_domctl(
+         break;
+ 
+     default:
+-        ret = iommu_do_domctl(domctl, d, u_domctl);
++        ret = -ENOSYS;
+         break;
+     }
+ 
+diff --git a/xen/common/domctl.c b/xen/common/domctl.c
+index b7dc6080d4..99952bfe6e 100644
+--- a/xen/common/domctl.c
++++ b/xen/common/domctl.c
+@@ -866,6 +866,13 @@ long do_domctl(XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
+             copyback = 1;
+         break;
+ 
++    case XEN_DOMCTL_assign_device:
++    case XEN_DOMCTL_test_assign_device:
++    case XEN_DOMCTL_deassign_device:
++    case XEN_DOMCTL_get_device_group:
++        ret = iommu_do_domctl(op, d, u_domctl);
++        break;
++
+     default:
+         ret = arch_do_domctl(op, d, u_domctl);
+         break;
+diff --git a/xen/include/xen/iommu.h b/xen/include/xen/iommu.h
+index cd79374a14..e733ebf69d 100644
+--- a/xen/include/xen/iommu.h
++++ b/xen/include/xen/iommu.h
+@@ -344,8 +344,17 @@ struct domain_iommu {
+ /* Does the IOMMU pagetable need to be kept synchronized with the P2M */
+ #ifdef CONFIG_HAS_PASSTHROUGH
+ #define need_iommu_pt_sync(d)     (dom_iommu(d)->need_sync)
++
++int iommu_do_domctl(struct xen_domctl *domctl, struct domain *d,
++                    XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl);
+ #else
+ #define need_iommu_pt_sync(d)     ({ (void)(d); false; })
++
++static inline int iommu_do_domctl(struct xen_domctl *domctl, struct domain *d,
++                                  XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
++{
++    return -ENOSYS;
++}
+ #endif
+ 
+ int __must_check iommu_suspend(void);
+@@ -359,9 +368,6 @@ int iommu_do_pci_domctl(struct xen_domctl *, struct domain *d,
+                         XEN_GUEST_HANDLE_PARAM(xen_domctl_t));
+ #endif
+ 
+-int iommu_do_domctl(struct xen_domctl *, struct domain *d,
+-                    XEN_GUEST_HANDLE_PARAM(xen_domctl_t));
+-
+ void iommu_dev_iotlb_flush_timeout(struct domain *d, struct pci_dev *pdev);
+ 
+ /*
+-- 
+2.30.2
+

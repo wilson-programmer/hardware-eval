@@ -1,0 +1,74 @@
+From 13a29f3756bc4cab96c59f46c3875b483553fb8f Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 7 Jun 2022 14:00:31 +0200
+Subject: [PATCH] tools/libs/evtchn: don't set errno to negative values
+
+Setting errno to a negative value makes no sense.
+
+Fixes: 6b6500b3cbaa ("tools/libs/evtchn: Add support for restricting a handle")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 60245b71c1cd001686fa7b7a26869cbcb80d074c
+master date: 2022-04-22 20:39:34 +0100
+---
+ tools/libs/evtchn/freebsd.c | 2 +-
+ tools/libs/evtchn/minios.c  | 2 +-
+ tools/libs/evtchn/netbsd.c  | 2 +-
+ tools/libs/evtchn/solaris.c | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/tools/libs/evtchn/freebsd.c b/tools/libs/evtchn/freebsd.c
+index 7427ab2408..fa17a0f8db 100644
+--- a/tools/libs/evtchn/freebsd.c
++++ b/tools/libs/evtchn/freebsd.c
+@@ -58,7 +58,7 @@ int osdep_evtchn_close(xenevtchn_handle *xce)
+ 
+ int osdep_evtchn_restrict(xenevtchn_handle *xce, domid_t domid)
+ {
+-    errno = -EOPNOTSUPP;
++    errno = EOPNOTSUPP;
+ 
+     return -1;
+ }
+diff --git a/tools/libs/evtchn/minios.c b/tools/libs/evtchn/minios.c
+index e5dfdc5ef5..c0bd5429ee 100644
+--- a/tools/libs/evtchn/minios.c
++++ b/tools/libs/evtchn/minios.c
+@@ -97,7 +97,7 @@ int osdep_evtchn_close(xenevtchn_handle *xce)
+ 
+ int osdep_evtchn_restrict(xenevtchn_handle *xce, domid_t domid)
+ {
+-    errno = -EOPNOTSUPP;
++    errno = EOPNOTSUPP;
+ 
+     return -1;
+ }
+diff --git a/tools/libs/evtchn/netbsd.c b/tools/libs/evtchn/netbsd.c
+index 1cebc21ffc..56409513bc 100644
+--- a/tools/libs/evtchn/netbsd.c
++++ b/tools/libs/evtchn/netbsd.c
+@@ -53,7 +53,7 @@ int osdep_evtchn_close(xenevtchn_handle *xce)
+ 
+ int osdep_evtchn_restrict(xenevtchn_handle *xce, domid_t domid)
+ {
+-    errno = -EOPNOTSUPP;
++    errno = EOPNOTSUPP;
+ 
+     return -1;
+ }
+diff --git a/tools/libs/evtchn/solaris.c b/tools/libs/evtchn/solaris.c
+index df9579df17..beaa772142 100644
+--- a/tools/libs/evtchn/solaris.c
++++ b/tools/libs/evtchn/solaris.c
+@@ -53,7 +53,7 @@ int osdep_evtchn_close(xenevtchn_handle *xce)
+ 
+ int osdep_evtchn_restrict(xenevtchn_handle *xce, domid_t domid)
+ {
+-    errno = -EOPNOTSUPP;
++    errno = EOPNOTSUPP;
+     return -1;
+ }
+ 
+-- 
+2.30.2
+

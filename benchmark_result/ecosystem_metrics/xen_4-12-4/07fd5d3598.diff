@@ -1,0 +1,37 @@
+From 07fd5d3598cd9772f15b0ea740c0691cc9569186 Mon Sep 17 00:00:00 2001
+From: Fam Zheng <famzheng@amazon.com>
+Date: Fri, 7 Aug 2020 17:32:02 +0200
+Subject: [PATCH] x86/cpuid: Fix APIC bit clearing
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The bug is obvious here, other places in this function used
+"cpufeat_mask" correctly.
+
+Fixed: b648feff8ea2 ("xen/x86: Improvements to in-hypervisor cpuid sanity checks")
+Signed-off-by: Fam Zheng <famzheng@amazon.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 64219fa179c3e48adad12bfce3f6b3f1596cccbf
+master date: 2020-07-29 19:03:41 +0100
+---
+ xen/arch/x86/cpuid.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/cpuid.c b/xen/arch/x86/cpuid.c
+index 91faf02a2b..56072d4316 100644
+--- a/xen/arch/x86/cpuid.c
++++ b/xen/arch/x86/cpuid.c
+@@ -968,7 +968,7 @@ void guest_cpuid(const struct vcpu *v, uint32_t leaf,
+         {
+             /* Fast-forward MSR_APIC_BASE.EN. */
+             if ( vlapic_hw_disabled(vcpu_vlapic(v)) )
+-                res->d &= ~cpufeat_bit(X86_FEATURE_APIC);
++                res->d &= ~cpufeat_mask(X86_FEATURE_APIC);
+ 
+             /*
+              * PSE36 is not supported in shadow mode.  This bit should be
+-- 
+2.30.2
+

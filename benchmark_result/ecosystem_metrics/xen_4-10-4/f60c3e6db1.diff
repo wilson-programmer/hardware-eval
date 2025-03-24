@@ -1,0 +1,61 @@
+From f60c3e6db122fe91d1788949514f2b7d7e8027fa Mon Sep 17 00:00:00 2001
+From: Roger Pau Monne <roger.pau@citrix.com>
+Date: Mon, 18 Mar 2019 18:37:31 +0100
+Subject: [PATCH] xen-mapcache: use MAP_FIXED flag so the mmap address hint is
+ always honored
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Or if it's not possible to honor the hinted address an error is returned
+instead. This makes it easier to spot the actual failure, instead of
+failing later on when the caller of xen_remap_bucket realizes the
+mapping has not been created at the requested address.
+
+Also note that at least on FreeBSD using MAP_FIXED will cause mmap to
+try harder to honor the passed address.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Paul Durrant <paul.durrant@citrix.com>
+Acked-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Igor Druzhinin <igor.druzhinin@cirtix.com>
+Message-Id: <20190318173731.14494-1-roger.pau@citrix.com>
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+(cherry picked from commit 4158e93f4aced247c8db94a0275fc027da7dc97e)
+---
+ hw/i386/xen/xen-mapcache.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/hw/i386/xen/xen-mapcache.c b/hw/i386/xen/xen-mapcache.c
+index 3b885bd469..740a3eb357 100644
+--- a/hw/i386/xen/xen-mapcache.c
++++ b/hw/i386/xen/xen-mapcache.c
+@@ -183,9 +183,14 @@ static void xen_remap_bucket(MapCacheEntry *entry,
+         pfns[i] = (address_index << (MCACHE_BUCKET_SHIFT-XC_PAGE_SHIFT)) + i;
+     }
+ 
++    /*
++     * If the caller has requested the mapping at a specific address use
++     * MAP_FIXED to make sure it's honored.
++     */
+     if (!dummy) {
+         vaddr_base = xenforeignmemory_map2(xen_fmem, xen_domid, vaddr,
+-                                           PROT_READ | PROT_WRITE, 0,
++                                           PROT_READ | PROT_WRITE,
++                                           vaddr ? MAP_FIXED : 0,
+                                            nb_pfn, pfns, err);
+         if (vaddr_base == NULL) {
+             perror("xenforeignmemory_map2");
+@@ -197,7 +202,8 @@ static void xen_remap_bucket(MapCacheEntry *entry,
+          * mapping immediately due to certain circumstances (i.e. on resume now)
+          */
+         vaddr_base = mmap(vaddr, size, PROT_READ | PROT_WRITE,
+-                          MAP_ANON | MAP_SHARED, -1, 0);
++                          MAP_ANON | MAP_SHARED | (vaddr ? MAP_FIXED : 0),
++                          -1, 0);
+         if (vaddr_base == MAP_FAILED) {
+             perror("mmap");
+             exit(-1);
+-- 
+2.30.2
+

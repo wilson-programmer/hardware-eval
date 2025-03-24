@@ -1,0 +1,68 @@
+From 5efcae1eb30ff24e100954e00889a568c1745ea1 Mon Sep 17 00:00:00 2001
+From: Jason Andryuk <jandryuk@gmail.com>
+Date: Mon, 15 Aug 2022 15:40:47 +0200
+Subject: [PATCH] x86: Expose more MSR_ARCH_CAPS to hwdom
+
+commit e46474278a0e ("x86/intel: Expose MSR_ARCH_CAPS to dom0") started
+exposing MSR_ARCH_CAPS to dom0.  More bits in MSR_ARCH_CAPS have since
+been defined, but they haven't been exposed.  Update the list to allow
+them through.
+
+As one example, this allows a Linux Dom0 to know that it has the
+appropriate microcode via FB_CLEAR.  Notably, and with the updated
+microcode, this changes dom0's
+/sys/devices/system/cpu/vulnerabilities/mmio_stale_data changes from:
+
+  "Vulnerable: Clear CPU buffers attempted, no microcode; SMT Host state unknown"
+
+to:
+
+  "Mitigation: Clear CPU buffers; SMT Host state unknown"
+
+This exposes the MMIO Stale Data and Intel Branch History Injection
+(BHI) controls as well as the page size change MCE issue bit.
+
+Fixes: commit 2ebe8fe9b7e0 ("x86/spec-ctrl: Enumeration for MMIO Stale Data controls")
+Fixes: commit cea9ae062295 ("x86/spec-ctrl: Enumeration for new Intel BHI controls")
+Fixes: commit 59e89cdabc71 ("x86/vtx: Disable executable EPT superpages to work around CVE-2018-12207")
+Signed-off-by: Jason Andryuk <jandryuk@gmail.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: e83cd54611fec5b7a539fa1281a14319143490e6
+master date: 2022-08-09 16:35:25 +0100
+---
+ xen/arch/x86/msr.c              | 5 ++++-
+ xen/include/asm-x86/msr-index.h | 2 ++
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/msr.c b/xen/arch/x86/msr.c
+index 0739d00e74..aa9face9aa 100644
+--- a/xen/arch/x86/msr.c
++++ b/xen/arch/x86/msr.c
+@@ -145,7 +145,10 @@ int init_domain_msr_policy(struct domain *d)
+ 
+         mp->arch_caps.raw = val &
+             (ARCH_CAPS_RDCL_NO | ARCH_CAPS_IBRS_ALL | ARCH_CAPS_RSBA |
+-             ARCH_CAPS_SSB_NO | ARCH_CAPS_MDS_NO | ARCH_CAPS_TAA_NO);
++             ARCH_CAPS_SSB_NO | ARCH_CAPS_MDS_NO | ARCH_CAPS_IF_PSCHANGE_MC_NO |
++             ARCH_CAPS_TAA_NO | ARCH_CAPS_SBDR_SSDP_NO | ARCH_CAPS_FBSDP_NO |
++             ARCH_CAPS_PSDP_NO | ARCH_CAPS_FB_CLEAR | ARCH_CAPS_RRSBA |
++             ARCH_CAPS_BHI_NO);
+     }
+ 
+     d->arch.msr = mp;
+diff --git a/xen/include/asm-x86/msr-index.h b/xen/include/asm-x86/msr-index.h
+index f1b2cf5460..49ca1f1845 100644
+--- a/xen/include/asm-x86/msr-index.h
++++ b/xen/include/asm-x86/msr-index.h
+@@ -64,6 +64,8 @@
+ #define  ARCH_CAPS_PSDP_NO                  (_AC(1, ULL) << 15)
+ #define  ARCH_CAPS_FB_CLEAR                 (_AC(1, ULL) << 17)
+ #define  ARCH_CAPS_FB_CLEAR_CTRL            (_AC(1, ULL) << 18)
++#define  ARCH_CAPS_RRSBA                    (_AC(1, ULL) << 19)
++#define  ARCH_CAPS_BHI_NO                   (_AC(1, ULL) << 20)
+ 
+ #define MSR_FLUSH_CMD                       0x0000010b
+ #define  FLUSH_CMD_L1D                      (_AC(1, ULL) <<  0)
+-- 
+2.30.2
+

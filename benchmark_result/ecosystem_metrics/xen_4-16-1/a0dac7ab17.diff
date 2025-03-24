@@ -1,0 +1,44 @@
+From a0dac7ab173ddb1dc64fc24cc67d3cbee219eb95 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 5 Apr 2022 14:49:23 +0200
+Subject: [PATCH] AMD/IOMMU: abstract maximum number of page table levels
+
+We will want to use the constant elsewhere.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+master commit: a038b514c1e970a8dc32229cbd31f6769ee61ad5
+master date: 2022-04-05 14:20:04 +0200
+---
+ xen/drivers/passthrough/amd/iommu-defs.h    | 1 +
+ xen/drivers/passthrough/amd/pci_amd_iommu.c | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu-defs.h b/xen/drivers/passthrough/amd/iommu-defs.h
+index 774234dfd2..8a17697ea7 100644
+--- a/xen/drivers/passthrough/amd/iommu-defs.h
++++ b/xen/drivers/passthrough/amd/iommu-defs.h
+@@ -106,6 +106,7 @@ struct amd_iommu_dte {
+     bool tv:1;
+     unsigned int :5;
+     unsigned int had:2;
++#define IOMMU_MAX_PT_LEVELS 6
+     unsigned int paging_mode:3;
+     uint64_t pt_root:40;
+     bool ppr:1;
+diff --git a/xen/drivers/passthrough/amd/pci_amd_iommu.c b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+index f170a69a45..6092a2932b 100644
+--- a/xen/drivers/passthrough/amd/pci_amd_iommu.c
++++ b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+@@ -337,7 +337,7 @@ int amd_iommu_alloc_root(struct domain *d)
+     return 0;
+ }
+ 
+-unsigned int __read_mostly amd_iommu_max_paging_mode = 6;
++unsigned int __read_mostly amd_iommu_max_paging_mode = IOMMU_MAX_PT_LEVELS;
+ int __read_mostly amd_iommu_min_paging_mode = 1;
+ 
+ static int amd_iommu_domain_init(struct domain *d)
+-- 
+2.30.2
+

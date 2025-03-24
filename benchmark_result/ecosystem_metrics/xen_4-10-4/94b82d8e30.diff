@@ -1,0 +1,34 @@
+From 94b82d8e30110397a44840b6120734eb4c258a1d Mon Sep 17 00:00:00 2001
+From: Wei Liu <wei.liu2@citrix.com>
+Date: Fri, 12 Apr 2019 11:03:25 +0100
+Subject: [PATCH] xl: handle PVH type in apply_global_affinity_masks again
+
+A call site in create_domain can call it with PVH type. That site was
+missed during the review of 48dab9767.
+
+Reinstate PVH type in the switch.
+
+Reported-by: Julien Grall <julien.grall@arm.com>
+Signed-off-by: Wei Liu <wei.liu2@citrix.com>
+(cherry picked from commit 860d6e158dbb581c3aabc6a20ae8d83b325bffd8)
+(cherry picked from commit b4f291b0ca914454cbac9fa5580bb35f8ab04eee)
+(cherry picked from commit edbe12140d621003afd44b1516125b64308117c9)
+---
+ tools/xl/xl_vcpu.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/xl/xl_vcpu.c b/tools/xl/xl_vcpu.c
+index ef995137c9..051dc124a1 100644
+--- a/tools/xl/xl_vcpu.c
++++ b/tools/xl/xl_vcpu.c
+@@ -78,6 +78,7 @@ void apply_global_affinity_masks(libxl_domain_type type,
+ 
+     switch (type) {
+     case LIBXL_DOMAIN_TYPE_HVM:
++    case LIBXL_DOMAIN_TYPE_PVH:
+         type_mask = &global_hvm_affinity_mask;
+         break;
+     case LIBXL_DOMAIN_TYPE_PV:
+-- 
+2.30.2
+

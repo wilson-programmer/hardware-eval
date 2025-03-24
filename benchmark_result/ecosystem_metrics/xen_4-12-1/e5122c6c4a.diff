@@ -1,0 +1,226 @@
+From e5122c6c4a413e5d185b25094a15b4ee6d5daf4b Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 19 Jul 2019 16:14:08 +0200
+Subject: [PATCH] x86/ctxt-switch: Document and improve GDT handling
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Calling virt_to_mfn() in the context switch path is a lot
+of wasted cycles for a result which is constant after boot.
+
+Begin by documenting how Xen handles the GDTs across context switch.
+
+The loop in write_full_gdt_ptes() is unnecessary, because
+NR_RESERVED_GDT_PAGES is 1.  Dropping it makes the code substantially
+more clear, and with it dropped, write_full_gdt_ptes() becomes more
+obviously a poor name, so rename it to update_xen_slot_in_full_gdt().
+
+Furthermore, load_full_gdt() is completely independent of the current
+CPU, and load_default_gdt() only needs the current CPU's regular
+GDT.  (This is a change in behaviour, as previously it may have used the
+compat GDT, but either will do.)
+
+Add two extra per-cpu variables which cache the L1e for the regular and compat
+GDT, calculated in cpu_smpboot_alloc()/trap_init() as appropriate, so
+update_xen_slot_in_full_gdt() doesn't need to waste time performing the same
+calculation on every context switch.
+
+One performance scenario of JÃ¼ergen's (time to build the hypervisor on
+an 8 CPU system, with two single-vCPU MiniOS VMs constantly interrupting
+dom0 with events) shows the following, average over 5 measurements:
+
+            elapsed  user   system
+  Unpatched  66.51  232.93  109.21
+  Patched    57.00  225.47  105.47
+
+which is a substantial improvement.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Tested-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 564d261687c071c5a77fa81d693b7ca3d8e83b48
+master date: 2019-07-10 09:40:25 -0500
+---
+ xen/arch/x86/domain.c      | 52 +++++++++++++++++++++++++-------------
+ xen/arch/x86/smpboot.c     |  4 +++
+ xen/arch/x86/traps.c       | 10 ++++++++
+ xen/include/asm-x86/desc.h |  2 ++
+ 4 files changed, 50 insertions(+), 18 deletions(-)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index e07f2b37c7..2585327834 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -1608,23 +1608,42 @@ static void _update_runstate_area(struct vcpu *v)
+         v->arch.pv.need_update_runstate_area = 1;
+ }
+ 
++/*
++ * Overview of Xen's GDTs.
++ *
++ * Xen maintains per-CPU compat and regular GDTs which are both a single page
++ * in size.  Some content is specific to each CPU (the TSS, the per-CPU marker
++ * for #DF handling, and optionally the LDT).  The compat and regular GDTs
++ * differ by the layout and content of the guest accessible selectors.
++ *
++ * The Xen selectors live from 0xe000 (slot 14 of 16), and need to always
++ * appear in this position for interrupt/exception handling to work.
++ *
++ * A PV guest may specify GDT frames of their own (slots 0 to 13).  Room for a
++ * full GDT exists in the per-domain mappings.
++ *
++ * To schedule a PV vcpu, we point slot 14 of the guest's full GDT at the
++ * current CPU's compat or regular (as appropriate) GDT frame.  This is so
++ * that the per-CPU parts still work correctly after switching pagetables and
++ * loading the guests full GDT into GDTR.
++ *
++ * To schedule Idle or HVM vcpus, we load a GDT base address which causes the
++ * regular per-CPU GDT frame to appear with selectors at the appropriate
++ * offset.
++ */
+ static inline bool need_full_gdt(const struct domain *d)
+ {
+     return is_pv_domain(d) && !is_idle_domain(d);
+ }
+ 
+-static void write_full_gdt_ptes(seg_desc_t *gdt, const struct vcpu *v)
++static void update_xen_slot_in_full_gdt(const struct vcpu *v, unsigned int cpu)
+ {
+-    unsigned long mfn = virt_to_mfn(gdt);
+-    l1_pgentry_t *pl1e = pv_gdt_ptes(v);
+-    unsigned int i;
+-
+-    for ( i = 0; i < NR_RESERVED_GDT_PAGES; i++ )
+-        l1e_write(pl1e + FIRST_RESERVED_GDT_PAGE + i,
+-                  l1e_from_pfn(mfn + i, __PAGE_HYPERVISOR_RW));
++    l1e_write(pv_gdt_ptes(v) + FIRST_RESERVED_GDT_PAGE,
++              !is_pv_32bit_vcpu(v) ? per_cpu(gdt_table_l1e, cpu)
++                                   : per_cpu(compat_gdt_table_l1e, cpu));
+ }
+ 
+-static void load_full_gdt(const struct vcpu *v, unsigned int cpu)
++static void load_full_gdt(const struct vcpu *v)
+ {
+     struct desc_ptr gdt_desc = {
+         .limit = LAST_RESERVED_GDT_BYTE,
+@@ -1634,11 +1653,12 @@ static void load_full_gdt(const struct vcpu *v, unsigned int cpu)
+     lgdt(&gdt_desc);
+ }
+ 
+-static void load_default_gdt(const seg_desc_t *gdt, unsigned int cpu)
++static void load_default_gdt(unsigned int cpu)
+ {
+     struct desc_ptr gdt_desc = {
+         .limit = LAST_RESERVED_GDT_BYTE,
+-        .base  = (unsigned long)(gdt - FIRST_RESERVED_GDT_ENTRY),
++        .base  = (unsigned long)(per_cpu(gdt_table, cpu) -
++                                 FIRST_RESERVED_GDT_ENTRY),
+     };
+ 
+     lgdt(&gdt_desc);
+@@ -1651,7 +1671,6 @@ static void __context_switch(void)
+     struct vcpu          *p = per_cpu(curr_vcpu, cpu);
+     struct vcpu          *n = current;
+     struct domain        *pd = p->domain, *nd = n->domain;
+-    seg_desc_t           *gdt;
+ 
+     ASSERT(p != n);
+     ASSERT(!vcpu_cpu_dirty(n));
+@@ -1691,15 +1710,12 @@ static void __context_switch(void)
+ 
+     psr_ctxt_switch_to(nd);
+ 
+-    gdt = !is_pv_32bit_domain(nd) ? per_cpu(gdt_table, cpu) :
+-                                    per_cpu(compat_gdt_table, cpu);
+-
+     if ( need_full_gdt(nd) )
+-        write_full_gdt_ptes(gdt, n);
++        update_xen_slot_in_full_gdt(n, cpu);
+ 
+     if ( need_full_gdt(pd) &&
+          ((p->vcpu_id != n->vcpu_id) || !need_full_gdt(nd)) )
+-        load_default_gdt(gdt, cpu);
++        load_default_gdt(cpu);
+ 
+     write_ptbase(n);
+ 
+@@ -1712,7 +1728,7 @@ static void __context_switch(void)
+ 
+     if ( need_full_gdt(nd) &&
+          ((p->vcpu_id != n->vcpu_id) || !need_full_gdt(pd)) )
+-        load_full_gdt(n, cpu);
++        load_full_gdt(n);
+ 
+     if ( pd != nd )
+         cpumask_clear_cpu(cpu, pd->dirty_cpumask);
+diff --git a/xen/arch/x86/smpboot.c b/xen/arch/x86/smpboot.c
+index 7d1226d7bc..331cd14177 100644
+--- a/xen/arch/x86/smpboot.c
++++ b/xen/arch/x86/smpboot.c
+@@ -990,6 +990,8 @@ static int cpu_smpboot_alloc(unsigned int cpu)
+     if ( gdt == NULL )
+         goto out;
+     per_cpu(gdt_table, cpu) = gdt;
++    per_cpu(gdt_table_l1e, cpu) =
++        l1e_from_pfn(virt_to_mfn(gdt), __PAGE_HYPERVISOR_RW);
+     memcpy(gdt, boot_cpu_gdt_table, NR_RESERVED_GDT_PAGES * PAGE_SIZE);
+     BUILD_BUG_ON(NR_CPUS > 0x10000);
+     gdt[PER_CPU_GDT_ENTRY - FIRST_RESERVED_GDT_ENTRY].a = cpu;
+@@ -997,6 +999,8 @@ static int cpu_smpboot_alloc(unsigned int cpu)
+     per_cpu(compat_gdt_table, cpu) = gdt = alloc_xenheap_pages(order, memflags);
+     if ( gdt == NULL )
+         goto out;
++    per_cpu(compat_gdt_table_l1e, cpu) =
++        l1e_from_pfn(virt_to_mfn(gdt), __PAGE_HYPERVISOR_RW);
+     memcpy(gdt, boot_cpu_compat_gdt_table, NR_RESERVED_GDT_PAGES * PAGE_SIZE);
+     gdt[PER_CPU_GDT_ENTRY - FIRST_RESERVED_GDT_ENTRY].a = cpu;
+ 
+diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
+index 05ddc39bfe..d313d88e77 100644
+--- a/xen/arch/x86/traps.c
++++ b/xen/arch/x86/traps.c
+@@ -97,7 +97,9 @@ DEFINE_PER_CPU(uint64_t, efer);
+ static DEFINE_PER_CPU(unsigned long, last_extable_addr);
+ 
+ DEFINE_PER_CPU_READ_MOSTLY(seg_desc_t *, gdt_table);
++DEFINE_PER_CPU_READ_MOSTLY(l1_pgentry_t, gdt_table_l1e);
+ DEFINE_PER_CPU_READ_MOSTLY(seg_desc_t *, compat_gdt_table);
++DEFINE_PER_CPU_READ_MOSTLY(l1_pgentry_t, compat_gdt_table_l1e);
+ 
+ /* Master table, used by CPU0. */
+ idt_entry_t __section(".bss.page_aligned") __aligned(PAGE_SIZE)
+@@ -2056,6 +2058,14 @@ void __init trap_init(void)
+         }
+     }
+ 
++    /* Cache {,compat_}gdt_table_l1e now that physically relocation is done. */
++    this_cpu(gdt_table_l1e) =
++        l1e_from_pfn(virt_to_mfn(boot_cpu_gdt_table),
++                     __PAGE_HYPERVISOR_RW);
++    this_cpu(compat_gdt_table_l1e) =
++        l1e_from_pfn(virt_to_mfn(boot_cpu_compat_gdt_table),
++                     __PAGE_HYPERVISOR_RW);
++
+     percpu_traps_init();
+ 
+     cpu_init();
+diff --git a/xen/include/asm-x86/desc.h b/xen/include/asm-x86/desc.h
+index 85e83bcefb..e565727dc0 100644
+--- a/xen/include/asm-x86/desc.h
++++ b/xen/include/asm-x86/desc.h
+@@ -206,8 +206,10 @@ struct __packed desc_ptr {
+ 
+ extern seg_desc_t boot_cpu_gdt_table[];
+ DECLARE_PER_CPU(seg_desc_t *, gdt_table);
++DECLARE_PER_CPU(l1_pgentry_t, gdt_table_l1e);
+ extern seg_desc_t boot_cpu_compat_gdt_table[];
+ DECLARE_PER_CPU(seg_desc_t *, compat_gdt_table);
++DECLARE_PER_CPU(l1_pgentry_t, compat_gdt_table_l1e);
+ 
+ extern void load_TR(void);
+ 
+-- 
+2.30.2
+

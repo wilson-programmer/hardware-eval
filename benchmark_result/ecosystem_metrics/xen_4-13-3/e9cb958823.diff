@@ -1,0 +1,51 @@
+From e9cb9588232f5b5de07db77455045c9d449b615c Mon Sep 17 00:00:00 2001
+From: Tamas K Lengyel <tamas@tklengyel.com>
+Date: Fri, 5 Mar 2021 15:43:31 +0100
+Subject: [PATCH] x86/debug: fix page-overflow bug in dbg_rw_guest_mem
+
+When using gdbsx dbg_rw_guest_mem is used to read/write guest memory. When the
+buffer being accessed is on a page-boundary, the next page needs to be grabbed
+to access the correct memory for the buffer's overflown parts. While
+dbg_rw_guest_mem has logic to handle that, it broke with 229492e210a. Instead
+of grabbing the next page the code right now is looping back to the
+start of the first page. This results in errors like the following while trying
+to use gdb with Linux' lx-dmesg:
+
+[    0.114457] PM: hibernation: Registered nosave memory: [mem
+0xfdfff000-0xffffffff]
+[    0.114460] [mem 0x90000000-0xfbffffff] available for PCI demem 0
+[    0.114462] f]f]
+Python Exception <class 'ValueError'> embedded null character:
+Error occurred in Python: embedded null character
+
+Fixing this bug by taking the variable assignment outside the loop.
+
+Fixes: 229492e210a ("x86/debugger: use copy_to/from_guest() in dbg_rw_guest_mem()")
+Signed-off-by: Tamas K Lengyel <tamas@tklengyel.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 9dc687f155a57216b83b17f9cde55dd43e06b0cd
+master date: 2021-01-30 03:21:33 +0000
+---
+ xen/arch/x86/debug.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/debug.c b/xen/arch/x86/debug.c
+index a500df01ac..61bf048bf9 100644
+--- a/xen/arch/x86/debug.c
++++ b/xen/arch/x86/debug.c
+@@ -158,10 +158,11 @@ static unsigned int dbg_rw_guest_mem(struct domain *dp, void * __user gaddr,
+                                      void * __user buf, unsigned int len,
+                                      bool toaddr, uint64_t pgd3)
+ {
++    unsigned long addr = (unsigned long)gaddr;
++
+     while ( len > 0 )
+     {
+         char *va;
+-        unsigned long addr = (unsigned long)gaddr;
+         mfn_t mfn;
+         gfn_t gfn = INVALID_GFN;
+         unsigned long pagecnt;
+-- 
+2.30.2
+

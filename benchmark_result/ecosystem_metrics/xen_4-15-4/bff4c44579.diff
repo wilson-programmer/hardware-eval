@@ -1,0 +1,47 @@
+From bff4c4457950abb498270d921d728f654876f944 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 31 Oct 2022 13:35:59 +0100
+Subject: [PATCH] vpci/msix: remove from table list on detach
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Teardown of MSIX vPCI related data doesn't currently remove the MSIX
+device data from the list of MSIX tables handled by the domain,
+leading to a use-after-free of the data in the msix structure.
+
+Remove the structure from the list before freeing in order to solve
+it.
+
+Reported-by: Jan Beulich <jbeulich@suse.com>
+Fixes: d6281be9d0 ('vpci/msix: add MSI-X handlers')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: c14aea137eab29eb9c30bfad745a00c65ad21066
+master date: 2022-10-26 14:56:58 +0200
+---
+ xen/drivers/vpci/vpci.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/xen/drivers/vpci/vpci.c b/xen/drivers/vpci/vpci.c
+index 6b90e4fa32..75edbbee40 100644
+--- a/xen/drivers/vpci/vpci.c
++++ b/xen/drivers/vpci/vpci.c
+@@ -51,8 +51,12 @@ void vpci_remove_device(struct pci_dev *pdev)
+         xfree(r);
+     }
+     spin_unlock(&pdev->vpci->lock);
+-    if ( pdev->vpci->msix && pdev->vpci->msix->pba )
+-        iounmap(pdev->vpci->msix->pba);
++    if ( pdev->vpci->msix )
++    {
++        list_del(&pdev->vpci->msix->next);
++        if ( pdev->vpci->msix->pba )
++            iounmap(pdev->vpci->msix->pba);
++    }
+     xfree(pdev->vpci->msix);
+     xfree(pdev->vpci->msi);
+     xfree(pdev->vpci);
+-- 
+2.30.2
+

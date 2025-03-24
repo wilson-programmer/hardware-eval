@@ -1,0 +1,130 @@
+From 1d64dc701ffbb470cae44a3093b2bdc29ff230ef Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 25 Nov 2019 16:05:48 +0100
+Subject: [PATCH] x86/livepatch: Prevent patching with active waitqueues
+
+The safety of livepatching depends on every stack having been unwound, but
+there is one corner case where this is not true.  The Sharing/Paging/Monitor
+infrastructure may use waitqueues, which copy the stack frame sideways and
+longjmp() to a different vcpu.
+
+This case is rare, and can be worked around by pausing the offending
+domain(s), waiting for their rings to drain, then performing a livepatch.
+
+In the case that there is an active waitqueue, fail the livepatch attempt with
+-EBUSY, which is preforable to the fireworks which occur from trying to unwind
+the old stack frame at a later point.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+Reviewed-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+master commit: ca4cd3668237d50a0b33b48e7de7f93d9475120d
+master date: 2019-11-22 17:05:43 +0000
+---
+ xen/arch/arm/livepatch.c    |  5 +++++
+ xen/arch/x86/livepatch.c    | 36 ++++++++++++++++++++++++++++++++++++
+ xen/common/livepatch.c      |  8 ++++++++
+ xen/include/xen/livepatch.h |  1 +
+ 4 files changed, 50 insertions(+)
+
+diff --git a/xen/arch/arm/livepatch.c b/xen/arch/arm/livepatch.c
+index 279d52cc6c..7184535c85 100644
+--- a/xen/arch/arm/livepatch.c
++++ b/xen/arch/arm/livepatch.c
+@@ -18,6 +18,11 @@
+ 
+ void *vmap_of_xen_text;
+ 
++int arch_livepatch_safety_check(void)
++{
++    return 0;
++}
++
+ int arch_livepatch_quiesce(void)
+ {
+     mfn_t text_mfn;
+diff --git a/xen/arch/x86/livepatch.c b/xen/arch/x86/livepatch.c
+index 406eb910cc..fd98d2bf03 100644
+--- a/xen/arch/x86/livepatch.c
++++ b/xen/arch/x86/livepatch.c
+@@ -10,10 +10,46 @@
+ #include <xen/vmap.h>
+ #include <xen/livepatch_elf.h>
+ #include <xen/livepatch.h>
++#include <xen/sched.h>
+ 
+ #include <asm/nmi.h>
+ #include <asm/livepatch.h>
+ 
++static bool has_active_waitqueue(const struct vm_event_domain *ved)
++{
++    /* ved may be xzalloc()'d without INIT_LIST_HEAD() yet. */
++    return (ved && !list_head_is_null(&ved->wq.list) &&
++            !list_empty(&ved->wq.list));
++}
++
++/*
++ * x86's implementation of waitqueue violates the livepatching safey principle
++ * of having unwound every CPUs stack before modifying live content.
++ *
++ * Search through every domain and check that no vCPUs have an active
++ * waitqueue.
++ */
++int arch_livepatch_safety_check(void)
++{
++    struct domain *d;
++
++    for_each_domain ( d )
++    {
++        if ( has_active_waitqueue(d->vm_event_share) )
++            goto fail;
++        if ( has_active_waitqueue(d->vm_event_paging) )
++            goto fail;
++        if ( has_active_waitqueue(d->vm_event_monitor) )
++            goto fail;
++    }
++
++    return 0;
++
++ fail:
++    printk(XENLOG_ERR LIVEPATCH "%pd found with active waitqueue\n", d);
++    return -EBUSY;
++}
++
+ int arch_livepatch_quiesce(void)
+ {
+     /* Disable WP to allow changes to read-only pages. */
+diff --git a/xen/common/livepatch.c b/xen/common/livepatch.c
+index d6eaae6d3b..d69fdb3666 100644
+--- a/xen/common/livepatch.c
++++ b/xen/common/livepatch.c
+@@ -1060,6 +1060,14 @@ static int apply_payload(struct payload *data)
+     unsigned int i;
+     int rc;
+ 
++    rc = arch_livepatch_safety_check();
++    if ( rc )
++    {
++        printk(XENLOG_ERR LIVEPATCH "%s: Safety checks failed: %d\n",
++               data->name, rc);
++        return rc;
++    }
++
+     printk(XENLOG_INFO LIVEPATCH "%s: Applying %u functions\n",
+             data->name, data->nfuncs);
+ 
+diff --git a/xen/include/xen/livepatch.h b/xen/include/xen/livepatch.h
+index 1b1817ca0d..69ede75d20 100644
+--- a/xen/include/xen/livepatch.h
++++ b/xen/include/xen/livepatch.h
+@@ -104,6 +104,7 @@ static inline int livepatch_verify_distance(const struct livepatch_func *func)
+  * These functions are called around the critical region patching live code,
+  * for an architecture to take make appropratie global state adjustments.
+  */
++int arch_livepatch_safety_check(void);
+ int arch_livepatch_quiesce(void);
+ void arch_livepatch_revive(void);
+ 
+-- 
+2.30.2
+

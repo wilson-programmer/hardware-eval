@@ -1,0 +1,37 @@
+From 736da59cbe2752502ad863b6e71eb83352e22276 Mon Sep 17 00:00:00 2001
+From: Jeff Kubascik <jeff.kubascik@dornerworks.com>
+Date: Tue, 21 Jan 2020 10:07:04 -0500
+Subject: [PATCH] xen/arm: Sign extend TimerValue when computing the
+ CompareValue
+
+Xen will only store the CompareValue as it can be derived from the
+TimerValue (ARM DDI 0487E.a section D11.2.4):
+
+  CompareValue = (Counter[63:0] + SignExtend(TimerValue))[63:0]
+
+While the TimerValue is a 32-bit signed value, our implementation
+assumed it is a 32-bit unsigned value.
+
+Signed-off-by: Jeff Kubascik <jeff.kubascik@dornerworks.com>
+Acked-by: Julien Grall <julien@xen.org>
+(cherry picked from commit 3c601c5f056fba055b7a1438b84b69fc649275c3)
+---
+ xen/arch/arm/vtimer.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/vtimer.c b/xen/arch/arm/vtimer.c
+index bb8ad4ef27..a80009882f 100644
+--- a/xen/arch/arm/vtimer.c
++++ b/xen/arch/arm/vtimer.c
+@@ -215,7 +215,7 @@ static bool vtimer_cntp_tval(struct cpu_user_regs *regs, uint32_t *r,
+     }
+     else
+     {
+-        v->arch.phys_timer.cval = cntpct + *r;
++        v->arch.phys_timer.cval = cntpct + (uint64_t)(int32_t)*r;
+         if ( v->arch.phys_timer.ctl & CNTx_CTL_ENABLE )
+         {
+             v->arch.phys_timer.ctl &= ~CNTx_CTL_PENDING;
+-- 
+2.30.2
+

@@ -1,0 +1,51 @@
+From 481b8bb3311d3a962c795127b7d968d743466654 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 6 Jan 2022 14:11:58 +0100
+Subject: [PATCH] x86/Viridian: fix error code use
+
+Both the wrong use of HV_STATUS_* and the return type of
+hv_vpset_to_vpmask() can lead to viridian_hypercall()'s
+ASSERT_UNREACHABLE() triggering when translating error codes from Xen
+to Viridian representation.
+
+Fixes: b4124682db6e ("viridian: add ExProcessorMasks variants of the flush hypercalls")
+Fixes: 9afa867d42ba ("viridian: add ExProcessorMasks variant of the IPI hypercall")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+master commit: 857fee77845be0c5c35fd51bac64455369d32a6f
+master date: 2021-11-24 11:09:56 +0100
+---
+ xen/arch/x86/hvm/viridian/viridian.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/viridian/viridian.c b/xen/arch/x86/hvm/viridian/viridian.c
+index b906f7b86a..7d1cfc530b 100644
+--- a/xen/arch/x86/hvm/viridian/viridian.c
++++ b/xen/arch/x86/hvm/viridian/viridian.c
+@@ -628,8 +628,8 @@ static unsigned int hv_vpset_nr_banks(struct hv_vpset *vpset)
+     return hweight64(vpset->valid_bank_mask);
+ }
+ 
+-static uint16_t hv_vpset_to_vpmask(const struct hv_vpset *set,
+-                                   struct hypercall_vpmask *vpmask)
++static int hv_vpset_to_vpmask(const struct hv_vpset *set,
++                              struct hypercall_vpmask *vpmask)
+ {
+ #define NR_VPS_PER_BANK (HV_VPSET_BANK_SIZE * 8)
+ 
+@@ -919,10 +919,10 @@ static int hvcall_ipi_ex(const union hypercall_input *input,
+          input_params.reserved_zero[0] ||
+          input_params.reserved_zero[1] ||
+          input_params.reserved_zero[2] )
+-        return HV_STATUS_INVALID_PARAMETER;
++        return -EINVAL;
+ 
+     if ( input_params.vector < 0x10 || input_params.vector > 0xff )
+-        return HV_STATUS_INVALID_PARAMETER;
++        return -EINVAL;
+ 
+     *set = input_params.set;
+     if ( set->format == HV_GENERIC_SET_SPARSE_4K )
+-- 
+2.30.2
+

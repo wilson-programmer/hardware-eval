@@ -1,0 +1,41 @@
+From 29debe052660b1938a054fe88a2ffc2784176143 Mon Sep 17 00:00:00 2001
+From: Ian Jackson <ian.jackson@eu.citrix.com>
+Date: Mon, 25 Jun 2018 15:23:09 +0100
+Subject: [PATCH] Branching for 4.11 stable branch, turn off debug
+
+Acked-by: Juergen Gross <jgross@suse.com>
+Signed-off-by: Ian Jackson <Ian.Jackson@eu.citrix.com>
+---
+ tools/Rules.mk    | 2 +-
+ xen/Kconfig.debug | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/Rules.mk b/tools/Rules.mk
+index 296b722372..79c83d9d3f 100644
+--- a/tools/Rules.mk
++++ b/tools/Rules.mk
+@@ -31,7 +31,7 @@ CFLAGS_xeninclude = -I$(XEN_INCLUDE)
+ XENSTORE_XENSTORED ?= y
+ 
+ # A debug build of tools?
+-debug ?= y
++debug ?= n
+ debug_symbols ?= $(debug)
+ 
+ # Set CONFIG_GOLANG=y in .config (or in make) to build golang
+diff --git a/xen/Kconfig.debug b/xen/Kconfig.debug
+index 380c4e8d75..f77cef05a8 100644
+--- a/xen/Kconfig.debug
++++ b/xen/Kconfig.debug
+@@ -3,7 +3,7 @@ menu "Debugging Options"
+ 
+ config DEBUG
+ 	bool "Developer Checks"
+-	default y
++	default n
+ 	---help---
+ 	  If you say Y here this will enable developer checks such as asserts
+ 	  and extra printks. This option is intended for development purposes
+-- 
+2.30.2
+

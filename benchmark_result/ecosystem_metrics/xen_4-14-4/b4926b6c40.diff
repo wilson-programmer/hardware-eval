@@ -1,0 +1,47 @@
+From b4926b6c40bb635788a4987c8176c94826d193bd Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Fri, 15 Oct 2021 11:16:41 +0200
+Subject: [PATCH] x86: quote section names when defining them in linker script
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+LLVM ld seems to require section names to be quoted at both definition
+and when referencing them for a match to happen, or else we get the
+following errors:
+
+ld: error: xen.lds:45: undefined section ".text"
+ld: error: xen.lds:69: undefined section ".rodata"
+ld: error: xen.lds:104: undefined section ".note.gnu.build-id"
+[...]
+
+The original fix for GNU ld 2.37 only quoted the section name when
+referencing it in the ADDR function. Fix by also quoting the section
+names when declaring them.
+
+Fixes: 58ad654ebce7 ("x86: work around build issue with GNU ld 2.37")
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 6254920587c33bcc7ab884e6c9a11cfc0d5867ab
+master date: 2021-09-15 11:02:21 +0200
+---
+ xen/arch/x86/xen.lds.S | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/xen.lds.S b/xen/arch/x86/xen.lds.S
+index a02df18a25..fcc6646487 100644
+--- a/xen/arch/x86/xen.lds.S
++++ b/xen/arch/x86/xen.lds.S
+@@ -18,7 +18,7 @@ ENTRY(efi_start)
+ #else /* !EFI */
+ 
+ #define FORMAT "elf64-x86-64"
+-#define DECL_SECTION(x) x : AT(ADDR(#x) - __XEN_VIRT_START)
++#define DECL_SECTION(x) #x : AT(ADDR(#x) - __XEN_VIRT_START)
+ 
+ ENTRY(start_pa)
+ 
+-- 
+2.30.2
+

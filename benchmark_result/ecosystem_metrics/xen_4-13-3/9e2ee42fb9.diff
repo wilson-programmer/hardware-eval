@@ -1,0 +1,43 @@
+From 9e2ee42fb9ae1b0491e900454e6d908f48cbe77e Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Fri, 15 Jan 2021 18:23:10 +0000
+Subject: [PATCH] tools/ocaml/libs/xb: Do not crash after xenbus is unmapped
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Xenmmap.unmap sets the address to MAP_FAILED in xenmmap_stubs.c.  If due to a
+bug there were still references to the Xenbus and we attempt to use it then we
+crash.  Raise an exception instead of crashing.
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+(cherry picked from commit 5e317896342d553f0b55f72948bbf93a0f1147d3)
+---
+ tools/ocaml/libs/xb/xs_ring_stubs.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/tools/ocaml/libs/xb/xs_ring_stubs.c b/tools/ocaml/libs/xb/xs_ring_stubs.c
+index 7537a23949..7a91fdee75 100644
+--- a/tools/ocaml/libs/xb/xs_ring_stubs.c
++++ b/tools/ocaml/libs/xb/xs_ring_stubs.c
+@@ -32,6 +32,7 @@
+ #include <caml/fail.h>
+ #include <caml/callback.h>
+ 
++#include <sys/mman.h>
+ #include "mmap_stubs.h"
+ 
+ #define GET_C_STRUCT(a) ((struct mmap_interface *) a)
+@@ -166,6 +167,8 @@ CAMLprim value ml_interface_set_server_features(value interface, value v)
+ {
+ 	CAMLparam2(interface, v);
+ 	struct xenstore_domain_interface *intf = GET_C_STRUCT(interface)->addr;
++	if (intf == (void*)MAP_FAILED)
++		caml_failwith("Interface closed");
+ 
+ 	intf->server_features = Int_val(v);
+ 
+-- 
+2.30.2
+

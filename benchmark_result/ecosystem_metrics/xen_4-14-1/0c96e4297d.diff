@@ -1,0 +1,37 @@
+From 0c96e4297da07944525729ddbe438b0131ab5b7e Mon Sep 17 00:00:00 2001
+From: Jason Andryuk <jandryuk@gmail.com>
+Date: Fri, 6 Nov 2020 09:57:11 +0100
+Subject: [PATCH] SUPPORT: Add linux device model stubdom to Toolstack
+
+Add qemu-xen linux device model stubdomain to the Toolstack section as a
+Tech Preview.
+
+Signed-off-by: Jason Andryuk <jandryuk@gmail.com>
+Acked-by: George Dunlap <george.dunlap@citrix.com>
+Acked-by: Ian Jackson <ian.jackson@eu.citrix.com>
+master commit: 4ddd6499d999a7d08cabfda5b0262e473dd5beed
+master date: 2020-10-23 17:14:08 +0100
+---
+ SUPPORT.md | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/SUPPORT.md b/SUPPORT.md
+index 55a65ae136..8070b2df99 100644
+--- a/SUPPORT.md
++++ b/SUPPORT.md
+@@ -167,6 +167,12 @@ Go (golang) bindings for libxl
+ 
+     Status: Experimental
+ 
++### Linux device model stubdomains
++
++Support for running qemu-xen device model in a linux stubdomain.
++
++    Status: Tech Preview
++
+ ## Toolstack/3rd party
+ 
+ ### libvirt driver for xl
+-- 
+2.30.2
+

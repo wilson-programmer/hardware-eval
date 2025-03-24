@@ -1,0 +1,34 @@
+From 9cb597a5456fb88f1a3b48090e914bd05a60e740 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Tue, 11 May 2021 10:28:07 +0100
+Subject: [PATCH] libxl: Assert qmp_ev's state in qmp_ev_qemu_compare_version
+
+We are supposed to read the version information only when qmp_ev is in
+state "Connected" (that correspond to state==qmp_state_connected),
+assert it so that the function isn't used too early.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+
+Backport-requested-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+---
+ tools/libs/light/libxl_qmp.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tools/libs/light/libxl_qmp.c b/tools/libs/light/libxl_qmp.c
+index 9b638e6f54..d0967c9f02 100644
+--- a/tools/libs/light/libxl_qmp.c
++++ b/tools/libs/light/libxl_qmp.c
+@@ -292,6 +292,8 @@ static int qmp_handle_response(libxl__gc *gc, libxl__qmp_handler *qmp,
+ static int qmp_ev_qemu_compare_version(libxl__ev_qmp *ev, int major,
+                                        int minor, int micro)
+ {
++    assert(ev->state == qmp_state_connected);
++
+ #define CHECK_VERSION(level) do { \
+     if (ev->qemu_version.level > (level)) return +1; \
+     if (ev->qemu_version.level < (level)) return -1; \
+-- 
+2.30.2
+

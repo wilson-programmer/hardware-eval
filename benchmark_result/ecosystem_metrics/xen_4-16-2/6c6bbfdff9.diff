@@ -1,0 +1,63 @@
+From 6c6bbfdff9374ef41f84c4ebed7b8a7a40767ef6 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 7 Jun 2022 13:56:54 +0200
+Subject: [PATCH] xen: fix XEN_DOMCTL_gdbsx_guestmemio crash
+
+A hypervisor built without CONFIG_GDBSX will crash in case the
+XEN_DOMCTL_gdbsx_guestmemio domctl is being called, as the call will
+end up in iommu_do_domctl() with d == NULL:
+
+  (XEN) CPU:    6
+  (XEN) RIP:    e008:[<ffff82d040269984>] iommu_do_domctl+0x4/0x30
+  (XEN) RFLAGS: 0000000000010202   CONTEXT: hypervisor (d0v0)
+  (XEN) rax: 00000000000003e8   rbx: ffff830856277ef8   rcx: ffff830856277fff
+  ...
+  (XEN) Xen call trace:
+  (XEN)    [<ffff82d040269984>] R iommu_do_domctl+0x4/0x30
+  (XEN)    [<ffff82d04035cd5f>] S arch_do_domctl+0x7f/0x2330
+  (XEN)    [<ffff82d040239e46>] S do_domctl+0xe56/0x1930
+  (XEN)    [<ffff82d040238ff0>] S do_domctl+0/0x1930
+  (XEN)    [<ffff82d0402f8c59>] S pv_hypercall+0x99/0x110
+  (XEN)    [<ffff82d0402f5161>] S arch/x86/pv/domain.c#_toggle_guest_pt+0x11/0x90
+  (XEN)    [<ffff82d040366288>] S lstar_enter+0x128/0x130
+  (XEN)
+  (XEN) Pagetable walk from 0000000000000144:
+  (XEN)  L4[0x000] = 0000000000000000 ffffffffffffffff
+  (XEN)
+  (XEN) ****************************************
+  (XEN) Panic on CPU 6:
+  (XEN) FATAL PAGE FAULT
+  (XEN) [error_code=0000]
+  (XEN) Faulting linear address: 0000000000000144
+  (XEN) ****************************************
+
+It used to be permitted to pass DOMID_IDLE to dbg_rw_mem(), which is why the
+special case skipping the domid checks exists.  Now that it is only permitted
+to pass proper domids, remove the special case, making 'd' always valid.
+
+Reported-by: Cheyenne Wills <cheyenne.wills@gmail.com>
+Fixes: e726a82ca0dc ("xen: make gdbsx support configurable")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: f00daf1fb3213a9b0335d9dcd90fe9cb5c02b7a9
+master date: 2022-04-19 17:07:08 +0100
+---
+ xen/common/domctl.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/xen/common/domctl.c b/xen/common/domctl.c
+index 271862ae58..419e4070f5 100644
+--- a/xen/common/domctl.c
++++ b/xen/common/domctl.c
+@@ -304,7 +304,6 @@ long do_domctl(XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
+         if ( op->domain == DOMID_INVALID )
+         {
+     case XEN_DOMCTL_createdomain:
+-    case XEN_DOMCTL_gdbsx_guestmemio:
+             d = NULL;
+             break;
+         }
+-- 
+2.30.2
+

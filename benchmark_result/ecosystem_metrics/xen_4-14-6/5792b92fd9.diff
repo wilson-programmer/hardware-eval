@@ -1,0 +1,101 @@
+From 5792b92fd9b6a65214e9980d0280eaef95e59b4a Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 27 Feb 2023 15:36:49 +0000
+Subject: [PATCH] x86/cpu-policy: Hide CLWB by default on SKX/CLX/CPX
+
+The August 2023 microcode for GDS has an impact on the CLWB instruction.  See
+code comments for full details.
+
+This is part of XSA-435 / CVE-2022-40982
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 2dd06b4ea10891750af38e4a0e1efaeb0a9b3518)
+---
+ xen/arch/x86/cpu-policy.c                   | 25 +++++++++++++++++++++
+ xen/arch/x86/cpu/intel.c                    | 12 ++++++++++
+ xen/include/public/arch-x86/cpufeatureset.h |  2 +-
+ 3 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/cpu-policy.c b/xen/arch/x86/cpu-policy.c
+index 99914b0bff..fe85f1f960 100644
+--- a/xen/arch/x86/cpu-policy.c
++++ b/xen/arch/x86/cpu-policy.c
+@@ -433,6 +433,18 @@ static void __init guest_common_max_feature_adjustments(uint32_t *fs)
+         __set_bit(X86_FEATURE_ARCH_CAPS, fs);
+         __set_bit(X86_FEATURE_RSBA, fs);
+         __set_bit(X86_FEATURE_RRSBA, fs);
++
++        /*
++         * The Gather Data Sampling microcode mitigation (August 2023) has an
++         * adverse performance impact on the CLWB instruction on SKX/CLX/CPX.
++         *
++         * We hid CLWB in the host policy to stop Xen using it, but VMs which
++         * have previously seen the CLWB feature can safely run on this CPU.
++         */
++        if ( boot_cpu_data.x86 == 6 &&
++             boot_cpu_data.x86_model == 0x55 /* INTEL_FAM6_SKYLAKE_X */ &&
++             raw_cpu_policy.feat.clwb )
++            __set_bit(X86_FEATURE_CLWB, fs);
+     }
+ }
+ 
+@@ -455,6 +467,19 @@ static void __init guest_common_default_feature_adjustments(uint32_t *fs)
+              boot_cpu_data.x86_model == 0x3a /* INTEL_FAM6_IVYBRIDGE */ &&
+              cpu_has_rdrand && !is_forced_cpu_cap(X86_FEATURE_RDRAND) )
+             __clear_bit(X86_FEATURE_RDRAND, fs);
++
++        /*
++         * The Gather Data Sampling microcode mitigation (August 2023) has an
++         * adverse performance impact on the CLWB instruction on SKX/CLX/CPX.
++         *
++         * We hid CLWB in the host policy to stop Xen using it, but re-added
++         * it to the max policy to let VMs migrate in.  Re-hide it in the
++         * default policy to disuade VMs from using it in the common case.
++         */
++        if ( boot_cpu_data.x86 == 6 &&
++             boot_cpu_data.x86_model == 0x55 /* INTEL_FAM6_SKYLAKE_X */ &&
++             raw_cpu_policy.feat.clwb )
++            __clear_bit(X86_FEATURE_CLWB, fs);
+     }
+ 
+     /*
+diff --git a/xen/arch/x86/cpu/intel.c b/xen/arch/x86/cpu/intel.c
+index 21419e08c3..2bda64c93a 100644
+--- a/xen/arch/x86/cpu/intel.c
++++ b/xen/arch/x86/cpu/intel.c
+@@ -518,6 +518,18 @@ static void init_intel(struct cpuinfo_x86 *c)
+ 	if ((opt_cpu_info && !(c->apicid & (c->x86_num_siblings - 1))) ||
+ 	    c == &boot_cpu_data )
+ 		intel_log_freq(c);
++
++	/*
++	 * The Gather Data Sampling microcode mitigation (August 2023) has an
++	 * adverse performance impact on the CLWB instruction on SKX/CLX/CPX.
++	 *
++	 * On this model, CLWB has equivalent behaviour to CLFLUSHOPT but the
++	 * latter is not impacted.  Hide CLWB to cause Xen to fall back to
++	 * using CLFLUSHOPT instead.
++	 */
++	if (c == &boot_cpu_data &&
++	    c->x86 == 6 && c->x86_model == 0x55 /* INTEL_FAM6_SKYLAKE_X */)
++		setup_clear_cpu_cap(X86_FEATURE_CLWB);
+ }
+ 
+ const struct cpu_dev intel_cpu_dev = {
+diff --git a/xen/include/public/arch-x86/cpufeatureset.h b/xen/include/public/arch-x86/cpufeatureset.h
+index db7478a3e0..3274ac3e9a 100644
+--- a/xen/include/public/arch-x86/cpufeatureset.h
++++ b/xen/include/public/arch-x86/cpufeatureset.h
+@@ -216,7 +216,7 @@ XEN_CPUFEATURE(ADX,           5*32+19) /*A  ADCX, ADOX instructions */
+ XEN_CPUFEATURE(SMAP,          5*32+20) /*S  Supervisor Mode Access Prevention */
+ XEN_CPUFEATURE(AVX512_IFMA,   5*32+21) /*A  AVX-512 Integer Fused Multiply Add */
+ XEN_CPUFEATURE(CLFLUSHOPT,    5*32+23) /*A  CLFLUSHOPT instruction */
+-XEN_CPUFEATURE(CLWB,          5*32+24) /*A  CLWB instruction */
++XEN_CPUFEATURE(CLWB,          5*32+24) /*!A CLWB instruction */
+ XEN_CPUFEATURE(AVX512PF,      5*32+26) /*A  AVX-512 Prefetch Instructions */
+ XEN_CPUFEATURE(AVX512ER,      5*32+27) /*A  AVX-512 Exponent & Reciprocal Instrs */
+ XEN_CPUFEATURE(AVX512CD,      5*32+28) /*A  AVX-512 Conflict Detection Instrs */
+-- 
+2.30.2
+

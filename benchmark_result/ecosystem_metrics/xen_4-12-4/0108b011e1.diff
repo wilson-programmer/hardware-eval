@@ -1,0 +1,63 @@
+From 0108b011e133915a8ebd33636811d8c141b6e9f3 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Tue, 20 Oct 2020 15:06:49 +0200
+Subject: [PATCH] hvmloader: flip "ACPI data" to "ACPI NVS" type for ACPI table
+ region
+
+ACPI specification contains statements describing memory marked with regular
+"ACPI data" type as reclaimable by the guest. Although the guest shouldn't
+really do it if it wants kexec or similar functionality to work, there
+could still be ambiguities in treating these regions as potentially regular
+RAM.
+
+One such example is SeaBIOS which currently reports "ACPI data" regions as
+RAM to the guest in its e801 call. Which it might have the right to do as any
+user of this is expected to be ACPI unaware. But a QEMU bootloader later seems
+to ignore that fact and is instead using e801 to find a place for initrd which
+causes the tables to be erased. While arguably QEMU bootloader or SeaBIOS need
+to be fixed / improved here, that is just one example of the potential problems
+from using a reclaimable memory type.
+
+Flip the type to "ACPI NVS" which doesn't have this ambiguity in it and is
+described by the spec as non-reclaimable (so cannot ever be treated like RAM).
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: de6d188a519f9e3b7a1acc7784adf4c243865f9a
+master date: 2020-10-20 08:54:23 +0200
+---
+ tools/firmware/hvmloader/e820.c | 11 ++++++++---
+ 1 file changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/tools/firmware/hvmloader/e820.c b/tools/firmware/hvmloader/e820.c
+index 38bcf18b63..c490a0bc79 100644
+--- a/tools/firmware/hvmloader/e820.c
++++ b/tools/firmware/hvmloader/e820.c
+@@ -202,16 +202,21 @@ int build_e820_table(struct e820entry *e820,
+     nr++;
+ 
+     /*
+-     * Mark populated reserved memory that contains ACPI tables as ACPI data.
++     * Mark populated reserved memory that contains ACPI tables as ACPI NVS.
+      * That should help the guest to treat it correctly later: e.g. pass to
+-     * the next kernel on kexec or reclaim if necessary.
++     * the next kernel on kexec.
++     *
++     * Using NVS type instead of a regular one helps to prevent potential
++     * space reuse by an ACPI unaware / buggy bootloader, option ROM, etc.
++     * before an ACPI OS takes control. This is possible due to the fact that
++     * ACPI NVS memory is explicitly described as non-reclaimable in ACPI spec.
+      */
+ 
+     if ( acpi_enabled )
+     {
+         e820[nr].addr = RESERVED_MEMBASE;
+         e820[nr].size = acpi_mem_end - RESERVED_MEMBASE;
+-        e820[nr].type = E820_ACPI;
++        e820[nr].type = E820_NVS;
+         nr++;
+     }
+ 
+-- 
+2.30.2
+

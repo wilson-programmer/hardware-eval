@@ -1,0 +1,56 @@
+From 3050769a171a881b6225c98c750e1c5f92311081 Mon Sep 17 00:00:00 2001
+From: Hongda Deng <Hongda.Deng@arm.com>
+Date: Fri, 29 Jul 2022 16:36:02 +0800
+Subject: [PATCH] arm/vgic-v3: fix virq offset in the rank when storing irouter
+
+When vGIC performs irouter registers emulation, to get the target vCPU
+via virq conveniently, Xen doesn't store the irouter value directly,
+instead it will use the value (affinities) in irouter to calculate the
+target vCPU, and then save the target vCPU in irq rank->vcpu[offset].
+
+When vGIC tries to get the target vCPU, it first calculates the target
+vCPU index via
+  int target = read_atomic(&rank->vcpu[virq & INTERRUPT_RANK_MASK]);
+and then it gets the target vCPU via
+  v->domain->vcpu[target];
+
+When vGIC tries to store irouter for one virq, the target vCPU index
+in the rank is computed as
+  offset &= virq & INTERRUPT_RANK_MASK;
+finally it gets the target vCPU via
+  d->vcpu[read_atomic(&rank->vcpu[offset])];
+
+There is a difference between them while getting the target vCPU index
+in the rank. Actually (virq & INTERRUPT_RANK_MASK) would already get
+the target vCPU index in the rank, it's wrong to add '&' before '=' when
+calculate the offset.
+
+For example, the target vCPU index in the rank should be 6 for virq 38,
+but vGIC will get offset=0 when vGIC stores the irouter for this virq,
+and finally vGIC will access the wrong target vCPU index in the rank
+when updating the irouter.
+
+Fixes: 5d495f4349b5 ("xen/arm: vgic: Optimize the way to store the target vCPU in the rank")
+Signed-off-by: Hongda Deng <Hongda.Deng@arm.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 800f21499e0ec112771ce1e94490ca5811578bc2)
+---
+ xen/arch/arm/vgic-v3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/vgic-v3.c b/xen/arch/arm/vgic-v3.c
+index 65bb7991a6..191cfd0959 100644
+--- a/xen/arch/arm/vgic-v3.c
++++ b/xen/arch/arm/vgic-v3.c
+@@ -135,7 +135,7 @@ static void vgic_store_irouter(struct domain *d, struct vgic_irq_rank *rank,
+     ASSERT(virq >= 32);
+ 
+     /* Get the index in the rank */
+-    offset &= virq & INTERRUPT_RANK_MASK;
++    offset = virq & INTERRUPT_RANK_MASK;
+ 
+     new_vcpu = vgic_v3_irouter_to_vcpu(d, irouter);
+     old_vcpu = d->vcpu[read_atomic(&rank->vcpu[offset])];
+-- 
+2.30.2
+

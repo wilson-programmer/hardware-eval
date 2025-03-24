@@ -1,0 +1,109 @@
+From 752558e68eef32f74fc11c51fcac10d3147f928b Mon Sep 17 00:00:00 2001
+From: Jeff Kubascik <jeff.kubascik@dornerworks.com>
+Date: Tue, 4 Feb 2020 14:51:50 -0500
+Subject: [PATCH] xen/arm: Handle unimplemented VGICv3 registers as RAZ/WI
+
+Per the ARM Generic Interrupt Controller Architecture Specification (ARM
+IHI 0069E), reserved registers should generally be treated as RAZ/WI.
+To simplify the VGICv3 design and improve guest compatibility, treat the
+default case for GICD and GICR registers as read_as_zero/write_ignore.
+
+Signed-off-by: Jeff Kubascik <jeff.kubascik@dornerworks.com>
+Acked-by: Julien Grall <julien@xen.org>
+(cherry picked from commit 69da7d5440c609c57c5bba9a73b91c62ba2852e6)
+---
+ xen/arch/arm/vgic-v3.c | 22 ++++++++++++++++------
+ 1 file changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/arm/vgic-v3.c b/xen/arch/arm/vgic-v3.c
+index 474be134c1..6195565fa0 100644
+--- a/xen/arch/arm/vgic-v3.c
++++ b/xen/arch/arm/vgic-v3.c
+@@ -320,7 +320,7 @@ static int __vgic_v3_rdistr_rd_mmio_read(struct vcpu *v, mmio_info_t *info,
+         printk(XENLOG_G_ERR
+                "%pv: vGICR: unhandled read r%d offset %#08x\n",
+                v, dabt.reg, gicr_reg);
+-        return 0;
++        goto read_as_zero;
+     }
+ bad_width:
+     printk(XENLOG_G_ERR "%pv vGICR: bad read width %d r%d offset %#08x\n",
+@@ -337,6 +337,10 @@ read_as_zero_32:
+     *r = 0;
+     return 1;
+ 
++read_as_zero:
++    *r = 0;
++    return 1;
++
+ read_impl_defined:
+     printk(XENLOG_G_DEBUG
+            "%pv: vGICR: RAZ on implementation defined register offset %#08x\n",
+@@ -638,7 +642,7 @@ static int __vgic_v3_rdistr_rd_mmio_write(struct vcpu *v, mmio_info_t *info,
+     default:
+         printk(XENLOG_G_ERR "%pv: vGICR: unhandled write r%d offset %#08x\n",
+                v, dabt.reg, gicr_reg);
+-        return 0;
++        goto write_ignore;
+     }
+ bad_width:
+     printk(XENLOG_G_ERR
+@@ -654,6 +658,9 @@ write_ignore_32:
+     if ( dabt.size != DABT_WORD ) goto bad_width;
+     return 1;
+ 
++write_ignore:
++    return 1;
++
+ write_impl_defined:
+     printk(XENLOG_G_DEBUG
+            "%pv: vGICR: WI on implementation defined register offset %#08x\n",
+@@ -925,7 +932,7 @@ static int vgic_v3_rdistr_sgi_mmio_read(struct vcpu *v, mmio_info_t *info,
+         printk(XENLOG_G_ERR
+                "%pv: vGICR: SGI: unhandled read r%d offset %#08x\n",
+                v, dabt.reg, gicr_reg);
+-        return 0;
++        goto read_as_zero;
+     }
+ bad_width:
+     printk(XENLOG_G_ERR "%pv: vGICR: SGI: bad read width %d r%d offset %#08x\n",
+@@ -1002,7 +1009,7 @@ static int vgic_v3_rdistr_sgi_mmio_write(struct vcpu *v, mmio_info_t *info,
+         printk(XENLOG_G_ERR
+                "%pv: vGICR: SGI: unhandled write r%d offset %#08x\n",
+                v, dabt.reg, gicr_reg);
+-        return 0;
++        goto write_ignore;
+     }
+ 
+ bad_width:
+@@ -1014,6 +1021,9 @@ bad_width:
+ write_ignore_32:
+     if ( dabt.size != DABT_WORD ) goto bad_width;
+     return 1;
++
++write_ignore:
++    return 1;
+ }
+ 
+ static struct vcpu *get_vcpu_from_rdist(struct domain *d,
+@@ -1252,7 +1262,7 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
+     default:
+         printk(XENLOG_G_ERR "%pv: vGICD: unhandled read r%d offset %#08x\n",
+                v, dabt.reg, gicd_reg);
+-        return 0;
++        goto read_as_zero;
+     }
+ 
+ bad_width:
+@@ -1438,7 +1448,7 @@ static int vgic_v3_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
+         printk(XENLOG_G_ERR
+                "%pv: vGICD: unhandled write r%d=%"PRIregister" offset %#08x\n",
+                v, dabt.reg, r, gicd_reg);
+-        return 0;
++        goto write_ignore;
+     }
+ 
+ bad_width:
+-- 
+2.30.2
+

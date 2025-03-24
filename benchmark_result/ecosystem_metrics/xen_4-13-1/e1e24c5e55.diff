@@ -1,0 +1,53 @@
+From e1e24c5e5563c34f5e063924e4b13aa3d169ed03 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Thu, 9 Apr 2020 09:05:26 +0200
+Subject: [PATCH] sched: fix error path in cpupool_unassign_cpu_start()
+
+In case moving away all domains from the cpu to be removed is failing
+in cpupool_unassign_cpu_start() the error path is missing to release
+sched_res_rculock.
+
+The normal exit path is releasing domlist_read_lock instead (this is
+currently no problem as the reference to the specific rcu lock is not
+used by rcu_read_unlock()).
+
+While at it indent the present error label by one space.
+
+Reported-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 98ed1f43cc2c89efd38deed1035dba5b1ced5d45
+master date: 2020-03-03 16:02:32 +0100
+---
+ xen/common/cpupool.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/xen/common/cpupool.c b/xen/common/cpupool.c
+index 4d3adbdd8d..5a90bdc9ff 100644
+--- a/xen/common/cpupool.c
++++ b/xen/common/cpupool.c
+@@ -465,7 +465,7 @@ static int cpupool_unassign_cpu_start(struct cpupool *c, unsigned int cpu)
+         }
+         rcu_read_unlock(&domlist_read_lock);
+         if ( ret )
+-            goto out;
++            goto out_rcu;
+     }
+     cpupool_moving_cpu = cpu;
+     atomic_inc(&c->refcnt);
+@@ -473,8 +473,9 @@ static int cpupool_unassign_cpu_start(struct cpupool *c, unsigned int cpu)
+     cpumask_andnot(c->cpu_valid, c->cpu_valid, cpus);
+     cpumask_and(c->res_valid, c->cpu_valid, &sched_res_mask);
+ 
+-    rcu_read_unlock(&domlist_read_lock);
+-out:
++ out_rcu:
++    rcu_read_unlock(&sched_res_rculock);
++ out:
+     spin_unlock(&cpupool_lock);
+ 
+     return ret;
+-- 
+2.30.2
+

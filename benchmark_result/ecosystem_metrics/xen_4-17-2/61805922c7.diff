@@ -1,0 +1,69 @@
+From 61805922c7b74a26a7536821e8d6bb457745b57a Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 3 Aug 2023 20:52:08 +0100
+Subject: [PATCH] subdom: Fix -Werror=address failure in tmp_emulator
+
+The opensuse-tumbleweed build jobs currently fail with:
+
+  /builds/xen-project/xen/stubdom/tpm_emulator-x86_64/crypto/rsa.c: In function 'rsa_private':
+  /builds/xen-project/xen/stubdom/tpm_emulator-x86_64/crypto/rsa.c:56:7: error: the comparison will always evaluate as 'true' for the address of 'p' will never be NULL [-Werror=address]
+     56 |   if (!key->p || !key->q || !key->u) {
+        |       ^
+  In file included from /builds/xen-project/xen/stubdom/tpm_emulator-x86_64/crypto/rsa.c:17:
+  /builds/xen-project/xen/stubdom/tpm_emulator-x86_64/crypto/rsa.h:28:12: note: 'p' declared here
+     28 |   tpm_bn_t p;
+        |            ^
+
+This is because all tpm_bn_t's are 1-element arrays (of either a GMP or
+OpenSSL BIGNUM flavour).
+
+Adjust it to compile.  No functional change.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+(cherry picked from commit 46c5ef609b09cf51d7535aebbc05816eafca4c8d)
+---
+ stubdom/Makefile                 |  1 +
+ stubdom/vtpm-tpm_bn_t-addr.patch | 18 ++++++++++++++++++
+ 2 files changed, 19 insertions(+)
+ create mode 100644 stubdom/vtpm-tpm_bn_t-addr.patch
+
+diff --git a/stubdom/Makefile b/stubdom/Makefile
+index b312f710cd..8db60d4ee0 100644
+--- a/stubdom/Makefile
++++ b/stubdom/Makefile
+@@ -241,6 +241,7 @@ tpm_emulator-$(XEN_TARGET_ARCH): tpm_emulator-$(TPMEMU_VERSION).tar.gz
+ 	patch -d $@ -p1 < vtpm_extern.patch
+ 	patch -d $@ -p1 < vtpm-microsecond-duration.patch
+ 	patch -d $@ -p1 < vtpm-command-duration.patch
++	patch -d $@ -p1 < vtpm-tpm_bn_t-addr.patch
+ 	mkdir $@/build
+ 	cd $@/build; CC=${CC} $(CMAKE) .. -DCMAKE_C_FLAGS:STRING="-std=c99 -DTPM_NO_EXTERN $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -Wno-declaration-after-statement"
+ 	touch $@
+diff --git a/stubdom/vtpm-tpm_bn_t-addr.patch b/stubdom/vtpm-tpm_bn_t-addr.patch
+new file mode 100644
+index 0000000000..53172ae1c2
+--- /dev/null
++++ b/stubdom/vtpm-tpm_bn_t-addr.patch
+@@ -0,0 +1,18 @@
++All tpm_bn_t's are a 1-element array of one form or another, meaning the code
++below is tautological and triggers -Werror=address.
++
++diff -ru tpm_emulator-x86_64.orig/crypto/rsa.c tpm_emulator-x86_64/crypto/rsa.c
++--- tpm_emulator-x86_64.orig/crypto/rsa.c	2011-12-20 18:30:06.000000000 +0000
+++++ tpm_emulator-x86_64/crypto/rsa.c	2023-08-03 20:44:17.379166284 +0100
++@@ -53,10 +53,7 @@
++   tpm_bn_init2(c, key->size);
++   tpm_bn_import(p, in_len, 1, in);
++ 
++-  if (!key->p || !key->q || !key->u) {
++-    /* c = p ^ d mod n */
++-    tpm_bn_powm(c, p, key->d, key->n);
++-  } else {
+++  {
++     tpm_bn_init2(m1, key->size / 2);
++     tpm_bn_init2(m2, key->size / 2);
++     tpm_bn_init2(h, key->size);
+-- 
+2.30.2
+

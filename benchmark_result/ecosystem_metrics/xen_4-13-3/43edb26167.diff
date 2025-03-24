@@ -1,0 +1,59 @@
+From 43edb26167d0312eed7291d40261acd3e9e7f794 Mon Sep 17 00:00:00 2001
+From: Bertrand Marquis <bertrand.marquis@arm.com>
+Date: Wed, 7 Oct 2020 14:57:01 +0100
+Subject: [PATCH] tools/libs/stat: use memcpy instead of strncpy in getBridge
+
+Use memcpy in getBridge to prevent gcc warnings about truncated
+strings. We know that we might truncate it, so the gcc warning
+here is wrong.
+Revert previous change changing buffer sizes as bigger buffers
+are not needed.
+
+Signed-off-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Wei Liu <wl@xen.org>
+(cherry picked from commit 40fe714ca4245a9716264fcb3ee8df42c3650cf6)
+---
+ tools/xenstat/libxenstat/src/xenstat_linux.c | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/tools/xenstat/libxenstat/src/xenstat_linux.c b/tools/xenstat/libxenstat/src/xenstat_linux.c
+index 0274dc4d07..9c0cb277c5 100644
+--- a/tools/xenstat/libxenstat/src/xenstat_linux.c
++++ b/tools/xenstat/libxenstat/src/xenstat_linux.c
+@@ -29,6 +29,7 @@
+ #include <string.h>
+ #include <unistd.h>
+ #include <regex.h>
++#include <xen-tools/libs.h>
+ 
+ #include "xenstat_priv.h"
+ 
+@@ -78,8 +79,14 @@ void getBridge(char *excludeName, char *result, size_t resultLen)
+ 				sprintf(tmp, "/sys/class/net/%s/bridge", de->d_name);
+ 
+ 				if (access(tmp, F_OK) == 0) {
+-					strncpy(result, de->d_name, resultLen);
+-					result[resultLen - 1] = 0;
++					/*
++					 * Do not use strncpy to prevent compiler warning with
++					 * gcc >= 10.0
++					 * If de->d_name is longer then resultLen we truncate it
++					 */
++					memset(result, 0, resultLen);
++					memcpy(result, de->d_name, MIN(strnlen(de->d_name,
++									NAME_MAX),resultLen - 1));
+ 				}
+ 		}
+ 	}
+@@ -264,7 +271,7 @@ int xenstat_collect_networks(xenstat_node * node)
+ {
+ 	/* Helper variables for parseNetDevLine() function defined above */
+ 	int i;
+-	char line[512] = { 0 }, iface[16] = { 0 }, devBridge[256] = { 0 }, devNoBridge[257] = { 0 };
++	char line[512] = { 0 }, iface[16] = { 0 }, devBridge[16] = { 0 }, devNoBridge[17] = { 0 };
+ 	unsigned long long rxBytes, rxPackets, rxErrs, rxDrops, txBytes, txPackets, txErrs, txDrops;
+ 
+ 	struct priv_data *priv = get_priv_data(node->handle);
+-- 
+2.30.2
+

@@ -1,0 +1,34 @@
+From 29fd403ef5c02e2cbd0769e64ec0b61e0658d358 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 21 Jun 2019 12:17:37 +0200
+Subject: [PATCH] x86: drop arch_evtchn_inject()
+
+For whatever reason this was omitted from the backport of d9195962a6
+("events: drop arch_evtchn_inject()").
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+---
+ xen/arch/x86/hvm/irq.c | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/irq.c b/xen/arch/x86/hvm/irq.c
+index c85d004402..2b7d8edb96 100644
+--- a/xen/arch/x86/hvm/irq.c
++++ b/xen/arch/x86/hvm/irq.c
+@@ -562,12 +562,6 @@ int hvm_local_events_need_delivery(struct vcpu *v)
+     return !hvm_interrupt_blocked(v, intack);
+ }
+ 
+-void arch_evtchn_inject(struct vcpu *v)
+-{
+-    if ( is_hvm_vcpu(v) )
+-        hvm_assert_evtchn_irq(v);
+-}
+-
+ static void irq_dump(struct domain *d)
+ {
+     struct hvm_irq *hvm_irq = hvm_domain_irq(d);
+-- 
+2.30.2
+

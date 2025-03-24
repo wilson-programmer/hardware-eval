@@ -1,0 +1,37 @@
+From c1c95c4d38ae2abc82c7d2277102e614fd76dbf5 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Marek=20Marczykowski-G=C3=B3recki?=
+ <marmarek@invisiblethingslab.com>
+Date: Wed, 31 Oct 2018 14:04:58 +0100
+Subject: [PATCH] tools/misc/xenpm: fix getting info when some CPUs are offline
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Use physinfo.max_cpu_id instead of physinfo.nr_cpus to get max CPU id.
+This fixes for example 'xenpm get-cpufreq-para' with smt=off, which
+otherwise would miss half of the cores.
+
+Signed-off-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Acked-by: Wei Liu <wei.liu2@citrix.com>
+(cherry picked from commit ffb60a58df48419c1f2607cd3cc919fa2bfc9c2d)
+(cherry picked from commit 5c6be595b1bc5d4216fb8fd54f9ed7a0a8ce076e)
+---
+ tools/misc/xenpm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/misc/xenpm.c b/tools/misc/xenpm.c
+index 762311e5a5..6131e280bd 100644
+--- a/tools/misc/xenpm.c
++++ b/tools/misc/xenpm.c
+@@ -1217,7 +1217,7 @@ int main(int argc, char *argv[])
+         xc_interface_close(xc_handle);
+         return ret;
+     }
+-    max_cpu_nr = physinfo.nr_cpus;
++    max_cpu_nr = physinfo.max_cpu_id + 1;
+ 
+     /* calculate how many options match with user's input */
+     for ( i = 0; i < ARRAY_SIZE(main_options); i++ )
+-- 
+2.30.2
+

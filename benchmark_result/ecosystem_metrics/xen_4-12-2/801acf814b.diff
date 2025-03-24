@@ -1,0 +1,43 @@
+From 801acf814bab999efd74a678dedced0f2121196b Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Wed, 27 Mar 2019 18:45:23 +0000
+Subject: [PATCH] xen/arm: memaccess: Initialize correctly *access in
+ __p2m_get_mem_access
+
+The commit 8d84e701fd "xen/arm: initialize access" initializes
+*access using the wrong enumeration type. This result to a warning
+using clang:
+
+mem_access.c:50:20: error: implicit conversion from enumeration type
+'p2m_access_t' to different enumeration type 'xenmem_access_t'
+[-Werror,-Wenum-conversion]
+    *access = p2m->default_access;
+            ~ ~~~~~^~~~~~~~~~~~~~
+
+The correct solution is to use the array memaccess that will do the
+conversion between the 2 enums.
+
+Fixes: 8d84e701fd ("xen/arm: initialize access")
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Acked-by: Razvan Cojocaru <rcojocaru@bitdefender.com>
+(cherry picked from commit 5ba1c5d0641cf63086b3058e547fcd28c3c4a011)
+---
+ xen/arch/arm/mem_access.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/mem_access.c b/xen/arch/arm/mem_access.c
+index db49372a2c..3e3620294c 100644
+--- a/xen/arch/arm/mem_access.c
++++ b/xen/arch/arm/mem_access.c
+@@ -47,7 +47,7 @@ static int __p2m_get_mem_access(struct domain *d, gfn_t gfn,
+     };
+ 
+     ASSERT(p2m_is_locked(p2m));
+-    *access = p2m->default_access;
++    *access = memaccess[p2m->default_access];
+ 
+     /* If no setting was ever set, just return rwx. */
+     if ( !p2m->mem_access_enabled )
+-- 
+2.30.2
+

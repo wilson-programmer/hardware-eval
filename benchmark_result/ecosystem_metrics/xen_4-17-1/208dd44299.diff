@@ -1,0 +1,93 @@
+From 208dd44299193347d4ececdc1c8f864f6d9a0b9b Mon Sep 17 00:00:00 2001
+From: Michal Orzel <michal.orzel@amd.com>
+Date: Tue, 25 Apr 2023 09:12:48 +0200
+Subject: [PATCH] automation: Remove installation of packages from test scripts
+
+Now, when these packages are already installed in the respective
+containers, we can remove them from the test scripts.
+
+Signed-off-by: Michal Orzel <michal.orzel@amd.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+master commit: 72cfe1c3ad1fae95f4f0ac51dbdd6838264fdd7f
+master date: 2022-12-09 14:55:33 -0800
+---
+ automation/scripts/qemu-alpine-arm64.sh  | 8 --------
+ automation/scripts/qemu-alpine-x86_64.sh | 4 ----
+ automation/scripts/qemu-smoke-arm32.sh   | 6 ------
+ automation/scripts/qemu-smoke-arm64.sh   | 9 ---------
+ 4 files changed, 27 deletions(-)
+
+diff --git a/automation/scripts/qemu-alpine-arm64.sh b/automation/scripts/qemu-alpine-arm64.sh
+index f4ac2d856f..e191de3765 100755
+--- a/automation/scripts/qemu-alpine-arm64.sh
++++ b/automation/scripts/qemu-alpine-arm64.sh
+@@ -2,14 +2,6 @@
+ 
+ set -ex
+ 
+-apt-get -qy update
+-apt-get -qy install --no-install-recommends u-boot-qemu \
+-                                            u-boot-tools \
+-                                            device-tree-compiler \
+-                                            cpio \
+-                                            curl \
+-                                            busybox-static
+-
+ # DomU Busybox
+ cd binaries
+ mkdir -p initrd
+diff --git a/automation/scripts/qemu-alpine-x86_64.sh b/automation/scripts/qemu-alpine-x86_64.sh
+index 2e9625109c..8c8d0b0cd7 100755
+--- a/automation/scripts/qemu-alpine-x86_64.sh
++++ b/automation/scripts/qemu-alpine-x86_64.sh
+@@ -2,10 +2,6 @@
+ 
+ set -ex
+ 
+-apt-get -qy update
+-apt-get -qy install --no-install-recommends cpio \
+-                                            busybox-static
+-
+ # DomU Busybox
+ cd binaries
+ mkdir -p initrd
+diff --git a/automation/scripts/qemu-smoke-arm32.sh b/automation/scripts/qemu-smoke-arm32.sh
+index c8ae0bfb9b..5da9533bcf 100755
+--- a/automation/scripts/qemu-smoke-arm32.sh
++++ b/automation/scripts/qemu-smoke-arm32.sh
+@@ -2,12 +2,6 @@
+ 
+ set -ex
+ 
+-export DEBIAN_FRONTEND=noninteractive
+-apt-get -qy update
+-apt-get -qy install --no-install-recommends device-tree-compiler \
+-                                            curl \
+-                                            cpio
+-
+ cd binaries
+ # Use the kernel from Debian
+ curl --fail --silent --show-error --location --output vmlinuz http://http.us.debian.org/debian/dists/bullseye/main/installer-armhf/current/images/netboot/vmlinuz
+diff --git a/automation/scripts/qemu-smoke-arm64.sh b/automation/scripts/qemu-smoke-arm64.sh
+index 5b566072f7..80ec2b12f4 100755
+--- a/automation/scripts/qemu-smoke-arm64.sh
++++ b/automation/scripts/qemu-smoke-arm64.sh
+@@ -38,15 +38,6 @@ fi
+ "
+ fi
+ 
+-export DEBIAN_FRONTEND=noninteractive
+-apt-get -qy update
+-apt-get -qy install --no-install-recommends u-boot-qemu \
+-                                            u-boot-tools \
+-                                            device-tree-compiler \
+-                                            busybox-static \
+-                                            cpio \
+-                                            curl
+-
+ # XXX QEMU looks for "efi-virtio.rom" even if it is unneeded
+ curl -fsSLO https://github.com/qemu/qemu/raw/v5.2.0/pc-bios/efi-virtio.rom
+ ./binaries/qemu-system-aarch64 \
+-- 
+2.30.2
+

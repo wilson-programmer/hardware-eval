@@ -1,0 +1,229 @@
+From 838f6c211f7f05f107e1acdfb0977ab61ec0bf2e Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 7 Jun 2022 14:03:20 +0200
+Subject: [PATCH] IOMMU/x86: disallow device assignment to PoD guests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+While it is okay for IOMMU page tables to be set up for guests starting
+in PoD mode, actual device assignment may only occur once all PoD
+entries have been removed from the P2M. So far this was enforced only
+for boot-time assignment, and only in the tool stack.
+
+Also use the new function to replace p2m_pod_entry_count(): Its unlocked
+access to p2m->pod.entry_count wasn't really okay (irrespective of the
+result being stale by the time the caller gets to see it). Nor was the
+use of that function in line with the immediately preceding comment: A
+PoD guest isn't just one with a non-zero entry count, but also one with
+a non-empty cache (e.g. prior to actually launching the guest).
+
+To allow the tool stack to see a consistent snapshot of PoD state, move
+the tail of XENMEM_{get,set}_pod_target handling into a function, adding
+proper locking there.
+
+In libxl take the liberty to use the new local variable r also for a
+pre-existing call into libxc.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: ad4312d764e8b40a1e45b64aac6d840a60c59f13
+master date: 2022-05-02 08:48:02 +0200
+---
+ xen/arch/x86/mm.c                   |  6 +---
+ xen/arch/x86/mm/p2m-pod.c           | 43 ++++++++++++++++++++++++++++-
+ xen/common/vm_event.c               |  2 +-
+ xen/drivers/passthrough/x86/iommu.c |  3 +-
+ xen/include/asm-x86/p2m.h           | 21 +++++++-------
+ 5 files changed, 57 insertions(+), 18 deletions(-)
+
+diff --git a/xen/arch/x86/mm.c b/xen/arch/x86/mm.c
+index e222d9aa98..4ee2de1105 100644
+--- a/xen/arch/x86/mm.c
++++ b/xen/arch/x86/mm.c
+@@ -4777,7 +4777,6 @@ long arch_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+     {
+         xen_pod_target_t target;
+         struct domain *d;
+-        struct p2m_domain *p2m;
+ 
+         if ( copy_from_guest(&target, arg, 1) )
+             return -EFAULT;
+@@ -4812,10 +4811,7 @@ long arch_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+         }
+         else if ( rc >= 0 )
+         {
+-            p2m = p2m_get_hostp2m(d);
+-            target.tot_pages       = domain_tot_pages(d);
+-            target.pod_cache_pages = p2m->pod.count;
+-            target.pod_entries     = p2m->pod.entry_count;
++            p2m_pod_get_mem_target(d, &target);
+ 
+             if ( __copy_to_guest(arg, &target, 1) )
+             {
+diff --git a/xen/arch/x86/mm/p2m-pod.c b/xen/arch/x86/mm/p2m-pod.c
+index d8d1a0ce7e..a3c9d8a974 100644
+--- a/xen/arch/x86/mm/p2m-pod.c
++++ b/xen/arch/x86/mm/p2m-pod.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include <xen/event.h>
++#include <xen/iocap.h>
+ #include <xen/ioreq.h>
+ #include <xen/mm.h>
+ #include <xen/sched.h>
+@@ -362,7 +363,10 @@ p2m_pod_set_mem_target(struct domain *d, unsigned long target)
+ 
+     ASSERT( pod_target >= p2m->pod.count );
+ 
+-    ret = p2m_pod_set_cache_target(p2m, pod_target, 1/*preemptible*/);
++    if ( has_arch_pdevs(d) || cache_flush_permitted(d) )
++        ret = -ENOTEMPTY;
++    else
++        ret = p2m_pod_set_cache_target(p2m, pod_target, 1/*preemptible*/);
+ 
+ out:
+     pod_unlock(p2m);
+@@ -370,6 +374,23 @@ out:
+     return ret;
+ }
+ 
++void p2m_pod_get_mem_target(const struct domain *d, xen_pod_target_t *target)
++{
++    struct p2m_domain *p2m = p2m_get_hostp2m(d);
++
++    ASSERT(is_hvm_domain(d));
++
++    pod_lock(p2m);
++    lock_page_alloc(p2m);
++
++    target->tot_pages       = domain_tot_pages(d);
++    target->pod_cache_pages = p2m->pod.count;
++    target->pod_entries     = p2m->pod.entry_count;
++
++    unlock_page_alloc(p2m);
++    pod_unlock(p2m);
++}
++
+ int p2m_pod_empty_cache(struct domain *d)
+ {
+     struct p2m_domain *p2m = p2m_get_hostp2m(d);
+@@ -1387,6 +1408,9 @@ guest_physmap_mark_populate_on_demand(struct domain *d, unsigned long gfn,
+     if ( !paging_mode_translate(d) )
+         return -EINVAL;
+ 
++    if ( has_arch_pdevs(d) || cache_flush_permitted(d) )
++        return -ENOTEMPTY;
++
+     do {
+         rc = mark_populate_on_demand(d, gfn, chunk_order);
+ 
+@@ -1408,3 +1432,20 @@ void p2m_pod_init(struct p2m_domain *p2m)
+     for ( i = 0; i < ARRAY_SIZE(p2m->pod.mrp.list); ++i )
+         p2m->pod.mrp.list[i] = gfn_x(INVALID_GFN);
+ }
++
++bool p2m_pod_active(const struct domain *d)
++{
++    struct p2m_domain *p2m;
++    bool res;
++
++    if ( !is_hvm_domain(d) )
++        return false;
++
++    p2m = p2m_get_hostp2m(d);
++
++    pod_lock(p2m);
++    res = p2m->pod.entry_count | p2m->pod.count;
++    pod_unlock(p2m);
++
++    return res;
++}
+diff --git a/xen/common/vm_event.c b/xen/common/vm_event.c
+index 70ab3ba406..21d2f0edf7 100644
+--- a/xen/common/vm_event.c
++++ b/xen/common/vm_event.c
+@@ -639,7 +639,7 @@ int vm_event_domctl(struct domain *d, struct xen_domctl_vm_event_op *vec)
+ 
+             rc = -EXDEV;
+             /* Disallow paging in a PoD guest */
+-            if ( p2m_pod_entry_count(p2m_get_hostp2m(d)) )
++            if ( p2m_pod_active(d) )
+                 break;
+ 
+             /* domain_pause() not required here, see XSA-99 */
+diff --git a/xen/drivers/passthrough/x86/iommu.c b/xen/drivers/passthrough/x86/iommu.c
+index a36a6bd4b2..dc9936e169 100644
+--- a/xen/drivers/passthrough/x86/iommu.c
++++ b/xen/drivers/passthrough/x86/iommu.c
+@@ -502,11 +502,12 @@ bool arch_iommu_use_permitted(const struct domain *d)
+ {
+     /*
+      * Prevent device assign if mem paging, mem sharing or log-dirty
+-     * have been enabled for this domain.
++     * have been enabled for this domain, or if PoD is still in active use.
+      */
+     return d == dom_io ||
+            (likely(!mem_sharing_enabled(d)) &&
+             likely(!mem_paging_enabled(d)) &&
++            likely(!p2m_pod_active(d)) &&
+             likely(!p2m_get_hostp2m(d)->global_logdirty));
+ }
+ 
+diff --git a/xen/include/asm-x86/p2m.h b/xen/include/asm-x86/p2m.h
+index 357a808748..f2af7a746c 100644
+--- a/xen/include/asm-x86/p2m.h
++++ b/xen/include/asm-x86/p2m.h
+@@ -661,6 +661,12 @@ int p2m_pod_empty_cache(struct domain *d);
+  * domain matches target */
+ int p2m_pod_set_mem_target(struct domain *d, unsigned long target);
+ 
++/* Obtain a consistent snapshot of PoD related domain state. */
++void p2m_pod_get_mem_target(const struct domain *d, xen_pod_target_t *target);
++
++/* Check whether PoD is (still) active in a domain. */
++bool p2m_pod_active(const struct domain *d);
++
+ /* Scan pod cache when offline/broken page triggered */
+ int
+ p2m_pod_offline_or_broken_hit(struct page_info *p);
+@@ -669,11 +675,6 @@ p2m_pod_offline_or_broken_hit(struct page_info *p);
+ void
+ p2m_pod_offline_or_broken_replace(struct page_info *p);
+ 
+-static inline long p2m_pod_entry_count(const struct p2m_domain *p2m)
+-{
+-    return p2m->pod.entry_count;
+-}
+-
+ void p2m_pod_init(struct p2m_domain *p2m);
+ 
+ #else
+@@ -689,6 +690,11 @@ static inline int p2m_pod_empty_cache(struct domain *d)
+     return 0;
+ }
+ 
++static inline bool p2m_pod_active(const struct domain *d)
++{
++    return false;
++}
++
+ static inline int p2m_pod_offline_or_broken_hit(struct page_info *p)
+ {
+     return 0;
+@@ -699,11 +705,6 @@ static inline void p2m_pod_offline_or_broken_replace(struct page_info *p)
+     ASSERT_UNREACHABLE();
+ }
+ 
+-static inline long p2m_pod_entry_count(const struct p2m_domain *p2m)
+-{
+-    return 0;
+-}
+-
+ static inline void p2m_pod_init(struct p2m_domain *p2m) {}
+ 
+ #endif
+-- 
+2.30.2
+

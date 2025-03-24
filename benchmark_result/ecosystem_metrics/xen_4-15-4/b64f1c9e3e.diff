@@ -1,0 +1,52 @@
+From b64f1c9e3e3a2a416c7bb5aab77ba5d2cba98638 Mon Sep 17 00:00:00 2001
+From: Luca Fancellu <luca.fancellu@arm.com>
+Date: Wed, 27 Jul 2022 09:31:49 +0200
+Subject: [PATCH] common/memory: Fix ifdefs for ptdom_max_order
+
+In common/memory.c the ifdef code surrounding ptdom_max_order is
+using HAS_PASSTHROUGH instead of CONFIG_HAS_PASSTHROUGH, fix the
+problem using the correct macro.
+
+Fixes: e0d44c1f9461 ("build: convert HAS_PASSTHROUGH use to Kconfig")
+Signed-off-by: Luca Fancellu <luca.fancellu@arm.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 5707470bf3103ebae43697a7ac2faced6cd35f92
+master date: 2022-07-26 08:33:46 +0200
+---
+ xen/common/memory.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/common/memory.c b/xen/common/memory.c
+index 297b98a562..95b2b934e4 100644
+--- a/xen/common/memory.c
++++ b/xen/common/memory.c
+@@ -58,7 +58,7 @@ struct memop_args {
+ static unsigned int __read_mostly domu_max_order = CONFIG_DOMU_MAX_ORDER;
+ static unsigned int __read_mostly ctldom_max_order = CONFIG_CTLDOM_MAX_ORDER;
+ static unsigned int __read_mostly hwdom_max_order = CONFIG_HWDOM_MAX_ORDER;
+-#ifdef HAS_PASSTHROUGH
++#ifdef CONFIG_HAS_PASSTHROUGH
+ static unsigned int __read_mostly ptdom_max_order = CONFIG_PTDOM_MAX_ORDER;
+ #endif
+ 
+@@ -70,7 +70,7 @@ static int __init parse_max_order(const char *s)
+         ctldom_max_order = simple_strtoul(s, &s, 0);
+     if ( *s == ',' && *++s != ',' )
+         hwdom_max_order = simple_strtoul(s, &s, 0);
+-#ifdef HAS_PASSTHROUGH
++#ifdef CONFIG_HAS_PASSTHROUGH
+     if ( *s == ',' && *++s != ',' )
+         ptdom_max_order = simple_strtoul(s, &s, 0);
+ #endif
+@@ -83,7 +83,7 @@ static unsigned int max_order(const struct domain *d)
+ {
+     unsigned int order = domu_max_order;
+ 
+-#ifdef HAS_PASSTHROUGH
++#ifdef CONFIG_HAS_PASSTHROUGH
+     if ( cache_flush_permitted(d) && order < ptdom_max_order )
+         order = ptdom_max_order;
+ #endif
+-- 
+2.30.2
+

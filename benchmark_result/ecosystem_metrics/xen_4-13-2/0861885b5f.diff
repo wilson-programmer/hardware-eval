@@ -1,0 +1,44 @@
+From 0861885b5f88213ac393053f496b98f05085577c Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 11 Sep 2020 14:48:57 +0200
+Subject: [PATCH] x86/ioapic: Fix fixmap error path logic in
+ ioapic_init_mappings()
+
+In the case that bad_ioapic_register() fails, the current position of idx++
+means that clear_fixmap(idx) will be called with the wrong index, and not
+clean up the mapping just created.
+
+Increment idx as part of the loop, rather than midway through the loop body.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: b4175c6693e089ffcd77cd1ea388e76e67d36d57
+master date: 2020-08-05 17:35:11 +0100
+---
+ xen/arch/x86/io_apic.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/io_apic.c b/xen/arch/x86/io_apic.c
+index 97cb2d154a..e710827dcf 100644
+--- a/xen/arch/x86/io_apic.c
++++ b/xen/arch/x86/io_apic.c
+@@ -2542,7 +2542,7 @@ void __init init_ioapic_mappings(void)
+ 
+     if ( smp_found_config )
+         nr_irqs_gsi = 0;
+-    for ( i = 0; i < nr_ioapics; i++ )
++    for ( i = 0; i < nr_ioapics; i++, idx++ )
+     {
+         if ( smp_found_config )
+         {
+@@ -2565,7 +2565,6 @@ void __init init_ioapic_mappings(void)
+         set_fixmap_nocache(idx, ioapic_phys);
+         apic_printk(APIC_VERBOSE, "mapped IOAPIC to %08Lx (%08lx)\n",
+                     __fix_to_virt(idx), ioapic_phys);
+-        idx++;
+ 
+         if ( bad_ioapic_register(i) )
+         {
+-- 
+2.30.2
+

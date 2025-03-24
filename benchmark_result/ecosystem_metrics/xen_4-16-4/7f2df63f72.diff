@@ -1,0 +1,43 @@
+From 7f2df63f723478dee629b5884cdee9914f88d98c Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 24 Apr 2023 13:06:28 +0200
+Subject: [PATCH] xen/ELF: Fix ELF32 PRI formatters
+
+It is rude to hide width formatting inside a PRI* macro, doubly so when it's
+only in one bitness of the macro.
+
+However its fully buggy when all the users use %#"PRI because then it expands
+to the common trap of %#08x which does not do what the author intends.
+
+Switch the 32bit ELF PRI formatters to use plain integer PRI's, just like on
+the 64bit side already.  No practical change.
+
+Fixes: 7597fabca76e ("livepatch: Include sizes when an mismatch occurs")
+Fixes: 380b229634f8 ("xsplice: Implement payload loading")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+master commit: cfa2bb82c01f0c656804cedd8f44eb2a99a2b5bc
+master date: 2023-04-19 15:55:29 +0100
+---
+ xen/include/xen/elfstructs.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/include/xen/elfstructs.h b/xen/include/xen/elfstructs.h
+index 616ebf9269..6860aa41c3 100644
+--- a/xen/include/xen/elfstructs.h
++++ b/xen/include/xen/elfstructs.h
+@@ -561,8 +561,8 @@ typedef struct {
+ #endif
+ 
+ #if defined(ELFSIZE) && (ELFSIZE == 32)
+-#define PRIxElfAddr	"08x"
+-#define PRIuElfWord	"8u"
++#define PRIxElfAddr 	PRIx32
++#define PRIuElfWord 	PRIu32
+ 
+ #define Elf_Ehdr	Elf32_Ehdr
+ #define Elf_Phdr	Elf32_Phdr
+-- 
+2.30.2
+

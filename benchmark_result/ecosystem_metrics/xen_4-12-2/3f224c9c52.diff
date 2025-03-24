@@ -1,0 +1,57 @@
+From 3f224c9c52d51c659b0b39e2ca2692a82e0e690d Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 6 Dec 2019 12:40:59 +0100
+Subject: [PATCH] x86/p2m-pt: fix (latent) page table mapping leak on
+ do_recalc() error paths
+
+There are two mappings active in the middle of do_recalc(), and hence
+commit 0d0f4d78e5d1 ("p2m: change write_p2m_entry to return an error
+code") should have added (or otherwise invoked) unmapping code just
+like it did in p2m_next_level(), despite us not expecting any errors
+here. Arrange for the existing unmap invocation to take effect in all
+cases.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: George Dunlap <george.dunlap@citrix.com>
+master commit: 3f1a53bef84fca5ffb4178638db14c747231851f
+master date: 2019-11-26 14:17:11 +0100
+---
+ xen/arch/x86/mm/p2m-pt.c | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/x86/mm/p2m-pt.c b/xen/arch/x86/mm/p2m-pt.c
+index cafc9f299b..87bf74ed92 100644
+--- a/xen/arch/x86/mm/p2m-pt.c
++++ b/xen/arch/x86/mm/p2m-pt.c
+@@ -420,21 +420,22 @@ static int do_recalc(struct p2m_domain *p2m, unsigned long gfn)
+                     if ( err )
+                     {
+                         ASSERT_UNREACHABLE();
+-                        goto out;
++                        break;
+                     }
+                 }
+                 remainder -= 1UL << ((level - 1) * PAGETABLE_ORDER);
+             }
+             smp_wmb();
+-            clear_recalc(l1, e);
+-            err = p2m->write_p2m_entry(p2m, gfn, pent, e, level + 1);
+-            if ( err )
++            if ( !err )
+             {
+-                ASSERT_UNREACHABLE();
+-                goto out;
++                clear_recalc(l1, e);
++                err = p2m->write_p2m_entry(p2m, gfn, pent, e, level + 1);
++                ASSERT(!err);
+             }
+         }
+         unmap_domain_page((void *)((unsigned long)pent & PAGE_MASK));
++        if ( unlikely(err) )
++            goto out;
+     }
+ 
+     pent = p2m_find_entry(table, &gfn_remainder, gfn,
+-- 
+2.30.2
+

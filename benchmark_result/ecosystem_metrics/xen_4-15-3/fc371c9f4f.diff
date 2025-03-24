@@ -1,0 +1,116 @@
+From fc371c9f4f06b38073ffaf5b5a97f2621cc1ae17 Mon Sep 17 00:00:00 2001
+From: David Vrabel <dvrabel@amazon.co.uk>
+Date: Tue, 7 Jun 2022 14:15:15 +0200
+Subject: [PATCH] x86/mm: avoid inadvertently degrading a TLB flush to local
+ only
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+If the direct map is incorrectly modified with interrupts disabled,
+the required TLB flushes are degraded to flushing the local CPU only.
+
+This could lead to very hard to diagnose problems as different CPUs will
+end up with different views of memory. Although, no such issues have yet
+been identified.
+
+Change the check in the flush_area() macro to look at system_state
+instead. This defers the switch from local to all later in the boot
+(see xen/arch/x86/setup.c:__start_xen()). This is fine because
+additional PCPUs are not brought up until after the system state is
+SYS_STATE_smp_boot.
+
+Signed-off-by: David Vrabel <dvrabel@amazon.co.uk>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+
+x86/flushtlb: remove flush_area check on system state
+
+Booting with Shadow Stacks leads to the following assert on a debug
+hypervisor:
+
+Assertion 'local_irq_is_enabled()' failed at arch/x86/smp.c:265
+----[ Xen-4.17.0-10.24-d  x86_64  debug=y  Not tainted ]----
+CPU:    0
+RIP:    e008:[<ffff82d040345300>] flush_area_mask+0x40/0x13e
+[...]
+Xen call trace:
+   [<ffff82d040345300>] R flush_area_mask+0x40/0x13e
+   [<ffff82d040338a40>] F modify_xen_mappings+0xc5/0x958
+   [<ffff82d0404474f9>] F arch/x86/alternative.c#_alternative_instructions+0xb7/0xb9
+   [<ffff82d0404476cc>] F alternative_branches+0xf/0x12
+   [<ffff82d04044e37d>] F __start_xen+0x1ef4/0x2776
+   [<ffff82d040203344>] F __high_start+0x94/0xa0
+
+This is due to SYS_STATE_smp_boot being set before calling
+alternative_branches(), and the flush in modify_xen_mappings() then
+using flush_area_all() with interrupts disabled.  Note that
+alternative_branches() is called before APs are started, so the flush
+must be a local one (and indeed the cpumask passed to
+flush_area_mask() just contains one CPU).
+
+Take the opportunity to simplify a bit the logic and make flush_area()
+an alias of flush_area_all() in mm.c, taking into account that
+cpu_online_map just contains the BSP before APs are started.  This
+requires widening the assert in flush_area_mask() to allow being
+called with interrupts disabled as long as it's strictly a local only
+flush.
+
+The overall result is that a conditional can be removed from
+flush_area().
+
+While there also introduce an ASSERT to check that a vCPU state flush
+is not issued for the local CPU only.
+
+Fixes: 78e072bc37 ('x86/mm: avoid inadvertently degrading a TLB flush to local only')
+Suggested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 78e072bc375043e81691a59454e09f0b38241ddd
+master date: 2022-04-20 10:55:01 +0200
+master commit: 9f735ee4903f1b9f1966bb4ba5b5616b03ae08b5
+master date: 2022-05-25 11:09:46 +0200
+---
+ xen/arch/x86/mm.c  | 10 ++--------
+ xen/arch/x86/smp.c |  5 ++++-
+ 2 files changed, 6 insertions(+), 9 deletions(-)
+
+diff --git a/xen/arch/x86/mm.c b/xen/arch/x86/mm.c
+index afb4febf6f..80f99dff77 100644
+--- a/xen/arch/x86/mm.c
++++ b/xen/arch/x86/mm.c
+@@ -5019,14 +5019,8 @@ l1_pgentry_t *virt_to_xen_l1e(unsigned long v)
+ #define l1f_to_lNf(f) (((f) & _PAGE_PRESENT) ? ((f) |  _PAGE_PSE) : (f))
+ #define lNf_to_l1f(f) (((f) & _PAGE_PRESENT) ? ((f) & ~_PAGE_PSE) : (f))
+ 
+-/*
+- * map_pages_to_xen() can be called with interrupts disabled during
+- * early bootstrap. In this case it is safe to use flush_area_local()
+- * and avoid locking because only the local CPU is online.
+- */
+-#define flush_area(v,f) (!local_irq_is_enabled() ?              \
+-                         flush_area_local((const void *)v, f) : \
+-                         flush_area_all((const void *)v, f))
++/* flush_area_all() can be used prior to any other CPU being online.  */
++#define flush_area(v, f) flush_area_all((const void *)(v), f)
+ 
+ #define L3T_INIT(page) (page) = ZERO_BLOCK_PTR
+ 
+diff --git a/xen/arch/x86/smp.c b/xen/arch/x86/smp.c
+index eef0f9c6cb..3556ec1166 100644
+--- a/xen/arch/x86/smp.c
++++ b/xen/arch/x86/smp.c
+@@ -262,7 +262,10 @@ void flush_area_mask(const cpumask_t *mask, const void *va, unsigned int flags)
+ {
+     unsigned int cpu = smp_processor_id();
+ 
+-    ASSERT(local_irq_is_enabled());
++    /* Local flushes can be performed with interrupts disabled. */
++    ASSERT(local_irq_is_enabled() || cpumask_subset(mask, cpumask_of(cpu)));
++    /* Exclude use of FLUSH_VCPU_STATE for the local CPU. */
++    ASSERT(!cpumask_test_cpu(cpu, mask) || !(flags & FLUSH_VCPU_STATE));
+ 
+     if ( (flags & ~(FLUSH_VCPU_STATE | FLUSH_ORDER_MASK)) &&
+          cpumask_test_cpu(cpu, mask) )
+-- 
+2.30.2
+

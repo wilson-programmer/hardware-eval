@@ -1,0 +1,35 @@
+From 98ec8ad2eeb96eb9d4b7f9bfd1ef3a994c63af17 Mon Sep 17 00:00:00 2001
+From: Michal Orzel <michal.orzel@amd.com>
+Date: Wed, 26 Apr 2023 09:29:45 +0200
+Subject: [PATCH] automation: Remove installation of packages from test scripts
+
+Now, when these packages are already installed in the respective
+containers, we can remove them from the test scripts.
+
+Signed-off-by: Michal Orzel <michal.orzel@amd.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+master commit: 72cfe1c3ad1fae95f4f0ac51dbdd6838264fdd7f
+master date: 2022-12-09 14:55:33 -0800
+---
+ automation/scripts/qemu-smoke-x86-64.sh | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/automation/scripts/qemu-smoke-x86-64.sh b/automation/scripts/qemu-smoke-x86-64.sh
+index 09152e3e9c..be7e21872e 100755
+--- a/automation/scripts/qemu-smoke-x86-64.sh
++++ b/automation/scripts/qemu-smoke-x86-64.sh
+@@ -5,11 +5,6 @@ set -ex
+ # variant should be either pv or pvh
+ variant=$1
+ 
+-# Install QEMU
+-export DEBIAN_FRONTENT=noninteractive
+-apt-get -qy update
+-apt-get -qy install qemu-system-x86
+-
+ # Clone and build XTF
+ git clone https://xenbits.xen.org/git-http/xtf.git
+ cd xtf && make -j$(nproc) && cd -
+-- 
+2.30.2
+

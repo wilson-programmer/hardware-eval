@@ -1,0 +1,99 @@
+From 59b83663f925092f60f699147390c6cb77b55e43 Mon Sep 17 00:00:00 2001
+From: David Woodhouse <dwmw@amazon.co.uk>
+Date: Thu, 19 Mar 2020 20:40:24 +0000
+Subject: [PATCH] tools/xenstore: Do not abort xenstore-ls if a node disappears
+ while iterating
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The do_ls() function has somewhat inconsistent handling of errors.
+
+If reading the node's contents with xs_read() fails, then do_ls() will
+just quietly not display the contents.
+
+If reading the node's permissions with xs_get_permissions() fails, then
+do_ls() will print a warning, continue, and ultimately won't exit with
+an error code (unless another error happens).
+
+If recursing into the node with xs_directory() fails, then do_ls() will
+abort immediately, not printing any further nodes.
+
+For persistent failure modes â such as ENOENT because a node has been
+removed, or EACCES because it has had its permisions changed since the
+xs_directory() on the parent directory returned its name â it's
+obviously quite likely that if either of the first two errors occur for
+a given node, then so will the third and thus xenstore-ls will abort.
+
+The ENOENT one is actually a fairly common case, and has caused tools to
+fail to clean up a network device because it *apparently* already
+doesn't exist in xenstore.
+
+There is a school of thought that says, "Well, xenstore-ls returned an
+error. So the tools should not trust its output."
+
+The natural corollary of this would surely be that the tools must re-run
+xenstore-ls as many times as is necessary until its manages to exit
+without hitting the race condition. I am not keen on that conclusion.
+
+For the specific case of ENOENT it seems reasonable to declare that,
+but for the timing, we might as well just not have seen that node at
+all when calling xs_directory() for the parent. By ignoring the error,
+we give acceptable output.
+
+The issue can be reproduced as follows:
+
+(dom0) # for a in `seq 1 1000` ; do
+              xenstore-write /local/domain/2/foo/$a $a ;
+         done
+
+Now simultaneously:
+
+(dom0) # for a in `seq 1 999` ; do
+              xenstore-rm /local/domain/2/foo/$a ;
+         done
+(dom2) # while true ; do
+              ./xenstore-ls -p /local/domain/2/foo | grep -c 1000 ;
+         done
+
+We should expect to see node 1000 in the output, every time.
+
+Signed-off-by: David Woodhouse <dwmw@amazon.co.uk>
+Reviewed-by: Ian Jackson <ian.jackson@eu.citrix.com>
+(cherry picked from commit beb105af19cc3e58e2ed49224cfe190a736e5fa0)
+---
+ tools/xenstore/xenstore_client.c | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/tools/xenstore/xenstore_client.c b/tools/xenstore/xenstore_client.c
+index 3afc630ab8..ae7ed3eb9e 100644
+--- a/tools/xenstore/xenstore_client.c
++++ b/tools/xenstore/xenstore_client.c
+@@ -148,14 +148,20 @@ static void do_ls(struct xs_handle *h, char *path, int cur_depth, int show_perms
+     int i;
+     unsigned int num, len;
+ 
++    e = xs_directory(h, XBT_NULL, path, &num);
++    if (e == NULL) {
++        if (cur_depth && errno == ENOENT) {
++            /* If a node disappears while recursing, silently move on. */
++            return;
++        }
++
++        err(1, "xs_directory (%s)", path);
++    }
++
+     newpath = malloc(STRING_MAX);
+     if (!newpath)
+       err(1, "malloc in do_ls");
+ 
+-    e = xs_directory(h, XBT_NULL, path, &num);
+-    if (e == NULL)
+-        err(1, "xs_directory (%s)", path);
+-
+     for (i = 0; i<num; i++) {
+         char buf[MAX_STRLEN(unsigned int)+1];
+         struct xs_permissions *perms;
+-- 
+2.30.2
+

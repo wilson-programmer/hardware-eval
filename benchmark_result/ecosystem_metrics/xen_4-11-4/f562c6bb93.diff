@@ -1,0 +1,57 @@
+From f562c6bb93a284033bf6f5af06287a71bc40a110 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 11 Dec 2019 15:33:26 +0100
+Subject: [PATCH] x86/tlbflush: do not toggle the PGE CR4 bit unless necessary
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+When PCID is not available Xen does a full tlbflush by toggling the
+PGE bit in CR4. This is not necessary if PGE is not enabled, since a
+flush can be performed by writing to CR3 in that case.
+
+Change the code in do_tlb_flush to only toggle the PGE bit in CR4 if
+it's already enabled, otherwise do the tlb flush by writing to CR3.
+This is relevant when running virtualized, since hypervisors don't
+usually trap accesses to CR3 when using hardware assisted paging, but
+do trap accesses to CR4 specially on AMD hardware, which makes such
+accesses much more expensive.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: b5087a31efee7a4e34c958b88671ac6669501b09
+master date: 2019-12-03 14:15:35 +0100
+---
+ xen/arch/x86/flushtlb.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/flushtlb.c b/xen/arch/x86/flushtlb.c
+index fc4c29ca97..1531001a4a 100644
+--- a/xen/arch/x86/flushtlb.c
++++ b/xen/arch/x86/flushtlb.c
+@@ -76,17 +76,18 @@ static void post_flush(u32 t)
+ 
+ static void do_tlb_flush(void)
+ {
++    unsigned long cr4;
+     u32 t = pre_flush();
+ 
+     if ( use_invpcid )
+         invpcid_flush_all();
+-    else
++    else if ( (cr4 = read_cr4()) & X86_CR4_PGE )
+     {
+-        unsigned long cr4 = read_cr4();
+-
+-        write_cr4(cr4 ^ X86_CR4_PGE);
++        write_cr4(cr4 & ~X86_CR4_PGE);
+         write_cr4(cr4);
+     }
++    else
++        write_cr3(read_cr3());
+ 
+     post_flush(t);
+ }
+-- 
+2.30.2
+

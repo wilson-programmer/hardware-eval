@@ -1,0 +1,90 @@
+From dde68d8e3fadf9b50c96b63634d98c5c3fe375b0 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Fri, 6 Dec 2019 12:42:13 +0100
+Subject: [PATCH] x86/vmx: always sync PIR to IRR before vmentry
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+When using posted interrupts on Intel hardware it's possible that the
+vCPU resumes execution with a stale local APIC IRR register because
+depending on the interrupts to be injected vlapic_has_pending_irq
+might not be called, and thus PIR won't be synced into IRR.
+
+Fix this by making sure PIR is always synced to IRR in
+hvm_vcpu_has_pending_irq regardless of what interrupts are pending.
+
+Reported-by: Joe Jin <joe.jin@oracle.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Tested-by: Joe Jin <joe.jin@oracle.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 56348df32bbc782e63b6e3fb978b80e015ae76e7
+master date: 2019-11-28 11:58:25 +0100
+---
+ xen/arch/x86/hvm/irq.c           | 9 +++++++++
+ xen/arch/x86/hvm/vlapic.c        | 6 ++----
+ xen/include/asm-x86/hvm/vlapic.h | 6 ++++++
+ 3 files changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/irq.c b/xen/arch/x86/hvm/irq.c
+index e03a87ad50..c684422b24 100644
+--- a/xen/arch/x86/hvm/irq.c
++++ b/xen/arch/x86/hvm/irq.c
+@@ -517,6 +517,15 @@ struct hvm_intack hvm_vcpu_has_pending_irq(struct vcpu *v)
+     struct hvm_domain *plat = &v->domain->arch.hvm;
+     int vector;
+ 
++    /*
++     * Always call vlapic_sync_pir_to_irr so that PIR is synced into IRR when
++     * using posted interrupts. Note this is also done by
++     * vlapic_has_pending_irq but depending on which interrupts are pending
++     * hvm_vcpu_has_pending_irq will return early without calling
++     * vlapic_has_pending_irq.
++     */
++    vlapic_sync_pir_to_irr(v);
++
+     if ( unlikely(v->nmi_pending) )
+         return hvm_intack_nmi;
+ 
+diff --git a/xen/arch/x86/hvm/vlapic.c b/xen/arch/x86/hvm/vlapic.c
+index d652c5fb20..f12fe976cd 100644
+--- a/xen/arch/x86/hvm/vlapic.c
++++ b/xen/arch/x86/hvm/vlapic.c
+@@ -113,8 +113,7 @@ static void vlapic_clear_irr(int vector, struct vlapic *vlapic)
+ 
+ static int vlapic_find_highest_irr(struct vlapic *vlapic)
+ {
+-    if ( hvm_funcs.sync_pir_to_irr )
+-        hvm_funcs.sync_pir_to_irr(vlapic_vcpu(vlapic));
++    vlapic_sync_pir_to_irr(vlapic_vcpu(vlapic));
+ 
+     return vlapic_find_highest_vector(&vlapic->regs->data[APIC_IRR]);
+ }
+@@ -1472,8 +1471,7 @@ static int lapic_save_regs(struct vcpu *v, hvm_domain_context_t *h)
+     if ( !has_vlapic(v->domain) )
+         return 0;
+ 
+-    if ( hvm_funcs.sync_pir_to_irr )
+-        hvm_funcs.sync_pir_to_irr(v);
++    vlapic_sync_pir_to_irr(v);
+ 
+     return hvm_save_entry(LAPIC_REGS, v->vcpu_id, h, vcpu_vlapic(v)->regs);
+ }
+diff --git a/xen/include/asm-x86/hvm/vlapic.h b/xen/include/asm-x86/hvm/vlapic.h
+index dde66b4f0f..c1a252b9d5 100644
+--- a/xen/include/asm-x86/hvm/vlapic.h
++++ b/xen/include/asm-x86/hvm/vlapic.h
+@@ -150,4 +150,10 @@ bool_t vlapic_match_dest(
+     const struct vlapic *target, const struct vlapic *source,
+     int short_hand, uint32_t dest, bool_t dest_mode);
+ 
++static inline void vlapic_sync_pir_to_irr(struct vcpu *v)
++{
++    if ( hvm_funcs.sync_pir_to_irr )
++        hvm_funcs.sync_pir_to_irr(v);
++}
++
+ #endif /* __ASM_X86_HVM_VLAPIC_H__ */
+-- 
+2.30.2
+

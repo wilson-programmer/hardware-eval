@@ -1,0 +1,38 @@
+From 06a5a277c7262d7ca473a8eee3cdce3e2790186e Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 14 Apr 2020 15:01:34 +0200
+Subject: [PATCH] xenoprof: clear buffer intended to be shared with guests
+
+alloc_xenheap_pages() making use of MEMF_no_scrub is fine for Xen
+internally used allocations, but buffers allocated to be shared with
+(unpriviliged) guests need to be zapped of their prior content.
+
+This is part of XSA-313.
+
+Reported-by: Ilja Van Sprundel <ivansprundel@ioactive.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+master commit: 0763a7ebfcdad66cf9e5475a1301eefb29bae9ed
+master date: 2020-04-14 14:32:33 +0200
+---
+ xen/common/xenoprof.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/common/xenoprof.c b/xen/common/xenoprof.c
+index 8a72e382e6..bed796c876 100644
+--- a/xen/common/xenoprof.c
++++ b/xen/common/xenoprof.c
+@@ -254,6 +254,9 @@ static int alloc_xenoprof_struct(
+         return -ENOMEM;
+     }
+ 
++    for ( i = 0; i < npages; ++i )
++        clear_page(d->xenoprof->rawbuf + i * PAGE_SIZE);
++
+     d->xenoprof->npages = npages;
+     d->xenoprof->nbuf = nvcpu;
+     d->xenoprof->bufsize = bufsize;
+-- 
+2.30.2
+

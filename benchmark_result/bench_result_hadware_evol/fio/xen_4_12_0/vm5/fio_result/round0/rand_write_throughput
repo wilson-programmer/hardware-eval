@@ -1,0 +1,36 @@
+rand_write_throughput: (g=0): rw=randwrite, bs=(R) 1024KiB-1024KiB, (W) 1024KiB-1024KiB, (T) 1024KiB-1024KiB, ioengine=libaio, iodepth=64
+...
+fio-3.1
+Starting 4 processes
+rand_write_throughput: Laying out IO file (1 file / 100MiB)
+rand_write_throughput: Laying out IO file (1 file / 100MiB)
+rand_write_throughput: Laying out IO file (1 file / 100MiB)
+rand_write_throughput: Laying out IO file (1 file / 100MiB)
+
+rand_write_throughput: (groupid=0, jobs=4): err= 0: pid=16485: Fri Jun 21 08:38:06 2024
+  write: IOPS=761, BW=766MiB/s (803MB/s)(44.9GiB/60012msec)
+    slat (usec): min=475, max=3370.8k, avg=5177.14, stdev=71622.21
+    clat (msec): min=6, max=3919, avg=329.42, stdev=598.04
+     lat (msec): min=11, max=3937, avg=334.59, stdev=602.74
+    clat percentiles (msec):
+     |  1.00th=[  113],  5.00th=[  127], 10.00th=[  134], 20.00th=[  144],
+     | 30.00th=[  153], 40.00th=[  159], 50.00th=[  165], 60.00th=[  176],
+     | 70.00th=[  190], 80.00th=[  215], 90.00th=[  268], 95.00th=[ 2232],
+     | 99.00th=[ 2869], 99.50th=[ 3641], 99.90th=[ 3842], 99.95th=[ 3842],
+     | 99.99th=[ 3910]
+   bw (  KiB/s): min= 2048, max=521346, per=38.01%, avg=298211.82, stdev=132373.23, samples=316
+   iops        : min=    2, max=  509, avg=290.96, stdev=129.28, samples=316
+  lat (msec)   : 10=0.01%, 20=0.01%, 50=0.03%, 100=0.25%, 250=88.47%
+  lat (msec)   : 500=5.01%, 750=0.01%, 2000=0.44%, >=2000=6.32%
+  cpu          : usr=3.33%, sys=11.31%, ctx=69776, majf=0, minf=12
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.1%, 16=0.1%, 32=0.3%, >=64=105.7%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.1%, >=64=0.0%
+     issued rwt: total=0,45720,0, short=0,0,0, dropped=0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=64
+
+Run status group 0 (all jobs):
+  WRITE: bw=766MiB/s (803MB/s), 766MiB/s-766MiB/s (803MB/s-803MB/s), io=44.9GiB (48.2GB), run=60012-60012msec
+
+Disk stats (read/write):
+  xvda: ios=0/388744, merge=0/31, ticks=0/3831168, in_queue=2167108, util=58.93%

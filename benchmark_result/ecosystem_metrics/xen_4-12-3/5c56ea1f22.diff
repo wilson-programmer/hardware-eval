@@ -1,0 +1,71 @@
+From 5c56ea1f22d5cb1aa15c7fea76417e1b2ae0b136 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien@xen.org>
+Date: Sat, 11 Jan 2020 00:03:44 +0000
+Subject: [PATCH] docs/misc: pvcalls: Verbatim block should be indented with 4
+ spaces
+
+At the moment, the diagram is only indented with 2 spaces. So pandoc
+will try to badly interpret it and not display it correctly.
+
+Fix it by indenting all the block by 4 spaces (i.e an extra 2 spaces).
+
+Fixes: d661611d08 ("docs/markdown: Switch to using pandoc, and fix underscore escaping")
+Signed-off-by: Julien Grall <julien@xen.org>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 9c8705f8fe5bfb75a6a00163308d297059b61f6a)
+(cherry picked from commit 8b60270731eabe7a7dfd41bd625338505829a617)
+---
+ docs/misc/pvcalls.pandoc | 36 ++++++++++++++++++------------------
+ 1 file changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/docs/misc/pvcalls.pandoc b/docs/misc/pvcalls.pandoc
+index 0c48b29842..729cf97bdf 100644
+--- a/docs/misc/pvcalls.pandoc
++++ b/docs/misc/pvcalls.pandoc
+@@ -867,24 +867,24 @@ and the second half to the **out** array. They are used as circular
+ buffers for transferring data, and, together, they are the data ring.
+ 
+ 
+-  +---------------------------+                 Indexes page
+-  | Command ring:             |                 +----------------------+
+-  | @0: xen_pvcalls_connect:  |                 |@0 pvcalls_data_intf: |
+-  | @44: ref  +-------------------------------->+@76: ring_order = 1   |
+-  |                           |                 |@80: ref[0]+          |
+-  +---------------------------+                 |@84: ref[1]+          |
+-                                                |           |          |
+-                                                |           |          |
+-                                                +----------------------+
+-                                                            |
+-                                                            v (data ring)
+-                                                    +-------+-----------+
+-                                                    |  @0->4098: in     |
+-                                                    |  ref[0]           |
+-                                                    |-------------------|
+-                                                    |  @4099->8196: out |
+-                                                    |  ref[1]           |
+-                                                    +-------------------+
++        +---------------------------+                 Indexes page
++        | Command ring:             |                 +----------------------+
++        | @0: xen_pvcalls_connect:  |                 |@0 pvcalls_data_intf: |
++        | @44: ref  +-------------------------------->+@76: ring_order = 1   |
++        |                           |                 |@80: ref[0]+          |
++        +---------------------------+                 |@84: ref[1]+          |
++                                                      |           |          |
++                                                      |           |          |
++                                                      +----------------------+
++                                                                  |
++                                                                  v (data ring)
++                                                          +-------+-----------+
++                                                          |  @0->4098: in     |
++                                                          |  ref[0]           |
++                                                          |-------------------|
++                                                          |  @4099->8196: out |
++                                                          |  ref[1]           |
++                                                          +-------------------+
+ 
+ 
+ #### Indexes Page Structure
+-- 
+2.30.2
+

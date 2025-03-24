@@ -1,0 +1,49 @@
+From c0832c75315d73c47d59b45f7ce271f4425d2f1d Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 8 Sep 2021 14:46:04 +0200
+Subject: [PATCH] xen/domain: Fix label position in domain_teardown()
+
+As explained in the comments, a progress label wants to be before the function
+it refers to for the higher level logic to make sense.  As it happens, the
+effects are benign because gnttab_mappings is immediately adjacent to teardown
+in terms of co-routine exit points.
+
+There is and will always be a corner case with 0.  Help alleviate this
+visually (at least slightly) with a BUILD_BUG_ON() to ensure the property
+which makes this function do anything useful.
+
+There is also a visual corner case when changing from PROGRESS() to
+PROGRESS_VCPU().  The important detail is to check that there is a "return
+rc;" logically between each PROGRESS*() marker.
+
+Fixes: b1ee10be5625 ("gnttab: add preemption check to gnttab_release_mappings()")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 8064488062641ae505b2a7369611c38057a7788b
+master date: 2021-08-27 15:12:05 +0100
+---
+ xen/common/domain.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/xen/common/domain.c b/xen/common/domain.c
+index dabb15a06c..fe39fb9177 100644
+--- a/xen/common/domain.c
++++ b/xen/common/domain.c
+@@ -419,11 +419,13 @@ static int domain_teardown(struct domain *d)
+         };
+ 
+     case PROG_none:
++        BUILD_BUG_ON(PROG_none != 0);
++
++    PROGRESS(gnttab_mappings):
+         rc = gnttab_release_mappings(d);
+         if ( rc )
+             return rc;
+ 
+-    PROGRESS(gnttab_mappings):
+         for_each_vcpu ( d, v )
+         {
+             PROGRESS_VCPU(teardown);
+-- 
+2.30.2
+

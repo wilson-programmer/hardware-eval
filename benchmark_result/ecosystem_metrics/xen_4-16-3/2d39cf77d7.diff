@@ -1,0 +1,96 @@
+From 2d39cf77d70b44b70f970da90187f48d2c0b3e96 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 13 Sep 2022 07:35:09 +0200
+Subject: [PATCH] tools/xenstore: move the call of setup_structure() to dom0
+ introduction
+
+Setting up the basic structure when introducing dom0 has the advantage
+to be able to add proper node memory accounting for the added nodes
+later.
+
+This makes it possible to do proper node accounting, too.
+
+An additional requirement to make that work fine is to correct the
+owner of the created nodes to be dom0_domid instead of domid 0.
+
+This is part of XSA-326.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 60e2f6020dea7f616857b8fc1141b1c085d88761)
+---
+ tools/xenstore/xenstored_core.c   | 9 ++++-----
+ tools/xenstore/xenstored_core.h   | 1 +
+ tools/xenstore/xenstored_domain.c | 3 +++
+ 3 files changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/tools/xenstore/xenstored_core.c b/tools/xenstore/xenstored_core.c
+index f835aa1b2f..5171d34c94 100644
+--- a/tools/xenstore/xenstored_core.c
++++ b/tools/xenstore/xenstored_core.c
+@@ -2039,7 +2039,8 @@ static int tdb_flags;
+ static void manual_node(const char *name, const char *child)
+ {
+ 	struct node *node;
+-	struct xs_permissions perms = { .id = 0, .perms = XS_PERM_NONE };
++	struct xs_permissions perms = { .id = dom0_domid,
++					.perms = XS_PERM_NONE };
+ 
+ 	node = talloc_zero(NULL, struct node);
+ 	if (!node)
+@@ -2078,7 +2079,7 @@ static void tdb_logger(TDB_CONTEXT *tdb, int level, const char * fmt, ...)
+ 	}
+ }
+ 
+-static void setup_structure(bool live_update)
++void setup_structure(bool live_update)
+ {
+ 	char *tdbname;
+ 
+@@ -2101,6 +2102,7 @@ static void setup_structure(bool live_update)
+ 		manual_node("/", "tool");
+ 		manual_node("/tool", "xenstored");
+ 		manual_node("/tool/xenstored", NULL);
++		domain_entry_fix(dom0_domid, 3, true);
+ 	}
+ 
+ 	check_store();
+@@ -2614,9 +2616,6 @@ int main(int argc, char *argv[])
+ 
+ 	init_pipe(reopen_log_pipe);
+ 
+-	/* Setup the database */
+-	setup_structure(live_update);
+-
+ 	/* Listen to hypervisor. */
+ 	if (!no_domain_init && !live_update) {
+ 		domain_init(-1);
+diff --git a/tools/xenstore/xenstored_core.h b/tools/xenstore/xenstored_core.h
+index 245f925823..2c77ec7ee0 100644
+--- a/tools/xenstore/xenstored_core.h
++++ b/tools/xenstore/xenstored_core.h
+@@ -231,6 +231,7 @@ int write_node_raw(struct connection *conn, TDB_DATA *key, struct node *node,
+ struct node *read_node(struct connection *conn, const void *ctx,
+ 		       const char *name);
+ 
++void setup_structure(bool live_update);
+ struct connection *new_connection(const struct interface_funcs *funcs);
+ struct connection *get_connection_by_id(unsigned int conn_id);
+ void ignore_connection(struct connection *conn);
+diff --git a/tools/xenstore/xenstored_domain.c b/tools/xenstore/xenstored_domain.c
+index 260952e090..f04b7aae8a 100644
+--- a/tools/xenstore/xenstored_domain.c
++++ b/tools/xenstore/xenstored_domain.c
+@@ -470,6 +470,9 @@ static struct domain *introduce_domain(const void *ctx,
+ 		}
+ 		domain->interface = interface;
+ 
++		if (is_master_domain)
++			setup_structure(restore);
++
+ 		/* Now domain belongs to its connection. */
+ 		talloc_steal(domain->conn, domain);
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,30 @@
+From f90cea9c556b7e67b3527e39f9732fb4af2fc11a Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 17 Nov 2021 12:38:53 +0100
+Subject: [PATCH] CHANGELOG: set Xen 4.15 release date
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+---
+ CHANGELOG.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a9589aacc9..b41e2d14a1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,7 +4,7 @@ Notable changes to Xen will be documented in this file.
+ 
+ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+ 
+-## [4.15.0 UNRELEASED](https://xenbits.xen.org/gitweb/?p=xen.git;a=shortlog;h=RELEASE-4.15.0) - TBD
++## [4.15.0](https://xenbits.xen.org/gitweb/?p=xen.git;a=shortlog;h=RELEASE-4.15.0) - 2021-04-08
+ 
+ ### Added / support upgraded
+  - ARM IOREQ servers (device emulation etc.) (Tech Preview)
+-- 
+2.30.2
+

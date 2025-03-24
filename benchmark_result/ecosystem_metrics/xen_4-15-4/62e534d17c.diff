@@ -1,0 +1,59 @@
+From 62e534d17cdd838828bfd75d3d845e31524dd336 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 11 Oct 2022 15:17:12 +0200
+Subject: [PATCH] x86: wire up VCPUOP_register_vcpu_time_memory_area for 32-bit
+ guests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Forever sinced its introduction VCPUOP_register_vcpu_time_memory_area
+was available only to native domains. Linux, for example, would attempt
+to use it irrespective of guest bitness (including in its so called
+PVHVM mode) as long as it finds XEN_PVCLOCK_TSC_STABLE_BIT set (which we
+set only for clocksource=tsc, which in turn needs engaging via command
+line option).
+
+Fixes: a5d39947cb89 ("Allow guests to register secondary vcpu_time_info")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: b726541d94bd0a80b5864d17a2cd2e6d73a3fe0a
+master date: 2022-09-29 14:47:45 +0200
+---
+ xen/arch/x86/x86_64/domain.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/xen/arch/x86/x86_64/domain.c b/xen/arch/x86/x86_64/domain.c
+index c46dccc25a..d51d993447 100644
+--- a/xen/arch/x86/x86_64/domain.c
++++ b/xen/arch/x86/x86_64/domain.c
+@@ -54,6 +54,26 @@ arch_compat_vcpu_op(
+         break;
+     }
+ 
++    case VCPUOP_register_vcpu_time_memory_area:
++    {
++        struct compat_vcpu_register_time_memory_area area = { .addr.p = 0 };
++
++        rc = -EFAULT;
++        if ( copy_from_guest(&area.addr.h, arg, 1) )
++            break;
++
++        if ( area.addr.h.c != area.addr.p ||
++             !compat_handle_okay(area.addr.h, 1) )
++            break;
++
++        rc = 0;
++        guest_from_compat_handle(v->arch.time_info_guest, area.addr.h);
++
++        force_update_vcpu_system_time(v);
++
++        break;
++    }
++
+     case VCPUOP_get_physid:
+         rc = arch_do_vcpu_op(cmd, v, arg);
+         break;
+-- 
+2.30.2
+

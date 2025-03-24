@@ -1,0 +1,75 @@
+From 7d516fc87637dc551494f8eca08f106f578f7112 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Fri, 16 Dec 2022 18:25:10 +0000
+Subject: [PATCH] tools/ocaml/xb,mmap: Use Data_abstract_val wrapper
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+This is not strictly necessary since it is essentially a no-op currently: a
+cast to void * and value *, even in OCaml 5.0.
+
+However it does make it clearer that what we have here is not a regular OCaml
+value, but one allocated with Abstract_tag or Custom_tag, and follows the
+example from the manual more closely:
+https://v2.ocaml.org/manual/intfc.html#ss:c-outside-head
+
+It also makes it clearer that these modules have been reviewed for
+compat with OCaml 5.0.
+
+We cannot use OCaml finalizers here, because we want exact control over when
+to unmap these pages from remote domains.
+
+No functional change.
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+(cherry picked from commit d2ccc637111d6dbcf808aaffeec7a46f0b1e1c81)
+---
+ tools/ocaml/libs/mmap/mmap_stubs.h    | 4 ++++
+ tools/ocaml/libs/mmap/xenmmap_stubs.c | 2 +-
+ tools/ocaml/libs/xb/xs_ring_stubs.c   | 2 +-
+ 3 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/tools/ocaml/libs/mmap/mmap_stubs.h b/tools/ocaml/libs/mmap/mmap_stubs.h
+index 65e4239890..f4784e4715 100644
+--- a/tools/ocaml/libs/mmap/mmap_stubs.h
++++ b/tools/ocaml/libs/mmap/mmap_stubs.h
+@@ -30,4 +30,8 @@ struct mmap_interface
+ 	int len;
+ };
+ 
++#ifndef Data_abstract_val
++#define Data_abstract_val(x) ((void *)Op_val(x))
++#endif
++
+ #endif
+diff --git a/tools/ocaml/libs/mmap/xenmmap_stubs.c b/tools/ocaml/libs/mmap/xenmmap_stubs.c
+index e2ce088e25..e03951d781 100644
+--- a/tools/ocaml/libs/mmap/xenmmap_stubs.c
++++ b/tools/ocaml/libs/mmap/xenmmap_stubs.c
+@@ -28,7 +28,7 @@
+ #include <caml/fail.h>
+ #include <caml/callback.h>
+ 
+-#define Intf_val(a) ((struct mmap_interface *) a)
++#define Intf_val(a) ((struct mmap_interface *)Data_abstract_val(a))
+ 
+ static int mmap_interface_init(struct mmap_interface *intf,
+                                int fd, int pflag, int mflag,
+diff --git a/tools/ocaml/libs/xb/xs_ring_stubs.c b/tools/ocaml/libs/xb/xs_ring_stubs.c
+index 7a91fdee75..1f58524535 100644
+--- a/tools/ocaml/libs/xb/xs_ring_stubs.c
++++ b/tools/ocaml/libs/xb/xs_ring_stubs.c
+@@ -35,7 +35,7 @@
+ #include <sys/mman.h>
+ #include "mmap_stubs.h"
+ 
+-#define GET_C_STRUCT(a) ((struct mmap_interface *) a)
++#define GET_C_STRUCT(a) ((struct mmap_interface *)Data_abstract_val(a))
+ 
+ /*
+  * Bytes_val has been introduced by Ocaml 4.06.1. So define our own version
+-- 
+2.30.2
+

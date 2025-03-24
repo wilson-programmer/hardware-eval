@@ -1,0 +1,41 @@
+From a96d2d4355d85fc82abd0a3799978db04ee8cff3 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Tue, 12 Mar 2024 12:07:07 +0100
+Subject: [PATCH] x86/mm: fix detection of last L1 entry in
+ modify_xen_mappings_lite()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The current logic to detect when to switch to the next L1 table is incorrectly
+using l2_table_offset() in order to notice when the last entry on the current
+L1 table has been reached.
+
+It should instead use l1_table_offset() to check whether the index has wrapped
+to point to the first entry, and so the next L1 table should be used.
+
+Fixes: 8676092a0f16 ('x86/livepatch: Fix livepatch application when CET is active')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 7c81558208de7858251b62f168a449be84305595
+master date: 2024-03-11 11:09:42 +0000
+---
+ xen/arch/x86/mm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/mm.c b/xen/arch/x86/mm.c
+index 39544bd9f9..ab0acbfea6 100644
+--- a/xen/arch/x86/mm.c
++++ b/xen/arch/x86/mm.c
+@@ -5947,7 +5947,7 @@ void init_or_livepatch modify_xen_mappings_lite(
+ 
+                 v += 1UL << L1_PAGETABLE_SHIFT;
+ 
+-                if ( l2_table_offset(v) == 0 )
++                if ( l1_table_offset(v) == 0 )
+                     break;
+             }
+ 
+-- 
+2.30.2
+

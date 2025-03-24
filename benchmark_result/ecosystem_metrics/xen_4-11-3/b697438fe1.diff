@@ -1,0 +1,147 @@
+From b697438fe17d6b8a09fc4f2d3c64c390f7312905 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Mon, 25 Nov 2019 16:23:34 +0100
+Subject: [PATCH] x86: fix race to build arch/x86/efi/relocs-dummy.o
+
+With $(TARGET).efi depending on efi/relocs-dummy.o, arch/x86/Makefile
+will attempt to build that object. This may result in a dependency file
+being generated that has relocs-dummy.o depending on efi/relocs-dummy.S.
+
+Then, when arch/x86/efi/Makefile tries to build relocs-dummy.o, well
+efi/relocs-dummy.S doesn't exist.
+
+Have only one makefile responsible for building relocs-dummy.o.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+
+x86/Makefile: remove $(guard) use from $(TARGET).efi target
+
+Following the patch 65d104984c04 ("x86: fix race to build
+arch/x86/efi/relocs-dummy.o"), the error message
+  nm: 'efi/relocs-dummy.o': No such file"
+started to appear on system which can't build the .efi target. This is
+because relocs-dummy.o isn't built anymore.
+The error is printed by the evaluation of VIRT_BASE and ALT_BASE which
+aren't use anyway.
+
+But, we don't need that file as we don't want to build `$(TARGET).efi'
+anyway.  On such system, $(guard) evaluate to the shell builtin ':',
+which prevent any of the shell commands in `$(TARGET).efi' from been
+executed.
+
+Even if $(guard) is evaluated opon use, it depends on $(XEN_BUILD_PE)
+which is evaluated at the assignment. So, we can replace $(guard) in
+$(TARGET).efi by having two different rules depending on
+$(XEN_BUILD_PE) instead.
+
+The change with this patch is that none of the dependency of
+$(TARGET).efi will be built if the linker doesn't support PE
+and VIRT_BASE and ALT_BASE don't get evaluated anymore, so nm will not
+complain about the missing relocs-dummy.o file anymore.
+
+Since prelink-efi.o isn't built on system that can't build
+$(TARGET).efi anymore, we can remove the $(guard) variable everywhere.
+
+Reported-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 65d104984c04e69234f77bd3b8f8c0ef85b3f7fa
+master date: 2019-11-15 14:18:16 +0100
+master commit: 7059afb202ff0d82a6fa94f7ef84e4bb3139914e
+master date: 2019-11-20 17:12:12 +0100
+---
+ xen/arch/x86/Makefile | 44 ++++++++++++++++++++++---------------------
+ 1 file changed, 23 insertions(+), 21 deletions(-)
+
+diff --git a/xen/arch/x86/Makefile b/xen/arch/x86/Makefile
+index 4c82d9f710..ec02972f2b 100644
+--- a/xen/arch/x86/Makefile
++++ b/xen/arch/x86/Makefile
+@@ -111,20 +111,20 @@ prelink_lto.o: $(ALL_OBJS)
+ 	$(LD_LTO) -r -o $@ $^
+ 
+ prelink-efi_lto.o: $(ALL_OBJS) efi/runtime.o efi/compat.o
+-	$(guard) $(LD_LTO) -r -o $@ $(filter-out %/efi/built_in.o,$^)
++	$(LD_LTO) -r -o $@ $(filter-out %/efi/built_in.o,$^)
+ 
+ # Link it with all the binary objects
+ prelink.o: $(patsubst %/built_in.o,%/built_in_bin.o,$(ALL_OBJS)) prelink_lto.o
+ 	$(LD) $(LDFLAGS) -r -o $@ $^
+ 
+ prelink-efi.o: $(patsubst %/built_in.o,%/built_in_bin.o,$(ALL_OBJS)) prelink-efi_lto.o efi/boot.init.o
+-	$(guard) $(LD) $(LDFLAGS) -r -o $@ $^
++	$(LD) $(LDFLAGS) -r -o $@ $^
+ else
+ prelink.o: $(ALL_OBJS)
+ 	$(LD) $(LDFLAGS) -r -o $@ $^
+ 
+ prelink-efi.o: $(ALL_OBJS) efi/boot.init.o efi/runtime.o efi/compat.o
+-	$(guard) $(LD) $(LDFLAGS) -r -o $@ $(filter-out %/efi/built_in.o,$^)
++	$(LD) $(LDFLAGS) -r -o $@ $(filter-out %/efi/built_in.o,$^)
+ endif
+ 
+ $(BASEDIR)/common/symbols-dummy.o:
+@@ -172,8 +172,6 @@ CFLAGS-$(XEN_BUILD_EFI) += -DXEN_BUILD_EFI
+ 
+ $(TARGET).efi: VIRT_BASE = 0x$(shell $(NM) efi/relocs-dummy.o | sed -n 's, A VIRT_START$$,,p')
+ $(TARGET).efi: ALT_BASE = 0x$(shell $(NM) efi/relocs-dummy.o | sed -n 's, A ALT_START$$,,p')
+-# Don't use $(wildcard ...) here - at least make 3.80 expands this too early!
+-$(TARGET).efi: guard = $(if $(filter y,$(XEN_BUILD_PE)),,:)
+ 
+ ifneq ($(build_id_linker),)
+ ifeq ($(call ld-ver-build-id,$(LD) $(filter -m%,$(EFI_LDFLAGS))),y)
+@@ -191,30 +189,34 @@ note_file :=
+ endif
+ note_file_option ?= $(note_file)
+ 
++ifeq ($(filter y,$(XEN_BUILD_PE)),y)
+ $(TARGET).efi: prelink-efi.o $(note_file) efi.lds efi/relocs-dummy.o $(BASEDIR)/common/symbols-dummy.o efi/mkreloc
+ 	$(foreach base, $(VIRT_BASE) $(ALT_BASE), \
+-	          $(guard) $(LD) $(call EFI_LDFLAGS,$(base)) -T efi.lds -N $< efi/relocs-dummy.o \
++	          $(LD) $(call EFI_LDFLAGS,$(base)) -T efi.lds -N $< efi/relocs-dummy.o \
+ 	                $(BASEDIR)/common/symbols-dummy.o $(note_file_option) -o $(@D)/.$(@F).$(base).0 &&) :
+-	$(guard) efi/mkreloc $(foreach base,$(VIRT_BASE) $(ALT_BASE),$(@D)/.$(@F).$(base).0) >$(@D)/.$(@F).0r.S
+-	$(guard) $(NM) -pa --format=sysv $(@D)/.$(@F).$(VIRT_BASE).0 \
+-		| $(guard) $(BASEDIR)/tools/symbols $(all_symbols) --sysv --sort >$(@D)/.$(@F).0s.S
+-	$(guard) $(MAKE) -f $(BASEDIR)/Rules.mk $(@D)/.$(@F).0r.o $(@D)/.$(@F).0s.o
++	efi/mkreloc $(foreach base,$(VIRT_BASE) $(ALT_BASE),$(@D)/.$(@F).$(base).0) >$(@D)/.$(@F).0r.S
++	$(NM) -pa --format=sysv $(@D)/.$(@F).$(VIRT_BASE).0 \
++		| $(BASEDIR)/tools/symbols $(all_symbols) --sysv --sort >$(@D)/.$(@F).0s.S
++	$(MAKE) -f $(BASEDIR)/Rules.mk $(@D)/.$(@F).0r.o $(@D)/.$(@F).0s.o
+ 	$(foreach base, $(VIRT_BASE) $(ALT_BASE), \
+-	          $(guard) $(LD) $(call EFI_LDFLAGS,$(base)) -T efi.lds -N $< \
++	          $(LD) $(call EFI_LDFLAGS,$(base)) -T efi.lds -N $< \
+ 	                $(@D)/.$(@F).0r.o $(@D)/.$(@F).0s.o $(note_file_option) -o $(@D)/.$(@F).$(base).1 &&) :
+-	$(guard) efi/mkreloc $(foreach base,$(VIRT_BASE) $(ALT_BASE),$(@D)/.$(@F).$(base).1) >$(@D)/.$(@F).1r.S
+-	$(guard) $(NM) -pa --format=sysv $(@D)/.$(@F).$(VIRT_BASE).1 \
+-		| $(guard) $(BASEDIR)/tools/symbols $(all_symbols) --sysv --sort >$(@D)/.$(@F).1s.S
+-	$(guard) $(MAKE) -f $(BASEDIR)/Rules.mk $(@D)/.$(@F).1r.o $(@D)/.$(@F).1s.o
+-	$(guard) $(LD) $(call EFI_LDFLAGS,$(VIRT_BASE)) -T efi.lds -N $< \
++	efi/mkreloc $(foreach base,$(VIRT_BASE) $(ALT_BASE),$(@D)/.$(@F).$(base).1) >$(@D)/.$(@F).1r.S
++	$(NM) -pa --format=sysv $(@D)/.$(@F).$(VIRT_BASE).1 \
++		| $(BASEDIR)/tools/symbols $(all_symbols) --sysv --sort >$(@D)/.$(@F).1s.S
++	$(MAKE) -f $(BASEDIR)/Rules.mk $(@D)/.$(@F).1r.o $(@D)/.$(@F).1s.o
++	$(LD) $(call EFI_LDFLAGS,$(VIRT_BASE)) -T efi.lds -N $< \
+ 	                $(@D)/.$(@F).1r.o $(@D)/.$(@F).1s.o $(note_file_option) -o $@
+-	if $(guard) false; then rm -f $@; echo 'EFI support disabled'; \
+-	else $(NM) -pa --format=sysv $(@D)/$(@F) \
+-		| $(BASEDIR)/tools/symbols --xensyms --sysv --sort >$(@D)/$(@F).map; fi
++	$(NM) -pa --format=sysv $(@D)/$(@F) \
++		| $(BASEDIR)/tools/symbols --xensyms --sysv --sort >$(@D)/$(@F).map
+ 	rm -f $(@D)/.$(@F).[0-9]* $(@D)/..$(@F).[0-9]*
++else
++$(TARGET).efi: FORCE
++	rm -f $@; echo 'EFI support disabled'
++endif
+ 
+-efi/boot.init.o efi/runtime.o efi/compat.o efi/buildid.o: $(BASEDIR)/arch/x86/efi/built_in.o
+-efi/boot.init.o efi/runtime.o efi/compat.o efi/buildid.o: ;
++efi/boot.init.o efi/runtime.o efi/compat.o efi/buildid.o efi/relocs-dummy.o: $(BASEDIR)/arch/x86/efi/built_in.o
++efi/boot.init.o efi/runtime.o efi/compat.o efi/buildid.o efi/relocs-dummy.o: ;
+ 
+ asm-offsets.s: $(TARGET_SUBARCH)/asm-offsets.c
+ 	$(CC) $(filter-out -Wa$(comma)% -flto,$(CFLAGS)) -S -o $@ $<
+-- 
+2.30.2
+

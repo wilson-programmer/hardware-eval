@@ -1,0 +1,109 @@
+From 75de893687b72409e2fd3d776ac43f75717522c8 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 25 Nov 2019 16:22:08 +0100
+Subject: [PATCH] AMD/IOMMU: don't needlessly trigger errors/crashes when
+ unmapping a page
+
+Unmapping a page which has never been mapped should be a no-op (note how
+it already is in case there was no root page table allocated). There's
+in particular no need to grow the number of page table levels in use,
+and there's also no need to allocate intermediate page tables except
+when needing to split a large page.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: ad591454f069647c36a7daaa9ec23384c0263f0b
+master date: 2019-11-12 11:08:34 +0100
+---
+ xen/drivers/passthrough/amd/iommu_map.c | 39 ++++++++++++-------------
+ 1 file changed, 18 insertions(+), 21 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_map.c b/xen/drivers/passthrough/amd/iommu_map.c
+index 3191da91ef..078d1c673a 100644
+--- a/xen/drivers/passthrough/amd/iommu_map.c
++++ b/xen/drivers/passthrough/amd/iommu_map.c
+@@ -456,7 +456,7 @@ static int iommu_merge_pages(struct domain *d, unsigned long pt_mfn,
+  * page tables.
+  */
+ static int iommu_pde_from_gfn(struct domain *d, unsigned long pfn, 
+-                              unsigned long pt_mfn[])
++                              unsigned long pt_mfn[], bool map)
+ {
+     u64 *pde, *next_table_vaddr;
+     unsigned long  next_table_mfn;
+@@ -470,6 +470,13 @@ static int iommu_pde_from_gfn(struct domain *d, unsigned long pfn,
+     BUG_ON( table == NULL || level < IOMMU_PAGING_MODE_LEVEL_1 || 
+             level > IOMMU_PAGING_MODE_LEVEL_6 );
+ 
++    /*
++     * A frame number past what the current page tables can represent can't
++     * possibly have a mapping.
++     */
++    if ( pfn >> (PTE_PER_TABLE_SHIFT * level) )
++        return 0;
++
+     next_table_mfn = mfn_x(page_to_mfn(table));
+ 
+     if ( level == IOMMU_PAGING_MODE_LEVEL_1 )
+@@ -530,6 +537,9 @@ static int iommu_pde_from_gfn(struct domain *d, unsigned long pfn,
+         /* Install lower level page table for non-present entries */
+         else if ( !iommu_is_pte_present((u32*)pde) )
+         {
++            if ( !map )
++                return 0;
++
+             if ( next_table_mfn == 0 )
+             {
+                 table = alloc_amd_iommu_pgtable();
+@@ -688,7 +698,7 @@ int amd_iommu_map_page(struct domain *d, unsigned long gfn, unsigned long mfn,
+         }
+     }
+ 
+-    if ( iommu_pde_from_gfn(d, gfn, pt_mfn) || (pt_mfn[1] == 0) )
++    if ( iommu_pde_from_gfn(d, gfn, pt_mfn, true) || (pt_mfn[1] == 0) )
+     {
+         spin_unlock(&hd->arch.mapping_lock);
+         AMD_IOMMU_DEBUG("Invalid IO pagetable entry gfn = %lx\n", gfn);
+@@ -767,23 +777,7 @@ int amd_iommu_unmap_page(struct domain *d, unsigned long gfn)
+         return 0;
+     }
+ 
+-    /* Since HVM domain is initialized with 2 level IO page table,
+-     * we might need a deeper page table for lager gfn now */
+-    if ( is_hvm_domain(d) )
+-    {
+-        int rc = update_paging_mode(d, gfn);
+-
+-        if ( rc )
+-        {
+-            spin_unlock(&hd->arch.mapping_lock);
+-            AMD_IOMMU_DEBUG("Update page mode failed gfn = %lx\n", gfn);
+-            if ( rc != -EADDRNOTAVAIL )
+-                domain_crash(d);
+-            return rc;
+-        }
+-    }
+-
+-    if ( iommu_pde_from_gfn(d, gfn, pt_mfn) || (pt_mfn[1] == 0) )
++    if ( iommu_pde_from_gfn(d, gfn, pt_mfn, false) )
+     {
+         spin_unlock(&hd->arch.mapping_lock);
+         AMD_IOMMU_DEBUG("Invalid IO pagetable entry gfn = %lx\n", gfn);
+@@ -791,8 +785,11 @@ int amd_iommu_unmap_page(struct domain *d, unsigned long gfn)
+         return -EFAULT;
+     }
+ 
+-    /* mark PTE as 'page not present' */
+-    clear_iommu_pte_present(pt_mfn[1], gfn);
++    if ( pt_mfn[1] )
++    {
++        /* Mark PTE as 'page not present'. */
++        clear_iommu_pte_present(pt_mfn[1], gfn);
++    }
+ 
+     /* No further merging in amd_iommu_map_page(), as the logic doesn't cope. */
+     hd->arch.no_merge = true;
+-- 
+2.30.2
+

@@ -1,0 +1,37 @@
+From b0d4cecf5fca466557a9681d3565644f1398f433 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Fri, 25 Oct 2019 11:57:24 +0200
+Subject: [PATCH] sched: fix freeing per-vcpu data in sched_move_domain()
+
+In case of an allocation error of per-vcpu data in sched_move_domain()
+the already allocated data is freed just using xfree(). This is wrong
+as some schedulers need to do additional operations (e.g. the arinc653
+scheduler needs to remove the vcpu-data from a list).
+
+So instead xfree() make use of the sched_free_vdata() hook.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: b6656e6aa4dd5de537ce07ec16bfbbbb538b28b5
+master date: 2019-09-25 15:52:53 +0200
+---
+ xen/common/schedule.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/common/schedule.c b/xen/common/schedule.c
+index 049f93f7aa..dd167cce76 100644
+--- a/xen/common/schedule.c
++++ b/xen/common/schedule.c
+@@ -337,7 +337,7 @@ int sched_move_domain(struct domain *d, struct cpupool *c)
+         if ( vcpu_priv[v->vcpu_id] == NULL )
+         {
+             for_each_vcpu ( d, v )
+-                xfree(vcpu_priv[v->vcpu_id]);
++                SCHED_OP(c->sched, free_vdata, vcpu_priv[v->vcpu_id]);
+             xfree(vcpu_priv);
+             sched_free_domdata(c->sched, domdata);
+             return -ENOMEM;
+-- 
+2.30.2
+

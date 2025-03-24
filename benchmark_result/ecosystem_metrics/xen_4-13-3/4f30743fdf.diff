@@ -1,0 +1,36 @@
+From 4f30743fdf815450bc9c052f2746751265a01aa4 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 1 Dec 2020 15:38:23 +0100
+Subject: [PATCH] x86/vpt: fix build with old gcc
+
+I believe it was the XSA-336 fix (42fcdd42328f "x86/vpt: fix race when
+migrating timers between vCPUs") which has unmasked a bogus
+uninitialized variable warning. This is observable with gcc 4.3.4, but
+only on 4.13 and older; it's hidden on newer versions apparently due to
+the addition to _read_unlock() done by 12509bbeb9e3 ("rwlocks: call
+preempt_disable() when taking a rwlock").
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: f2c620aa062767b318267d678ae249dcb637b870
+master date: 2020-11-18 12:38:01 +0100
+---
+ xen/arch/x86/hvm/vpt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/vpt.c b/xen/arch/x86/hvm/vpt.c
+index 77b142406f..6d5f98767c 100644
+--- a/xen/arch/x86/hvm/vpt.c
++++ b/xen/arch/x86/hvm/vpt.c
+@@ -400,7 +400,7 @@ int pt_update_irq(struct vcpu *v)
+                  * associated with the timer.
+                  */
+                 time_cb *cb = NULL;
+-                void *cb_priv;
++                void *cb_priv = NULL;
+ 
+                 pt_vcpu_lock(v);
+                 /* Make sure the timer is still on the list. */
+-- 
+2.30.2
+

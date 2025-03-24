@@ -1,0 +1,32 @@
+seq_write_throughput: (g=0): rw=write, bs=(R) 1024KiB-1024KiB, (W) 1024KiB-1024KiB, (T) 1024KiB-1024KiB, ioengine=libaio, iodepth=64
+...
+fio-3.1
+Starting 4 processes
+
+seq_write_throughput: (groupid=0, jobs=4): err= 0: pid=18621: Wed Jun 19 05:04:52 2024
+  write: IOPS=268, BW=273MiB/s (286MB/s)(16.4GiB/61635msec)
+    slat (usec): min=422, max=4242.5k, avg=14780.16, stdev=208861.11
+    clat (msec): min=7, max=5038, avg=925.29, stdev=1552.50
+     lat (msec): min=129, max=5043, avg=939.93, stdev=1562.28
+    clat percentiles (msec):
+     |  1.00th=[  157],  5.00th=[  178], 10.00th=[  190], 20.00th=[  207],
+     | 30.00th=[  220], 40.00th=[  232], 50.00th=[  245], 60.00th=[  259],
+     | 70.00th=[  275], 80.00th=[  300], 90.00th=[ 4463], 95.00th=[ 4463],
+     | 99.00th=[ 4933], 99.50th=[ 5000], 99.90th=[ 5000], 99.95th=[ 5067],
+     | 99.99th=[ 5067]
+   bw (  KiB/s): min= 2048, max=354304, per=64.92%, avg=181331.89, stdev=111367.06, samples=187
+   iops        : min=    2, max=  346, avg=176.99, stdev=108.75, samples=187
+  lat (msec)   : 10=0.02%, 20=0.01%, 250=54.47%, 500=29.96%, 750=0.22%
+  lat (msec)   : 1000=0.10%, >=2000=16.74%
+  cpu          : usr=1.41%, sys=4.47%, ctx=27087, majf=0, minf=12
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.2%, 16=0.4%, 32=0.8%, >=64=110.5%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.1%, >=64=0.0%
+     issued rwt: total=0,16556,0, short=0,0,0, dropped=0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=64
+
+Run status group 0 (all jobs):
+  WRITE: bw=273MiB/s (286MB/s), 273MiB/s-273MiB/s (286MB/s-286MB/s), io=16.4GiB (17.6GB), run=61635-61635msec
+
+Disk stats (read/write):
+  xvda: ios=0/148585, merge=0/53, ticks=0/3727440, in_queue=1165908, util=30.90%

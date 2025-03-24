@@ -1,0 +1,149 @@
+From 171d6ecec1efca5a3e395a08acb299453a957528 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Mon, 18 Jun 2018 09:18:55 +0200
+Subject: [PATCH] tools/libxencalls: add new function to query hypercall buffer
+ safety
+
+Add a new function to query whether hypercall buffers are always safe
+to access by the hypervisor or might result in EFAULT.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Ian Jackson <ian.jackson@eu.citrix.com>
+---
+ tools/libs/call/Makefile          | 2 +-
+ tools/libs/call/freebsd.c         | 5 +++++
+ tools/libs/call/include/xencall.h | 7 +++++++
+ tools/libs/call/libxencall.map    | 5 +++++
+ tools/libs/call/linux.c           | 5 +++++
+ tools/libs/call/minios.c          | 5 +++++
+ tools/libs/call/netbsd.c          | 5 +++++
+ tools/libs/call/solaris.c         | 5 +++++
+ 8 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/tools/libs/call/Makefile b/tools/libs/call/Makefile
+index 39dd207428..252d3973fc 100644
+--- a/tools/libs/call/Makefile
++++ b/tools/libs/call/Makefile
+@@ -2,7 +2,7 @@ XEN_ROOT = $(CURDIR)/../../..
+ include $(XEN_ROOT)/tools/Rules.mk
+ 
+ MAJOR    = 1
+-MINOR    = 0
++MINOR    = 1
+ SHLIB_LDFLAGS += -Wl,--version-script=libxencall.map
+ 
+ CFLAGS   += -Werror -Wmissing-prototypes
+diff --git a/tools/libs/call/freebsd.c b/tools/libs/call/freebsd.c
+index cadd313c04..28bfd852c1 100644
+--- a/tools/libs/call/freebsd.c
++++ b/tools/libs/call/freebsd.c
+@@ -107,6 +107,11 @@ void osdep_free_pages(xencall_handle *xcall, void *ptr, size_t npages)
+     errno = saved_errno;
+ }
+ 
++int xencall_buffers_never_fault(xencall_handle *xcall)
++{
++    return 1;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libs/call/include/xencall.h b/tools/libs/call/include/xencall.h
+index bafacdd2ba..0d09bc8eae 100644
+--- a/tools/libs/call/include/xencall.h
++++ b/tools/libs/call/include/xencall.h
+@@ -115,6 +115,13 @@ void xencall_free_buffer_pages(xencall_handle *xcall, void *p, size_t nr_pages);
+ void *xencall_alloc_buffer(xencall_handle *xcall, size_t size);
+ void xencall_free_buffer(xencall_handle *xcall, void *p);
+ 
++/*
++ * Are allocated hypercall buffers safe to be accessed by the hypervisor all
++ * the time?
++ * Returns 0 if EFAULT might be possible.
++ */
++int xencall_buffers_never_fault(xencall_handle *xcall);
++
+ #endif
+ 
+ /*
+diff --git a/tools/libs/call/libxencall.map b/tools/libs/call/libxencall.map
+index 2f96144f40..c482195b95 100644
+--- a/tools/libs/call/libxencall.map
++++ b/tools/libs/call/libxencall.map
+@@ -17,3 +17,8 @@ VERS_1.0 {
+ 		xencall_free_buffer_pages;
+ 	local: *; /* Do not expose anything by default */
+ };
++
++VERS_1.1 {
++	global:
++		xencall_buffers_never_fault;
++} VERS_1.0;
+diff --git a/tools/libs/call/linux.c b/tools/libs/call/linux.c
+index 90c2691486..d8a6306e04 100644
+--- a/tools/libs/call/linux.c
++++ b/tools/libs/call/linux.c
+@@ -171,6 +171,11 @@ void osdep_free_pages(xencall_handle *xcall, void *ptr, size_t npages)
+     errno = saved_errno;
+ }
+ 
++int xencall_buffers_never_fault(xencall_handle *xcall)
++{
++    return xcall->buf_fd >= 0;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libs/call/minios.c b/tools/libs/call/minios.c
+index f04688f63c..9f7a96995f 100644
+--- a/tools/libs/call/minios.c
++++ b/tools/libs/call/minios.c
+@@ -70,6 +70,11 @@ void osdep_free_pages(xencall_handle *xcall, void *ptr, size_t npages)
+     free(ptr);
+ }
+ 
++int xencall_buffers_never_fault(xencall_handle *xcall)
++{
++    return 1;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libs/call/netbsd.c b/tools/libs/call/netbsd.c
+index e96fbf16f7..a5502da377 100644
+--- a/tools/libs/call/netbsd.c
++++ b/tools/libs/call/netbsd.c
+@@ -110,6 +110,11 @@ int do_xen_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+         return hypercall->retval;
+ }
+ 
++int xencall_buffers_never_fault(xencall_handle *xcall)
++{
++    return 1;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libs/call/solaris.c b/tools/libs/call/solaris.c
+index 5aa330e4eb..c63b6a329a 100644
+--- a/tools/libs/call/solaris.c
++++ b/tools/libs/call/solaris.c
+@@ -86,6 +86,11 @@ int do_xen_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+     return ioctl(fd, IOCTL_PRIVCMD_HYPERCALL, hypercall);
+ }
+ 
++int xencall_buffers_never_fault(xencall_handle *xcall)
++{
++    return 1;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+-- 
+2.30.2
+

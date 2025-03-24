@@ -1,0 +1,41 @@
+From a07f444502ad8358e019cf0ae37a3e4b205467b4 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 14 Sep 2018 13:04:07 +0200
+Subject: [PATCH] x86/setup: Avoid OoB E820 lookup when calculating the L1TF
+ safe address
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+A number of corner cases (most obviously, no-real-mode and no Multiboot memory
+map) can end up with e820_raw.nr_map being 0, at which point the L1TF
+calculation will underflow.
+
+Spotted by Coverity.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Wei Liu <wei.liu2@citrix.com>
+master commit: 3e4ec07e14bce81f6ae22c31ff1302d1f297a226
+master date: 2018-08-16 18:10:07 +0100
+---
+ xen/arch/x86/setup.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/setup.c b/xen/arch/x86/setup.c
+index 3cd3e81b30..2860c425ef 100644
+--- a/xen/arch/x86/setup.c
++++ b/xen/arch/x86/setup.c
+@@ -912,7 +912,7 @@ void __init noreturn __start_xen(unsigned long mbi_p)
+     /* Sanitise the raw E820 map to produce a final clean version. */
+     max_page = raw_max_page = init_e820(memmap_type, &e820_raw);
+ 
+-    if ( !efi_enabled(EFI_BOOT) )
++    if ( !efi_enabled(EFI_BOOT) && e820_raw.nr_map >= 1 )
+     {
+         /*
+          * Supplement the heuristics in l1tf_calculations() by assuming that
+-- 
+2.30.2
+

@@ -1,0 +1,51 @@
+From 9f7e8bac4ca279b3bfccb5f3730fb2e5398c95ab Mon Sep 17 00:00:00 2001
+From: Jason Andryuk <jandryuk@gmail.com>
+Date: Wed, 24 Jun 2020 16:51:16 +0200
+Subject: [PATCH] libacpi: widen TPM detection
+
+The hardcoded tpm_signature is too restrictive to detect many TPMs.  For
+instance, it doesn't accept a QEMU emulated TPM (VID 0x1014 DID 0x0001).
+Make the TPM detection match that in rombios which accepts a wider
+range.
+
+With this change, the TPM's TCPA ACPI table is generated and the guest
+OS can automatically load the tpm_tis driver.  It also allows seabios to
+detect and use the TPM.  However, seabios skips some TPM initialization
+when running under Xen, so it will not populate any PCRs unless modified
+to run the initialization under Xen.
+
+Signed-off-by: Jason Andryuk <jandryuk@gmail.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: d3db7e043cddd7e939195e014241ce2c5d436179
+master date: 2020-06-16 10:31:08 +0200
+---
+ tools/libacpi/build.c | 6 ++----
+ 1 file changed, 2 insertions(+), 4 deletions(-)
+
+diff --git a/tools/libacpi/build.c b/tools/libacpi/build.c
+index fa7d14e090..a61dd5583a 100644
+--- a/tools/libacpi/build.c
++++ b/tools/libacpi/build.c
+@@ -351,7 +351,6 @@ static int construct_secondary_tables(struct acpi_ctxt *ctxt,
+     struct acpi_20_waet *waet;
+     struct acpi_20_tcpa *tcpa;
+     unsigned char *ssdt;
+-    static const uint16_t tis_signature[] = {0x0001, 0x0001, 0x0001};
+     void *lasa;
+ 
+     /* MADT. */
+@@ -413,9 +412,8 @@ static int construct_secondary_tables(struct acpi_ctxt *ctxt,
+ 
+     /* TPM TCPA and SSDT. */
+     if ( (config->table_flags & ACPI_HAS_TCPA) &&
+-         (config->tis_hdr[0] == tis_signature[0]) &&
+-         (config->tis_hdr[1] == tis_signature[1]) &&
+-         (config->tis_hdr[2] == tis_signature[2]) )
++         (config->tis_hdr[0] != 0 && config->tis_hdr[0] != 0xffff) &&
++         (config->tis_hdr[1] != 0 && config->tis_hdr[1] != 0xffff) )
+     {
+         ssdt = ctxt->mem_ops.alloc(ctxt, sizeof(ssdt_tpm), 16);
+         if (!ssdt) return -1;
+-- 
+2.30.2
+

@@ -1,0 +1,35 @@
+From d32cbbc141837600aa74f331c31a06df3777a2fb Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 27 Apr 2020 15:57:13 +0200
+Subject: [PATCH] x86: validate VM assist value in arch_set_info_guest()
+
+While I can't spot anything that would go wrong, just like the
+respective hypercall only permits applicable bits to be set, we should
+also do so when loading guest context.
+
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: a62c6fe05c4ae905b7d4cb0ca946508b7f96d522
+master date: 2020-04-22 13:01:10 +0200
+---
+ xen/arch/x86/domain.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index 745da387f6..6b0cb689a1 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -868,6 +868,9 @@ int arch_set_info_guest(
+         }
+     }
+ 
++    if ( v->vcpu_id == 0 && (c(vm_assist) & ~arch_vm_assist_valid_mask(d)) )
++        return -EINVAL;
++
+     if ( is_hvm_domain(d) )
+     {
+         for ( i = 0; i < ARRAY_SIZE(v->arch.dr); ++i )
+-- 
+2.30.2
+

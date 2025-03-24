@@ -1,0 +1,66 @@
+From 823f56e2e8e24ac8308f21b39f8c1e6a8536d946 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 23 May 2023 14:51:19 +0200
+Subject: [PATCH] x86/extable: hide use of negative offset from array start
+
+In COVERAGE=y but DEBUG=n builds (observed by randconfig testing) gcc12
+takes issue with the subtraction of 1 from __stop___pre_ex_table[],
+considering this an out of bounds access. Not being able to know that
+the symbol actually marks the end of an array, the compiler is kind of
+right with this diagnosis. Move the subtraction into the function.
+
+Reported-by: Anthony Perard <anthony.perard@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 353b8cc56862dd808b75c6c96cd780cfee8f28bc
+master date: 2023-02-22 13:50:20 +0100
+---
+ xen/arch/x86/extable.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/extable.c b/xen/arch/x86/extable.c
+index 4913c4a6dd..6758ba1dca 100644
+--- a/xen/arch/x86/extable.c
++++ b/xen/arch/x86/extable.c
+@@ -64,9 +64,10 @@ void __init sort_exception_tables(void)
+ 
+ static unsigned long
+ search_one_extable(const struct exception_table_entry *first,
+-                   const struct exception_table_entry *last,
++                   const struct exception_table_entry *end,
+                    unsigned long value)
+ {
++    const struct exception_table_entry *last = end - 1;
+     const struct exception_table_entry *mid;
+     long diff;
+ 
+@@ -91,7 +92,7 @@ search_exception_table(const struct cpu_user_regs *regs)
+     unsigned long stub = this_cpu(stubs.addr);
+ 
+     if ( region && region->ex )
+-        return search_one_extable(region->ex, region->ex_end - 1, regs->rip);
++        return search_one_extable(region->ex, region->ex_end, regs->rip);
+ 
+     if ( regs->rip >= stub + STUB_BUF_SIZE / 2 &&
+          regs->rip < stub + STUB_BUF_SIZE &&
+@@ -102,7 +103,7 @@ search_exception_table(const struct cpu_user_regs *regs)
+ 
+         region = find_text_region(retptr);
+         retptr = region && region->ex
+-                 ? search_one_extable(region->ex, region->ex_end - 1, retptr)
++                 ? search_one_extable(region->ex, region->ex_end, retptr)
+                  : 0;
+         if ( retptr )
+         {
+@@ -198,7 +199,7 @@ search_pre_exception_table(struct cpu_user_regs *regs)
+ {
+     unsigned long addr = regs->rip;
+     unsigned long fixup = search_one_extable(
+-        __start___pre_ex_table, __stop___pre_ex_table-1, addr);
++        __start___pre_ex_table, __stop___pre_ex_table, addr);
+     if ( fixup )
+     {
+         dprintk(XENLOG_INFO, "Pre-exception: %p -> %p\n", _p(addr), _p(fixup));
+-- 
+2.30.2
+

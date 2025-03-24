@@ -1,0 +1,45 @@
+From 8bed7285f105b242741b31e22d7e273d7dd31f94 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 5 Nov 2018 14:59:06 +0100
+Subject: [PATCH] x86: silence false log messages for plain "xpti" / "pv-l1tf"
+
+While commit 2a3b34ec47 ("x86/spec-ctrl: Yet more fixes for xpti=
+parsing")  claimed to have got rid of the 'parameter "xpti" has invalid
+value "", rc=-22!' log message for "xpti" alone on the command line,
+this wasn't the case (the option took effect nevertheless).
+
+Fix this there as well as for plain "pv-l1tf".
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 2fb57e4beefeda923446b73f88b392e59b07d847
+master date: 2018-09-28 17:12:14 +0200
+---
+ xen/arch/x86/spec_ctrl.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/spec_ctrl.c b/xen/arch/x86/spec_ctrl.c
+index c430b25b84..0ac242c758 100644
+--- a/xen/arch/x86/spec_ctrl.c
++++ b/xen/arch/x86/spec_ctrl.c
+@@ -256,7 +256,7 @@ static __init int parse_pv_l1tf(const char *s)
+             else if ( (val = parse_boolean("domu", s, ss)) >= 0 )
+                 opt_pv_l1tf = ((opt_pv_l1tf & ~OPT_PV_L1TF_DOMU) |
+                                (val ? OPT_PV_L1TF_DOMU : 0));
+-            else
++            else if ( *s )
+                 rc = -EINVAL;
+             break;
+         }
+@@ -707,7 +707,7 @@ static __init int parse_xpti(const char *s)
+             else if ( (val = parse_boolean("domu", s, ss)) >= 0 )
+                 opt_xpti = (opt_xpti & ~OPT_XPTI_DOMU) |
+                            (val ? OPT_XPTI_DOMU : 0);
+-            else
++            else if ( *s )
+                 rc = -EINVAL;
+             break;
+         }
+-- 
+2.30.2
+

@@ -1,0 +1,45 @@
+From 6dda306223a2dd86ec2847d87a4a2ef8170d5fe0 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Wed, 25 Aug 2021 15:28:49 +0200
+Subject: [PATCH] xen/sched: fix get_cpu_idle_time() for smt=0 suspend/resume
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+With smt=0 during a suspend/resume cycle of the machine the threads
+which have been parked before will briefly come up again. This can
+result in problems e.g. with cpufreq driver being active as this will
+call into get_cpu_idle_time() for a cpu without initialized scheduler
+data.
+
+Fix that by letting get_cpu_idle_time() deal with this case. Drop a
+redundant check in exchange.
+
+Fixes: 132cbe8f35632fb2 ("sched: fix get_cpu_idle_time() with core scheduling")
+Reported-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Tested-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 5293470a77ad980dce2af9b7e6c3f11eeebf1b64
+master date: 2021-08-19 13:38:31 +0200
+---
+ xen/common/schedule.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/common/schedule.c b/xen/common/schedule.c
+index a698a13698..8ccdb2c4d8 100644
+--- a/xen/common/schedule.c
++++ b/xen/common/schedule.c
+@@ -334,7 +334,7 @@ uint64_t get_cpu_idle_time(unsigned int cpu)
+     struct vcpu_runstate_info state = { 0 };
+     struct vcpu *v = idle_vcpu[cpu];
+ 
+-    if ( cpu_online(cpu) && v )
++    if ( cpu_online(cpu) && get_sched_res(cpu) )
+         vcpu_runstate_get(v, &state);
+ 
+     return state.time[RUNSTATE_running];
+-- 
+2.30.2
+

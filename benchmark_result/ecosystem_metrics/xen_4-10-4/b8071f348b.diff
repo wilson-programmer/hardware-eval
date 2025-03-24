@@ -1,0 +1,33 @@
+From b8071f348bf49df976aeede158fa6a8618b9540f Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 3 May 2019 11:02:17 +0200
+Subject: [PATCH] x86/cpuid: add missing PCLMULQDQ dependency
+
+Since we can't seem to be able to settle our discussion for the wider
+adjustment previously posted, let's at least add the missing dependency
+for 4.12. I'm not convinced though that attaching it to SSE is correct.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: eeb31ee522c7bb8541eb4c037be2c42bfcf0a3c3
+master date: 2019-03-05 18:04:23 +0100
+---
+ xen/tools/gen-cpuid.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/tools/gen-cpuid.py b/xen/tools/gen-cpuid.py
+index 65526ff120..80b343d41c 100755
+--- a/xen/tools/gen-cpuid.py
++++ b/xen/tools/gen-cpuid.py
+@@ -193,7 +193,7 @@ def crunch_numbers(state):
+         # %XMM support, without specific inter-dependencies.  Additionally
+         # AMD has a special mis-alignment sub-mode.
+         SSE: [SSE2, SSE3, SSSE3, SSE4A, MISALIGNSSE,
+-              AESNI, SHA],
++              AESNI, PCLMULQDQ, SHA],
+ 
+         # SSE2 was re-specified as core instructions for 64bit.
+         SSE2: [LM],
+-- 
+2.30.2
+

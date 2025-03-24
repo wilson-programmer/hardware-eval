@@ -1,0 +1,124 @@
+From 959353ad4aebb8c26c71c7650a449d2618d3a720 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 28 Jun 2018 09:39:09 +0200
+Subject: [PATCH] x86/HVM: don't cause #NM to be raised in Xen
+
+The changes for XSA-267 did not touch management of CR0.TS for HVM
+guests. In fully eager mode this bit should never be set when
+respective vCPU-s are active, or else hvmemul_get_fpu() might leave it
+wrongly set, leading to #NM in hypervisor context.
+
+{svm,vmx}_enter() and {svm,vmx}_fpu_dirty_intercept() become unreachable
+this way. Explicit {svm,vmx}_fpu_leave() invocations need to be guarded
+now.
+
+With no CR0.TS management necessary in fully eager mode, there's also no
+need anymore to intercept #NM.
+
+Reported-by: Charles Arnold <carnold@suse.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+master commit: 488efc29e4e996bb3805c982200f65061390cdce
+master date: 2018-06-28 09:07:06 +0200
+---
+ xen/arch/x86/hvm/svm/svm.c  | 8 ++++++--
+ xen/arch/x86/hvm/svm/vmcb.c | 4 ++--
+ xen/arch/x86/hvm/vmx/vmcs.c | 6 ++++--
+ xen/arch/x86/hvm/vmx/vmx.c  | 8 ++++++--
+ 4 files changed, 18 insertions(+), 8 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/svm/svm.c b/xen/arch/x86/hvm/svm/svm.c
+index 673a38c574..165500e3f2 100644
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -574,7 +574,10 @@ void svm_update_guest_cr(struct vcpu *v, unsigned int cr, unsigned int flags)
+         if ( !(v->arch.hvm_vcpu.guest_cr[0] & X86_CR0_TS) )
+         {
+             if ( v != current )
+-                hw_cr0_mask |= X86_CR0_TS;
++            {
++                if ( !v->arch.fully_eager_fpu )
++                    hw_cr0_mask |= X86_CR0_TS;
++            }
+             else if ( vmcb_get_cr0(vmcb) & X86_CR0_TS )
+                 svm_fpu_enter(v);
+         }
+@@ -1083,7 +1086,8 @@ static void svm_ctxt_switch_from(struct vcpu *v)
+     if ( unlikely((read_efer() & EFER_SVME) == 0) )
+         return;
+ 
+-    svm_fpu_leave(v);
++    if ( !v->arch.fully_eager_fpu )
++        svm_fpu_leave(v);
+ 
+     svm_save_dr(v);
+     svm_lwp_save(v);
+diff --git a/xen/arch/x86/hvm/svm/vmcb.c b/xen/arch/x86/hvm/svm/vmcb.c
+index f2d0f4c0c2..04518fd344 100644
+--- a/xen/arch/x86/hvm/svm/vmcb.c
++++ b/xen/arch/x86/hvm/svm/vmcb.c
+@@ -180,8 +180,8 @@ static int construct_vmcb(struct vcpu *v)
+     paging_update_paging_modes(v);
+ 
+     vmcb->_exception_intercepts =
+-        HVM_TRAP_MASK
+-        | (1U << TRAP_no_device);
++        HVM_TRAP_MASK |
++        (v->arch.fully_eager_fpu ? 0 : (1U << TRAP_no_device));
+ 
+     if ( paging_mode_hap(v->domain) )
+     {
+diff --git a/xen/arch/x86/hvm/vmx/vmcs.c b/xen/arch/x86/hvm/vmx/vmcs.c
+index b783ff0d45..258fc08f72 100644
+--- a/xen/arch/x86/hvm/vmx/vmcs.c
++++ b/xen/arch/x86/hvm/vmx/vmcs.c
+@@ -1144,7 +1144,9 @@ static int construct_vmcs(struct vcpu *v)
+     __vmwrite(HOST_TR_SELECTOR, TSS_ENTRY << 3);
+ 
+     /* Host control registers. */
+-    v->arch.hvm_vmx.host_cr0 = read_cr0() | X86_CR0_TS;
++    v->arch.hvm_vmx.host_cr0 = read_cr0() & ~X86_CR0_TS;
++    if ( !v->arch.fully_eager_fpu )
++        v->arch.hvm_vmx.host_cr0 |= X86_CR0_TS;
+     __vmwrite(HOST_CR0, v->arch.hvm_vmx.host_cr0);
+     __vmwrite(HOST_CR4, mmu_cr4_features);
+ 
+@@ -1223,7 +1225,7 @@ static int construct_vmcs(struct vcpu *v)
+ 
+     v->arch.hvm_vmx.exception_bitmap = HVM_TRAP_MASK
+               | (paging_mode_hap(d) ? 0 : (1U << TRAP_page_fault))
+-              | (1U << TRAP_no_device);
++              | (v->arch.fully_eager_fpu ? 0 : (1U << TRAP_no_device));
+     vmx_update_exception_bitmap(v);
+ 
+     v->arch.hvm_vcpu.guest_cr[0] = X86_CR0_PE | X86_CR0_ET;
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index 970751494c..610c8d6eb9 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -936,7 +936,8 @@ static void vmx_ctxt_switch_from(struct vcpu *v)
+         vmx_vmcs_reload(v);
+     }
+ 
+-    vmx_fpu_leave(v);
++    if ( !v->arch.fully_eager_fpu )
++        vmx_fpu_leave(v);
+     vmx_save_guest_msrs(v);
+     vmx_restore_host_msrs();
+     vmx_save_dr(v);
+@@ -1493,7 +1494,10 @@ static void vmx_update_guest_cr(struct vcpu *v, unsigned int cr,
+         if ( !(v->arch.hvm_vcpu.guest_cr[0] & X86_CR0_TS) )
+         {
+             if ( v != current )
+-                hw_cr0_mask |= X86_CR0_TS;
++            {
++                if ( !v->arch.fully_eager_fpu )
++                    hw_cr0_mask |= X86_CR0_TS;
++            }
+             else if ( v->arch.hvm_vcpu.hw_cr[0] & X86_CR0_TS )
+                 vmx_fpu_enter(v);
+         }
+-- 
+2.30.2
+

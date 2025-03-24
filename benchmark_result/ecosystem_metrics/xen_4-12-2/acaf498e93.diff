@@ -1,0 +1,145 @@
+From acaf498e93aef0e8c01b18b2a2e9d206530381eb Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 6 Dec 2019 12:44:24 +0100
+Subject: [PATCH] x86/svm: Always intercept ICEBP
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+ICEBP isn't handled well by SVM.
+
+The VMexit state for a #DB-vectored TASK_SWITCH has %rip pointing to the
+appropriate instruction boundary (fault or trap, as appropriate), except for
+an ICEBP-induced #DB TASK_SWITCH, where %rip points at the ICEBP instruction
+rather than after it.  As ICEBP isn't distinguished in the vectoring event
+type, the state is ambiguous.
+
+To add to the confusion, an ICEBP which occurs due to Introspection
+intercepting the instruction, or from x86_emulate() will have %rip updated as
+a consequence of partial emulation required to inject an ICEBP event in the
+first place.
+
+We could in principle spot the non-injected case in the TASK_SWITCH handler,
+but this still results in complexity if the ICEBP instruction also has an
+Instruction Breakpoint active on it (which genuinely has fault semantics).
+
+Unconditionally intercept ICEBP.  This does have NRIPs support as it is an
+instruction intercept, which allows us to move %rip forwards appropriately
+before the TASK_SWITCH intercept is hit.  This makes #DB-vectored switches
+have consistent behaviour however the ICEBP #DB came about, and avoids special
+cases in the TASK_SWITCH intercept.
+
+This in turn allows for the removal of the conditional
+hvm_set_icebp_interception() logic used by the monitor subsystem, as ICEBP's
+will now always be submitted for monitoring checks.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Alexandru Isaila <aisaila@bitdefender.com>
+Reviewed-by: Petre Pircalabu <ppircalabu@bitdefender.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: e2585f8c2e0d43d350503ff2b2be252adc6b7239
+master date: 2019-11-28 17:14:38 +0000
+---
+ xen/arch/x86/hvm/svm/svm.c    | 19 -------------------
+ xen/arch/x86/hvm/svm/vmcb.c   |  2 +-
+ xen/arch/x86/monitor.c        |  3 ---
+ xen/include/asm-x86/hvm/hvm.h | 11 -----------
+ 4 files changed, 1 insertion(+), 34 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/svm/svm.c b/xen/arch/x86/hvm/svm/svm.c
+index 1ebf3cd7f9..c20d4c7800 100644
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -173,24 +173,6 @@ static void svm_enable_msr_interception(struct domain *d, uint32_t msr)
+         svm_intercept_msr(v, msr, MSR_INTERCEPT_WRITE);
+ }
+ 
+-static void svm_set_icebp_interception(struct domain *d, bool enable)
+-{
+-    const struct vcpu *v;
+-
+-    for_each_vcpu ( d, v )
+-    {
+-        struct vmcb_struct *vmcb = v->arch.hvm.svm.vmcb;
+-        uint32_t intercepts = vmcb_get_general2_intercepts(vmcb);
+-
+-        if ( enable )
+-            intercepts |= GENERAL2_INTERCEPT_ICEBP;
+-        else
+-            intercepts &= ~GENERAL2_INTERCEPT_ICEBP;
+-
+-        vmcb_set_general2_intercepts(vmcb, intercepts);
+-    }
+-}
+-
+ static void svm_save_dr(struct vcpu *v)
+ {
+     struct vmcb_struct *vmcb = v->arch.hvm.svm.vmcb;
+@@ -2570,7 +2552,6 @@ static struct hvm_function_table __initdata svm_function_table = {
+     .msr_read_intercept   = svm_msr_read_intercept,
+     .msr_write_intercept  = svm_msr_write_intercept,
+     .enable_msr_interception = svm_enable_msr_interception,
+-    .set_icebp_interception = svm_set_icebp_interception,
+     .set_rdtsc_exiting    = svm_set_rdtsc_exiting,
+     .set_descriptor_access_exiting = svm_set_descriptor_access_exiting,
+     .get_insn_bytes       = svm_get_insn_bytes,
+diff --git a/xen/arch/x86/hvm/svm/vmcb.c b/xen/arch/x86/hvm/svm/vmcb.c
+index 9d1c5bf6af..4541b639c3 100644
+--- a/xen/arch/x86/hvm/svm/vmcb.c
++++ b/xen/arch/x86/hvm/svm/vmcb.c
+@@ -73,7 +73,7 @@ static int construct_vmcb(struct vcpu *v)
+         GENERAL2_INTERCEPT_STGI        | GENERAL2_INTERCEPT_CLGI        |
+         GENERAL2_INTERCEPT_SKINIT      | GENERAL2_INTERCEPT_MWAIT       |
+         GENERAL2_INTERCEPT_WBINVD      | GENERAL2_INTERCEPT_MONITOR     |
+-        GENERAL2_INTERCEPT_XSETBV;
++        GENERAL2_INTERCEPT_XSETBV      | GENERAL2_INTERCEPT_ICEBP;
+ 
+     /* Intercept all debug-register writes. */
+     vmcb->_dr_intercepts = ~0u;
+diff --git a/xen/arch/x86/monitor.c b/xen/arch/x86/monitor.c
+index 3c42e21906..bbcb7536c7 100644
+--- a/xen/arch/x86/monitor.c
++++ b/xen/arch/x86/monitor.c
+@@ -301,9 +301,6 @@ int arch_monitor_domctl_event(struct domain *d,
+         ad->monitor.debug_exception_sync = requested_status ?
+                                             mop->u.debug_exception.sync :
+                                             0;
+-
+-        hvm_set_icebp_interception(d, requested_status);
+-
+         domain_unpause(d);
+         break;
+     }
+diff --git a/xen/include/asm-x86/hvm/hvm.h b/xen/include/asm-x86/hvm/hvm.h
+index ad9fd45014..0a4b258257 100644
+--- a/xen/include/asm-x86/hvm/hvm.h
++++ b/xen/include/asm-x86/hvm/hvm.h
+@@ -210,7 +210,6 @@ struct hvm_function_table {
+                                 bool_t access_w, bool_t access_x);
+ 
+     void (*enable_msr_interception)(struct domain *d, uint32_t msr);
+-    void (*set_icebp_interception)(struct domain *d, bool enable);
+     bool_t (*is_singlestep_supported)(void);
+ 
+     /* Alternate p2m */
+@@ -613,16 +612,6 @@ static inline bool_t hvm_enable_msr_interception(struct domain *d, uint32_t msr)
+     return 0;
+ }
+ 
+-static inline bool hvm_set_icebp_interception(struct domain *d, bool enable)
+-{
+-    if ( hvm_funcs.set_icebp_interception )
+-    {
+-        hvm_funcs.set_icebp_interception(d, enable);
+-        return true;
+-    }
+-    return false;
+-}
+-
+ static inline bool_t hvm_is_singlestep_supported(void)
+ {
+     return (hvm_funcs.is_singlestep_supported &&
+-- 
+2.30.2
+

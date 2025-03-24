@@ -1,0 +1,66 @@
+From 865eba02a1ec10972edbeb403b492e45e391f509 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 5 Mar 2021 15:32:24 +0100
+Subject: [PATCH] x86emul: fix SYSENTER/SYSCALL switching into 64-bit mode
+
+When invoked by compat mode, mode_64bit() will be false at the start of
+emulation. The logic after complete_insn, however, needs to consider the
+mode switched into, in particular to avoid truncating RIP.
+
+Inspired by / paralleling and extending Linux commit 943dea8af21b ("KVM:
+x86: Update emulator context mode if SYSENTER xfers to 64-bit mode").
+
+While there, tighten a related assertion in x86_emulate_wrapper() - we
+want to be sure to not switch into an impossible mode when the code gets
+built for 32-bit only (as is possible for the test harness).
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citirix.com>
+master commit: f3e1eb2f0234c955243a915d69ebd84f26eec130
+master date: 2021-02-11 17:53:10 +0100
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index 9b29548e2d..8ef66d824d 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -6124,6 +6124,10 @@ x86_emulate(
+              (rc = ops->write_segment(x86_seg_ss, &sreg, ctxt)) )
+             goto done;
+ 
++        if ( ctxt->lma )
++            /* In particular mode_64bit() needs to return true from here on. */
++            ctxt->addr_size = ctxt->sp_size = 64;
++
+         /*
+          * SYSCALL (unlike most instructions) evaluates its singlestep action
+          * based on the resulting EFLAGS.TF, not the starting EFLAGS.TF.
+@@ -6924,6 +6928,10 @@ x86_emulate(
+                                       ctxt)) != X86EMUL_OKAY )
+             goto done;
+ 
++        if ( ctxt->lma )
++            /* In particular mode_64bit() needs to return true from here on. */
++            ctxt->addr_size = ctxt->sp_size = 64;
++
+         singlestep = _regs.eflags & X86_EFLAGS_TF;
+         break;
+ 
+@@ -12096,8 +12104,12 @@ int x86_emulate_wrapper(
+     unsigned long orig_ip = ctxt->regs->r(ip);
+     int rc;
+ 
++#ifdef __x86_64__
+     if ( mode_64bit() )
+         ASSERT(ctxt->lma);
++#else
++    ASSERT(!ctxt->lma && !mode_64bit());
++#endif
+ 
+     rc = x86_emulate(ctxt, ops);
+ 
+-- 
+2.30.2
+

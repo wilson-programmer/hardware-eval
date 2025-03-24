@@ -1,0 +1,58 @@
+From b4913988be786a47b88ee044128fab71c345492d Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Marek=20Marczykowski-G=C3=B3recki?=
+ <marmarek@invisiblethingslab.com>
+Date: Tue, 23 May 2023 14:52:08 +0200
+Subject: [PATCH] x86/msi: clear initial MSI-X state on boot
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Some firmware/devices are found to not reset MSI-X properly, leaving
+MASKALL set. Jason reports on his machine MASKALL persists through a
+warm reboot, but is cleared on cold boot. Xen relies on initial state
+being MASKALL clear. Especially, pci_reset_msix_state() assumes if
+MASKALL is set, it was Xen setting it due to msix->host_maskall or
+msix->guest_maskall. Clearing just MASKALL is risky if ENABLE is set,
+so clear them both.
+
+Reported-by: Jason Andryuk <jandryuk@gmail.com>
+Signed-off-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Tested-by: Jason Andryuk <jandryuk@gmail.com>
+master commit: 913751d7af6e78d65c1e2adf4887193c827f0c5e
+master date: 2023-04-25 12:16:17 +0200
+---
+ xen/drivers/passthrough/msi.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/xen/drivers/passthrough/msi.c b/xen/drivers/passthrough/msi.c
+index ce1a450f6f..fb78e2ebe8 100644
+--- a/xen/drivers/passthrough/msi.c
++++ b/xen/drivers/passthrough/msi.c
+@@ -46,6 +46,23 @@ int pdev_msi_init(struct pci_dev *pdev)
+         spin_lock_init(&msix->table_lock);
+ 
+         ctrl = pci_conf_read16(pdev->sbdf, msix_control_reg(pos));
++
++        if ( ctrl & (PCI_MSIX_FLAGS_MASKALL | PCI_MSIX_FLAGS_ENABLE) )
++        {
++            /*
++             * pci_reset_msix_state() relies on MASKALL not being set
++             * initially, clear it (and ENABLE too - for safety), to meet that
++             * expectation.
++             */
++            printk(XENLOG_WARNING
++                   "%pp: unexpected initial MSI-X state (MASKALL=%d, ENABLE=%d), fixing\n",
++                   &pdev->sbdf,
++                   !!(ctrl & PCI_MSIX_FLAGS_MASKALL),
++                   !!(ctrl & PCI_MSIX_FLAGS_ENABLE));
++            ctrl &= ~(PCI_MSIX_FLAGS_ENABLE | PCI_MSIX_FLAGS_MASKALL);
++            pci_conf_write16(pdev->sbdf, msix_control_reg(pos), ctrl);
++        }
++
+         msix->nr_entries = msix_table_size(ctrl);
+ 
+         pdev->msix = msix;
+-- 
+2.30.2
+

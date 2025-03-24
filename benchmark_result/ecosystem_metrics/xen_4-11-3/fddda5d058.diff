@@ -1,0 +1,58 @@
+From fddda5d05834011cbfb03170f55140051f9f8e61 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 5 Jul 2019 10:30:27 +0200
+Subject: [PATCH] x86/irq: Fix undefined behaviour in
+ irq_move_cleanup_interrupt()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+UBSAN reports:
+
+  (XEN) ================================================================================
+  (XEN) UBSAN: Undefined behaviour in irq.c:682:22
+  (XEN) left shift of 1 by 31 places cannot be represented in type 'int'
+  (XEN) ----[ Xen-4.13-unstable  x86_64  debug=y   Not tainted ]----
+  (XEN) CPU:    16
+  (XEN) RIP:    e008:[<ffff82d0802a54ce>] ubsan.c#ubsan_epilogue+0xa/0xc2
+  <snip>
+  (XEN) Xen call trace:
+  (XEN)    [<ffff82d0802a54ce>] ubsan.c#ubsan_epilogue+0xa/0xc2
+  (XEN)    [<ffff82d0802a6009>] __ubsan_handle_shift_out_of_bounds+0x15d/0x16c
+  (XEN)    [<ffff82d08031ae77>] irq_move_cleanup_interrupt+0x25c/0x4a0
+  (XEN)    [<ffff82d08031b585>] do_IRQ+0x19d/0x104c
+  (XEN)    [<ffff82d08050c8ba>] common_interrupt+0x10a/0x120
+  (XEN)    [<ffff82d0803b13a6>] cpu_idle.c#acpi_idle_do_entry+0x1de/0x24b
+  (XEN)    [<ffff82d0803b1d83>] cpu_idle.c#acpi_processor_idle+0x5c8/0x94e
+  (XEN)    [<ffff82d0802fa8d6>] domain.c#idle_loop+0xee/0x101
+  (XEN)
+  (XEN) ================================================================================
+
+Switch to an unsigned shift, and correct the surrounding style.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 0bf4a2560dd24a7a1285727a900b52adcb4594fb
+master date: 2019-06-06 20:04:32 +0100
+---
+ xen/arch/x86/irq.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/irq.c b/xen/arch/x86/irq.c
+index 0071b009bb..3bb2f5132b 100644
+--- a/xen/arch/x86/irq.c
++++ b/xen/arch/x86/irq.c
+@@ -679,7 +679,8 @@ void irq_move_cleanup_interrupt(struct cpu_user_regs *regs)
+          * next attempt by sending another IRQ_MOVE_CLEANUP_VECTOR
+          * to myself.
+          */
+-        if (irr  & (1 << (vector % 32))) {
++        if ( irr & (1u << (vector % 32)) )
++        {
+             send_IPI_self(IRQ_MOVE_CLEANUP_VECTOR);
+             TRACE_3D(TRC_HW_IRQ_MOVE_CLEANUP_DELAY,
+                      irq, vector, smp_processor_id());
+-- 
+2.30.2
+

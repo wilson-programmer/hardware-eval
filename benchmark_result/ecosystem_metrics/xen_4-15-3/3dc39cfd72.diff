@@ -1,0 +1,47 @@
+From 3dc39cfd725c6cea989a7952b478aa675cf880f0 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Wed, 6 Apr 2022 10:21:44 +0200
+Subject: [PATCH] tools/libs/light: set video_mem for PVH guests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The size of the video memory of PVH guests should be set to 0 in case
+no value has been specified.
+
+Doing not so will leave it to be -1, resulting in an additional 1 kB
+of RAM being advertised in the memory map (here the output of a PVH
+Mini-OS boot with 16 MB of RAM assigned):
+
+Memory map:
+000000000000-0000010003ff: RAM
+0000feff8000-0000feffffff: Reserved
+0000fc008000-0000fc00803f: ACPI
+0000fc000000-0000fc000fff: ACPI
+0000fc001000-0000fc007fff: ACPI
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: 0a20a53df158eb0724ce6dcd9de70cbdad547d6f
+master date: 2021-12-09 16:26:29 +0000
+---
+ tools/libs/light/libxl_create.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tools/libs/light/libxl_create.c b/tools/libs/light/libxl_create.c
+index 93b5093920..f3878cecc1 100644
+--- a/tools/libs/light/libxl_create.c
++++ b/tools/libs/light/libxl_create.c
+@@ -426,6 +426,8 @@ int libxl__domain_build_info_setdefault(libxl__gc *gc,
+         break;
+     case LIBXL_DOMAIN_TYPE_PVH:
+         libxl_defbool_setdefault(&b_info->u.pvh.pvshim, false);
++        if (b_info->video_memkb == LIBXL_MEMKB_DEFAULT)
++            b_info->video_memkb = 0;
+         if (libxl_defbool_val(b_info->u.pvh.pvshim)) {
+             if (!b_info->u.pvh.pvshim_path)
+                 b_info->u.pvh.pvshim_path =
+-- 
+2.30.2
+

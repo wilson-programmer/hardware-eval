@@ -1,0 +1,40 @@
+From d705cba5ae917aece3921f38df1bc0a579267d12 Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Wed, 23 Sep 2020 09:28:32 +0100
+Subject: [PATCH] SUPPORT.MD: Clarify the support state for the Arm SMMUv{1, 2}
+ drivers
+
+SMMUv{1, 2} are both marked as security supported, so we would
+technically have to issue an XSA for any IOMMU security bug.
+
+However, at the moment, device passthrough is not security supported
+on Arm and there is no plan to change that in the next few months.
+
+Therefore, mark Arm SMMUv{1, 2} as supported but not security supported.
+
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 28804c0ce9fde36feec04ad7f57b2683875da8a0)
+---
+ SUPPORT.md | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/SUPPORT.md b/SUPPORT.md
+index 3e2c8be75e..3b7a1a0a1a 100644
+--- a/SUPPORT.md
++++ b/SUPPORT.md
+@@ -62,8 +62,8 @@ supported in this document.
+ 
+     Status, AMD IOMMU: Supported
+     Status, Intel VT-d: Supported
+-    Status, ARM SMMUv1: Supported
+-    Status, ARM SMMUv2: Supported
++    Status, ARM SMMUv1: Supported, not security supported
++    Status, ARM SMMUv2: Supported, not security supported
+     Status, Renesas IPMMU-VMSA: Tech Preview
+ 
+ ### ARM/GICv3 ITS
+-- 
+2.30.2
+

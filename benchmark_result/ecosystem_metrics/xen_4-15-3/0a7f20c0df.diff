@@ -1,0 +1,54 @@
+From 0a7f20c0df7e8ad656396c6c038c7281bbbb0890 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Tue, 7 Jun 2022 14:20:45 +0200
+Subject: [PATCH] linker/lld: do not generate quoted section names
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+LLVM LD doesn't strip the quotes from the section names, and so the
+resulting binary ends up with section names like:
+
+  [ 1] ".text"           PROGBITS         ffff82d040200000  00008000
+       000000000018cbc1  0000000000000000  AX       0     0     4096
+
+This confuses some tools (like gdb) and prevents proper parsing of the
+binary.
+
+The issue has already been reported and is being fixed in LLD.  In
+order to workaround this issue and keep the GNU ld support define
+different DECL_SECTION macros depending on the used ld
+implementation.
+
+Drop the quotes from the definitions of the debug sections in
+DECL_DEBUG{2}, as those quotes are not required for GNU ld either.
+
+Fixes: 6254920587c3 ('x86: quote section names when defining them in linker script')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 702c9a800eb3ecd4b8595998d37a769d470c5bb0
+master date: 2022-05-02 08:51:45 +0200
+---
+ xen/arch/x86/xen.lds.S | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/xen.lds.S b/xen/arch/x86/xen.lds.S
+index 7c9758c8cc..6759a6f3eb 100644
+--- a/xen/arch/x86/xen.lds.S
++++ b/xen/arch/x86/xen.lds.S
+@@ -18,7 +18,11 @@ ENTRY(efi_start)
+ #else /* !EFI */
+ 
+ #define FORMAT "elf64-x86-64"
+-#define DECL_SECTION(x) #x : AT(ADDR(#x) - __XEN_VIRT_START)
++#ifdef CONFIG_LD_IS_GNU
++# define DECL_SECTION(x) x : AT(ADDR(#x) - __XEN_VIRT_START)
++#else
++# define DECL_SECTION(x) x : AT(ADDR(x) - __XEN_VIRT_START)
++#endif
+ 
+ ENTRY(start_pa)
+ 
+-- 
+2.30.2
+

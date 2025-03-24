@@ -1,0 +1,60 @@
+From f21d28750627c9bba3e0032251d29ddefd9ac491 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 7 Apr 2022 09:07:18 +0200
+Subject: [PATCH] tools/libxl: don't allow IOMMU usage with PoD
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Prevent libxl from creating guests that attempts to use PoD together
+with an IOMMU, even if no devices are actually assigned.
+
+While the hypervisor could support using PoD together with an IOMMU as
+long as no devices are assigned, such usage seems doubtful. There's no
+guarantee the guest has PoD no longer be active, and thus a later
+assignment of a PCI device to such domain could fail.
+
+Preventing the usage of PoD together with an IOMMU at guest creation
+avoids having to add checks for active PoD entries in the device
+assignment paths.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: 07449ecfa42532495156fa342af2112e3e31dd3f
+master date: 2022-02-18 09:03:08 +0100
+---
+ tools/libxl/libxl_create.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/tools/libxl/libxl_create.c b/tools/libxl/libxl_create.c
+index 76299dd43d..5cadb95a3f 100644
+--- a/tools/libxl/libxl_create.c
++++ b/tools/libxl/libxl_create.c
+@@ -1132,17 +1132,17 @@ int libxl__domain_config_setdefault(libxl__gc *gc,
+     pod_enabled = (d_config->c_info.type != LIBXL_DOMAIN_TYPE_PV) &&
+         (d_config->b_info.target_memkb < d_config->b_info.max_memkb);
+ 
+-    /* We cannot have PoD and PCI device assignment at the same time
+-     * for HVM guest. It was reported that IOMMU cannot work with PoD
+-     * enabled because it needs to populated entire page table for
+-     * guest. To stay on the safe side, we disable PCI device
+-     * assignment when PoD is enabled.
++    /* We don't support having PoD and an IOMMU at the same time for HVM
++     * guests. An active IOMMU cannot work with PoD because it needs a fully
++     * populated page-table. Prevent PoD usage if the domain has an IOMMU
++     * assigned, even if not active.
+      */
+     if (d_config->c_info.type != LIBXL_DOMAIN_TYPE_PV &&
+-        d_config->num_pcidevs && pod_enabled) {
++        d_config->c_info.passthrough != LIBXL_PASSTHROUGH_DISABLED &&
++        pod_enabled) {
+         ret = ERROR_INVAL;
+         LOGD(ERROR, domid,
+-             "PCI device assignment for HVM guest failed due to PoD enabled");
++             "IOMMU required for device passthrough but not supported together with PoD");
+         goto error_out;
+     }
+ 
+-- 
+2.30.2
+

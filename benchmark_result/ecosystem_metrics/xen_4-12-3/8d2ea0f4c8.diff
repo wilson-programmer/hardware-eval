@@ -1,0 +1,248 @@
+From 8d2ea0f4c830a3a6a7e7a19aa4f7d8a9fd854521 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 27 Apr 2020 15:55:51 +0200
+Subject: [PATCH] x86/HVM: expose VM assist hypercall
+
+In preparation for the addition of VMASST_TYPE_runstate_update_flag
+commit 72c538cca957 ("arm: add support for vm_assist hypercall") enabled
+the hypercall for Arm. I consider it not logical that it then isn't also
+exposed to x86 HVM guests (with the same single feature permitted to be
+enabled as Arm has); Linux actually tries to use it afaict.
+
+Rather than introducing yet another thin wrapper around vm_assist(),
+make that function the main handler, requiring a per-arch
+arch_vm_assist_valid_mask() definition instead.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+master commit: f13404d57f55a97838f1c16a366fbc3231ec21f1
+master date: 2020-04-22 12:58:25 +0200
+---
+ xen/arch/x86/domain.c        |  3 +++
+ xen/arch/x86/hvm/hypercall.c |  1 +
+ xen/arch/x86/pv/hypercall.c  |  2 +-
+ xen/common/compat/kernel.c   |  5 -----
+ xen/common/domain.c          | 13 ++++++++-----
+ xen/common/kernel.c          |  7 -------
+ xen/include/asm-arm/config.h |  2 --
+ xen/include/asm-arm/domain.h |  2 ++
+ xen/include/asm-x86/config.h | 11 -----------
+ xen/include/asm-x86/domain.h | 19 +++++++++++++++++++
+ xen/include/xen/hypercall.h  |  2 --
+ xen/include/xen/lib.h        |  2 --
+ 12 files changed, 34 insertions(+), 35 deletions(-)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index 019fc8ce02..745da387f6 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -875,6 +875,9 @@ int arch_set_info_guest(
+         v->arch.dr6 = c(debugreg[6]);
+         v->arch.dr7 = c(debugreg[7]);
+ 
++        if ( v->vcpu_id == 0 )
++            d->vm_assist = c.nat->vm_assist;
++
+         hvm_set_info_guest(v);
+         goto out;
+     }
+diff --git a/xen/arch/x86/hvm/hypercall.c b/xen/arch/x86/hvm/hypercall.c
+index 5bb1750595..7fcfc92b39 100644
+--- a/xen/arch/x86/hvm/hypercall.c
++++ b/xen/arch/x86/hvm/hypercall.c
+@@ -120,6 +120,7 @@ static long hvm_physdev_op(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+ static const hypercall_table_t hvm_hypercall_table[] = {
+     HVM_CALL(memory_op),
+     HVM_CALL(grant_table_op),
++    HYPERCALL(vm_assist),
+     COMPAT_CALL(vcpu_op),
+     HVM_CALL(physdev_op),
+     COMPAT_CALL(xen_version),
+diff --git a/xen/arch/x86/pv/hypercall.c b/xen/arch/x86/pv/hypercall.c
+index f452dd5c04..8bcd43dda3 100644
+--- a/xen/arch/x86/pv/hypercall.c
++++ b/xen/arch/x86/pv/hypercall.c
+@@ -54,7 +54,7 @@ const hypercall_table_t pv_hypercall_table[] = {
+     HYPERCALL(console_io),
+     COMPAT_CALL(physdev_op_compat),
+     COMPAT_CALL(grant_table_op),
+-    COMPAT_CALL(vm_assist),
++    HYPERCALL(vm_assist),
+     COMPAT_CALL(update_va_mapping_otherdomain),
+     COMPAT_CALL(iret),
+     COMPAT_CALL(vcpu_op),
+diff --git a/xen/common/compat/kernel.c b/xen/common/compat/kernel.c
+index 64232669d2..78ff6f9e77 100644
+--- a/xen/common/compat/kernel.c
++++ b/xen/common/compat/kernel.c
+@@ -37,11 +37,6 @@ CHECK_TYPE(capabilities_info);
+ 
+ CHECK_TYPE(domain_handle);
+ 
+-#ifdef COMPAT_VM_ASSIST_VALID
+-#undef VM_ASSIST_VALID
+-#define VM_ASSIST_VALID COMPAT_VM_ASSIST_VALID
+-#endif
+-
+ #define DO(fn) int compat_##fn
+ #define COMPAT
+ 
+diff --git a/xen/common/domain.c b/xen/common/domain.c
+index 111a6680b7..7f8fc43cbe 100644
+--- a/xen/common/domain.c
++++ b/xen/common/domain.c
+@@ -1556,20 +1556,23 @@ long do_vcpu_op(int cmd, unsigned int vcpuid, XEN_GUEST_HANDLE_PARAM(void) arg)
+     return rc;
+ }
+ 
+-#ifdef VM_ASSIST_VALID
+-long vm_assist(struct domain *p, unsigned int cmd, unsigned int type,
+-               unsigned long valid)
++#ifdef arch_vm_assist_valid_mask
++long do_vm_assist(unsigned int cmd, unsigned int type)
+ {
++    struct domain *currd = current->domain;
++    const unsigned long valid = arch_vm_assist_valid_mask(currd);
++
+     if ( type >= BITS_PER_LONG || !test_bit(type, &valid) )
+         return -EINVAL;
+ 
+     switch ( cmd )
+     {
+     case VMASST_CMD_enable:
+-        set_bit(type, &p->vm_assist);
++        set_bit(type, &currd->vm_assist);
+         return 0;
++
+     case VMASST_CMD_disable:
+-        clear_bit(type, &p->vm_assist);
++        clear_bit(type, &currd->vm_assist);
+         return 0;
+     }
+ 
+diff --git a/xen/common/kernel.c b/xen/common/kernel.c
+index 612575430f..9cf8c0467a 100644
+--- a/xen/common/kernel.c
++++ b/xen/common/kernel.c
+@@ -570,13 +570,6 @@ DO(xen_version)(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+     return -ENOSYS;
+ }
+ 
+-#ifdef VM_ASSIST_VALID
+-DO(vm_assist)(unsigned int cmd, unsigned int type)
+-{
+-    return vm_assist(current->domain, cmd, type, VM_ASSIST_VALID);
+-}
+-#endif
+-
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/xen/include/asm-arm/config.h b/xen/include/asm-arm/config.h
+index bc89e84f4d..fbb4b23a69 100644
+--- a/xen/include/asm-arm/config.h
++++ b/xen/include/asm-arm/config.h
+@@ -195,8 +195,6 @@ extern unsigned long frametable_virt_end;
+ #define watchdog_disable() ((void)0)
+ #define watchdog_enable()  ((void)0)
+ 
+-#define VM_ASSIST_VALID          (1UL << VMASST_TYPE_runstate_update_flag)
+-
+ #endif /* __ARM_CONFIG_H__ */
+ /*
+  * Local variables:
+diff --git a/xen/include/asm-arm/domain.h b/xen/include/asm-arm/domain.h
+index 5b49509e80..927f859cbc 100644
+--- a/xen/include/asm-arm/domain.h
++++ b/xen/include/asm-arm/domain.h
+@@ -265,6 +265,8 @@ static inline void free_vcpu_guest_context(struct vcpu_guest_context *vgc)
+ 
+ static inline void arch_vcpu_block(struct vcpu *v) {}
+ 
++#define arch_vm_assist_valid_mask(d) (1UL << VMASST_TYPE_runstate_update_flag)
++
+ #endif /* __ASM_DOMAIN_H__ */
+ 
+ /*
+diff --git a/xen/include/asm-x86/config.h b/xen/include/asm-x86/config.h
+index 9ef9d03ca7..feeb456bee 100644
+--- a/xen/include/asm-x86/config.h
++++ b/xen/include/asm-x86/config.h
+@@ -310,17 +310,6 @@ extern unsigned long xen_phys_start;
+ #define ARG_XLAT_START(v)        \
+     (ARG_XLAT_VIRT_START + ((v)->vcpu_id << ARG_XLAT_VA_SHIFT))
+ 
+-#define NATIVE_VM_ASSIST_VALID   ((1UL << VMASST_TYPE_4gb_segments)        | \
+-                                  (1UL << VMASST_TYPE_4gb_segments_notify) | \
+-                                  (1UL << VMASST_TYPE_writable_pagetables) | \
+-                                  (1UL << VMASST_TYPE_pae_extended_cr3)    | \
+-                                  (1UL << VMASST_TYPE_architectural_iopl)  | \
+-                                  (1UL << VMASST_TYPE_runstate_update_flag)| \
+-                                  (1UL << VMASST_TYPE_m2p_strict))
+-#define VM_ASSIST_VALID          NATIVE_VM_ASSIST_VALID
+-#define COMPAT_VM_ASSIST_VALID   (NATIVE_VM_ASSIST_VALID & \
+-                                  ((1UL << COMPAT_BITS_PER_LONG) - 1))
+-
+ #define ELFSIZE 64
+ 
+ #define ARCH_CRASH_SAVE_VMCOREINFO
+diff --git a/xen/include/asm-x86/domain.h b/xen/include/asm-x86/domain.h
+index 2cfce7b36b..86d6e2b226 100644
+--- a/xen/include/asm-x86/domain.h
++++ b/xen/include/asm-x86/domain.h
+@@ -703,6 +703,25 @@ static inline void pv_inject_sw_interrupt(unsigned int vector)
+     pv_inject_event(&event);
+ }
+ 
++#define PV32_VM_ASSIST_MASK ((1UL << VMASST_TYPE_4gb_segments)        | \
++                             (1UL << VMASST_TYPE_4gb_segments_notify) | \
++                             (1UL << VMASST_TYPE_writable_pagetables) | \
++                             (1UL << VMASST_TYPE_pae_extended_cr3)    | \
++                             (1UL << VMASST_TYPE_architectural_iopl)  | \
++                             (1UL << VMASST_TYPE_runstate_update_flag))
++/*
++ * Various of what PV32_VM_ASSIST_MASK has isn't really applicable to 64-bit,
++ * but we can't make such requests fail all of the sudden.
++ */
++#define PV64_VM_ASSIST_MASK (PV32_VM_ASSIST_MASK                      | \
++                             (1UL << VMASST_TYPE_m2p_strict))
++#define HVM_VM_ASSIST_MASK  (1UL << VMASST_TYPE_runstate_update_flag)
++
++#define arch_vm_assist_valid_mask(d) \
++    (is_hvm_domain(d) ? HVM_VM_ASSIST_MASK \
++                      : is_pv_32bit_domain(d) ? PV32_VM_ASSIST_MASK \
++                                              : PV64_VM_ASSIST_MASK)
++
+ #endif /* __ASM_DOMAIN_H__ */
+ 
+ /*
+diff --git a/xen/include/xen/hypercall.h b/xen/include/xen/hypercall.h
+index 6154c48cb8..5fb29eb003 100644
+--- a/xen/include/xen/hypercall.h
++++ b/xen/include/xen/hypercall.h
+@@ -199,8 +199,6 @@ extern int compat_xsm_op(
+ 
+ extern int compat_kexec_op(unsigned long op, XEN_GUEST_HANDLE_PARAM(void) uarg);
+ 
+-extern int compat_vm_assist(unsigned int cmd, unsigned int type);
+-
+ DEFINE_XEN_GUEST_HANDLE(multicall_entry_compat_t);
+ extern int compat_multicall(
+     XEN_GUEST_HANDLE_PARAM(multicall_entry_compat_t) call_list,
+diff --git a/xen/include/xen/lib.h b/xen/include/xen/lib.h
+index 6529f12dae..11bf8407a2 100644
+--- a/xen/include/xen/lib.h
++++ b/xen/include/xen/lib.h
+@@ -106,8 +106,6 @@ extern void guest_printk(const struct domain *d, const char *format, ...)
+     __attribute__ ((format (printf, 2, 3)));
+ extern void noreturn panic(const char *format, ...)
+     __attribute__ ((format (printf, 1, 2)));
+-extern long vm_assist(struct domain *, unsigned int cmd, unsigned int type,
+-                      unsigned long valid);
+ extern int __printk_ratelimit(int ratelimit_ms, int ratelimit_burst);
+ extern int printk_ratelimit(void);
+ 
+-- 
+2.30.2
+

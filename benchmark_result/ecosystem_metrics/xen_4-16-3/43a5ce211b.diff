@@ -1,0 +1,32 @@
+From 43a5ce211ba55a34579519066c1be939549db319 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 28 Nov 2022 11:45:21 +0100
+Subject: [PATCH] x86/spec-ctrl: Fill in whitepaper URL
+
+... now that we a link available.
+
+Fixes: 9deaf2d932f0 ("x86/spec-ctrl: Enable Zen2 chickenbit")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 764146ed8a7a44034c3efe658333993ca250d69a
+master date: 2022-11-16 12:54:08 +0000
+---
+ xen/arch/x86/cpu/amd.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/cpu/amd.c b/xen/arch/x86/cpu/amd.c
+index 9635eee619..08e3e1e8a2 100644
+--- a/xen/arch/x86/cpu/amd.c
++++ b/xen/arch/x86/cpu/amd.c
+@@ -735,7 +735,7 @@ void amd_init_ssbd(const struct cpuinfo_x86 *c)
+  * On Zen2 we offer this chicken (bit) on the altar of Speculation.
+  *
+  * Refer to the AMD Branch Type Confusion whitepaper:
+- * https://XXX
++ * https://www.amd.com/system/files/documents/technical-guidance-for-mitigating-branch-type-confusion.pdf
+  *
+  * Setting this unnamed bit supposedly causes prediction information on
+  * non-branch instructions to be ignored.  It is to be set unilaterally in
+-- 
+2.30.2
+

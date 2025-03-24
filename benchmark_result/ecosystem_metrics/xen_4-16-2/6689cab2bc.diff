@@ -1,0 +1,107 @@
+From 6689cab2bcc066f063abe6ded0043f1eeb211207 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 3 Aug 2022 12:38:36 +0200
+Subject: [PATCH] tools/libxl: env variable to signal whether disk/nic backend
+ is trusted
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Introduce support in libxl for fetching the default backend trusted
+option for disk and nic devices.
+
+Users can set LIBXL_{DISK,NIC}_BACKEND_UNTRUSTED environment variable
+to notify libxl of whether the backends for disk and nic devices
+should be trusted.  Such information is passed into the frontend so it
+can take the appropriate measures.
+
+This is part of XSA-403.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+---
+ docs/man/xl.1.pod.in          | 18 ++++++++++++++++++
+ tools/libs/light/libxl_disk.c |  5 +++++
+ tools/libs/light/libxl_nic.c  |  7 +++++++
+ 3 files changed, 30 insertions(+)
+
+diff --git a/docs/man/xl.1.pod.in b/docs/man/xl.1.pod.in
+index e2176bd696..45e1430aeb 100644
+--- a/docs/man/xl.1.pod.in
++++ b/docs/man/xl.1.pod.in
+@@ -1946,6 +1946,24 @@ shows the decimal value. For non-linear mode, it shows hexadecimal value.
+ 
+ =back
+ 
++=head1 ENVIRONMENT
++
++=over 4
++
++=item B<LIBXL_DISK_BACKEND_UNTRUSTED>
++
++Set this environment variable to "1" to suggest to the guest that the disk
++backend shouldn't be trusted. If the variable is absent or set to "0", the
++backend will be trusted.
++
++=item B<LIBXL_NIC_BACKEND_UNTRUSTED>
++
++Set this environment variable to "1" to suggest to the guest that the network
++backend shouldn't be trusted. If the variable is absent or set to "0", the
++backend will be trusted.
++
++=back
++
+ =head1 IGNORED FOR COMPATIBILITY WITH XM
+ 
+ xl is mostly command-line compatible with the old xm utility used with
+diff --git a/tools/libs/light/libxl_disk.c b/tools/libs/light/libxl_disk.c
+index 93936d0dd0..67d1cc1857 100644
+--- a/tools/libs/light/libxl_disk.c
++++ b/tools/libs/light/libxl_disk.c
+@@ -246,6 +246,7 @@ static void device_disk_add(libxl__egc *egc, uint32_t domid,
+     libxl_domain_config d_config;
+     libxl_device_disk disk_saved;
+     libxl__flock *lock = NULL;
++    const char *envvar;
+ 
+     libxl_domain_config_init(&d_config);
+     libxl_device_disk_init(&disk_saved);
+@@ -395,6 +396,10 @@ static void device_disk_add(libxl__egc *egc, uint32_t domid,
+         flexarray_append(front, GCSPRINTF("%d", device->devid));
+         flexarray_append(front, "device-type");
+         flexarray_append(front, disk->is_cdrom ? "cdrom" : "disk");
++        flexarray_append(front, "trusted");
++        envvar = getenv("LIBXL_DISK_BACKEND_UNTRUSTED");
++        /* Set "trusted=1" if envvar missing or is "0". */
++        flexarray_append(front, !envvar || !strcmp("0", envvar) ? "1" : "0");
+ 
+         /*
+          * Old PV kernel disk frontends before 2.6.26 rely on tool stack to
+diff --git a/tools/libs/light/libxl_nic.c b/tools/libs/light/libxl_nic.c
+index 0b9e70c9d1..f87890d1d6 100644
+--- a/tools/libs/light/libxl_nic.c
++++ b/tools/libs/light/libxl_nic.c
+@@ -132,6 +132,8 @@ static int libxl__set_xenstore_nic(libxl__gc *gc, uint32_t domid,
+                                    flexarray_t *back, flexarray_t *front,
+                                    flexarray_t *ro_front)
+ {
++    const char *envvar;
++
+     flexarray_grow(back, 2);
+ 
+     if (nic->script)
+@@ -255,6 +257,11 @@ static int libxl__set_xenstore_nic(libxl__gc *gc, uint32_t domid,
+     flexarray_append(back, "hotplug-status");
+     flexarray_append(back, "");
+ 
++    flexarray_append(front, "trusted");
++    envvar = getenv("LIBXL_NIC_BACKEND_UNTRUSTED");
++    /* Set "trusted=1" if envvar missing or is "0". */
++    flexarray_append(front, !envvar || !strcmp("0", envvar) ? "1" : "0");
++
+     return 0;
+ }
+ 
+-- 
+2.30.2
+

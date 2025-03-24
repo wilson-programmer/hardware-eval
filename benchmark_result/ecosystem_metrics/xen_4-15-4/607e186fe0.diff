@@ -1,0 +1,716 @@
+From 607e186fe094f8d1c78572cd3b1f7a43730203c1 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 13 Sep 2022 07:35:10 +0200
+Subject: [PATCH] tools/xenstore: don't use conn->in as context for temporary
+ allocations
+
+Using the struct buffered data pointer of the current processed request
+for temporary data allocations has a major drawback: the used area (and
+with that the temporary data) is freed only after the response of the
+request has been written to the ring page or has been read via the
+socket. This can happen much later in case a guest isn't reading its
+responses fast enough.
+
+As the temporary data can be safely freed after creating the response,
+add a temporary context for that purpose and use that for allocating
+the temporary memory, as it was already the case before commit
+cc0612464896 ("xenstore: add small default data buffer to internal
+struct").
+
+Some sub-functions need to gain the "const" attribute for the talloc
+context.
+
+This is XSA-416 / CVE-2022-42319.
+
+Fixes: cc0612464896 ("xenstore: add small default data buffer to internal struct")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 2a587de219cc0765330fbf9fac6827bfaf29e29b)
+---
+ tools/xenstore/xenstored_control.c     | 31 ++++++-----
+ tools/xenstore/xenstored_control.h     |  3 +-
+ tools/xenstore/xenstored_core.c        | 76 ++++++++++++++++----------
+ tools/xenstore/xenstored_domain.c      | 29 ++++++----
+ tools/xenstore/xenstored_domain.h      | 21 ++++---
+ tools/xenstore/xenstored_transaction.c | 14 +++--
+ tools/xenstore/xenstored_transaction.h |  6 +-
+ tools/xenstore/xenstored_watch.c       |  9 +--
+ tools/xenstore/xenstored_watch.h       |  6 +-
+ 9 files changed, 118 insertions(+), 77 deletions(-)
+
+diff --git a/tools/xenstore/xenstored_control.c b/tools/xenstore/xenstored_control.c
+index 980279fa53..95a60bf578 100644
+--- a/tools/xenstore/xenstored_control.c
++++ b/tools/xenstore/xenstored_control.c
+@@ -107,7 +107,7 @@ static const char *lu_begin(struct connection *conn)
+ 
+ struct cmd_s {
+ 	char *cmd;
+-	int (*func)(void *, struct connection *, char **, int);
++	int (*func)(const void *, struct connection *, char **, int);
+ 	char *pars;
+ 	/*
+ 	 * max_pars can be used to limit the size of the parameter vector,
+@@ -119,7 +119,7 @@ struct cmd_s {
+ 	unsigned int max_pars;
+ };
+ 
+-static int do_control_check(void *ctx, struct connection *conn,
++static int do_control_check(const void *ctx, struct connection *conn,
+ 			    char **vec, int num)
+ {
+ 	if (num)
+@@ -131,7 +131,7 @@ static int do_control_check(void *ctx, struct connection *conn,
+ 	return 0;
+ }
+ 
+-static int do_control_log(void *ctx, struct connection *conn,
++static int do_control_log(const void *ctx, struct connection *conn,
+ 			  char **vec, int num)
+ {
+ 	if (num != 1)
+@@ -233,7 +233,7 @@ static int quota_get(const void *ctx, struct connection *conn,
+ 	return domain_get_quota(ctx, conn, atoi(vec[0]));
+ }
+ 
+-static int do_control_quota(void *ctx, struct connection *conn,
++static int do_control_quota(const void *ctx, struct connection *conn,
+ 			    char **vec, int num)
+ {
+ 	if (num == 0)
+@@ -245,7 +245,7 @@ static int do_control_quota(void *ctx, struct connection *conn,
+ 	return quota_get(ctx, conn, vec, num);
+ }
+ 
+-static int do_control_quota_s(void *ctx, struct connection *conn,
++static int do_control_quota_s(const void *ctx, struct connection *conn,
+ 			      char **vec, int num)
+ {
+ 	if (num == 0)
+@@ -258,7 +258,7 @@ static int do_control_quota_s(void *ctx, struct connection *conn,
+ }
+ 
+ #ifdef __MINIOS__
+-static int do_control_memreport(void *ctx, struct connection *conn,
++static int do_control_memreport(const void *ctx, struct connection *conn,
+ 				char **vec, int num)
+ {
+ 	if (num)
+@@ -270,7 +270,7 @@ static int do_control_memreport(void *ctx, struct connection *conn,
+ 	return 0;
+ }
+ #else
+-static int do_control_logfile(void *ctx, struct connection *conn,
++static int do_control_logfile(const void *ctx, struct connection *conn,
+ 			      char **vec, int num)
+ {
+ 	if (num != 1)
+@@ -285,7 +285,7 @@ static int do_control_logfile(void *ctx, struct connection *conn,
+ 	return 0;
+ }
+ 
+-static int do_control_memreport(void *ctx, struct connection *conn,
++static int do_control_memreport(const void *ctx, struct connection *conn,
+ 				char **vec, int num)
+ {
+ 	FILE *fp;
+@@ -325,7 +325,7 @@ static int do_control_memreport(void *ctx, struct connection *conn,
+ }
+ #endif
+ 
+-static int do_control_print(void *ctx, struct connection *conn,
++static int do_control_print(const void *ctx, struct connection *conn,
+ 			    char **vec, int num)
+ {
+ 	if (num != 1)
+@@ -802,7 +802,7 @@ static const char *lu_start(const void *ctx, struct connection *conn,
+ 	return NULL;
+ }
+ 
+-static int do_control_lu(void *ctx, struct connection *conn,
++static int do_control_lu(const void *ctx, struct connection *conn,
+ 			 char **vec, int num)
+ {
+ 	const char *ret = NULL;
+@@ -852,7 +852,7 @@ static int do_control_lu(void *ctx, struct connection *conn,
+ }
+ #endif
+ 
+-static int do_control_help(void *, struct connection *, char **, int);
++static int do_control_help(const void *, struct connection *, char **, int);
+ 
+ static struct cmd_s cmds[] = {
+ 	{ "check", do_control_check, "" },
+@@ -891,7 +891,7 @@ static struct cmd_s cmds[] = {
+ 	{ "help", do_control_help, "" },
+ };
+ 
+-static int do_control_help(void *ctx, struct connection *conn,
++static int do_control_help(const void *ctx, struct connection *conn,
+ 			   char **vec, int num)
+ {
+ 	int cmd, len = 0;
+@@ -927,7 +927,8 @@ static int do_control_help(void *ctx, struct connection *conn,
+ 	return 0;
+ }
+ 
+-int do_control(struct connection *conn, struct buffered_data *in)
++int do_control(const void *ctx, struct connection *conn,
++	       struct buffered_data *in)
+ {
+ 	unsigned int cmd, num, off;
+ 	char **vec = NULL;
+@@ -947,11 +948,11 @@ int do_control(struct connection *conn, struct buffered_data *in)
+ 	num = xs_count_strings(in->buffer, in->used);
+ 	if (cmds[cmd].max_pars)
+ 		num = min(num, cmds[cmd].max_pars);
+-	vec = talloc_array(in, char *, num);
++	vec = talloc_array(ctx, char *, num);
+ 	if (!vec)
+ 		return ENOMEM;
+ 	if (get_strings(in, vec, num) < num)
+ 		return EIO;
+ 
+-	return cmds[cmd].func(in, conn, vec + 1, num - 1);
++	return cmds[cmd].func(ctx, conn, vec + 1, num - 1);
+ }
+diff --git a/tools/xenstore/xenstored_control.h b/tools/xenstore/xenstored_control.h
+index aac61f0590..6430c37693 100644
+--- a/tools/xenstore/xenstored_control.h
++++ b/tools/xenstore/xenstored_control.h
+@@ -16,5 +16,6 @@
+     along with this program; If not, see <http://www.gnu.org/licenses/>.
+ */
+ 
+-int do_control(struct connection *conn, struct buffered_data *in);
++int do_control(const void *ctx, struct connection *conn,
++	       struct buffered_data *in);
+ void lu_read_state(void);
+diff --git a/tools/xenstore/xenstored_core.c b/tools/xenstore/xenstored_core.c
+index f27d5c0101..806f24bbab 100644
+--- a/tools/xenstore/xenstored_core.c
++++ b/tools/xenstore/xenstored_core.c
+@@ -1214,11 +1214,13 @@ static struct node *get_node_canonicalized(struct connection *conn,
+ 	return get_node(conn, ctx, *canonical_name, perm);
+ }
+ 
+-static int send_directory(struct connection *conn, struct buffered_data *in)
++static int send_directory(const void *ctx, struct connection *conn,
++			  struct buffered_data *in)
+ {
+ 	struct node *node;
+ 
+-	node = get_node_canonicalized(conn, in, onearg(in), NULL, XS_PERM_READ);
++	node = get_node_canonicalized(conn, ctx, onearg(in), NULL,
++				      XS_PERM_READ);
+ 	if (!node)
+ 		return errno;
+ 
+@@ -1227,7 +1229,7 @@ static int send_directory(struct connection *conn, struct buffered_data *in)
+ 	return 0;
+ }
+ 
+-static int send_directory_part(struct connection *conn,
++static int send_directory_part(const void *ctx, struct connection *conn,
+ 			       struct buffered_data *in)
+ {
+ 	unsigned int off, len, maxlen, genlen;
+@@ -1239,7 +1241,8 @@ static int send_directory_part(struct connection *conn,
+ 		return EINVAL;
+ 
+ 	/* First arg is node name. */
+-	node = get_node_canonicalized(conn, in, in->buffer, NULL, XS_PERM_READ);
++	node = get_node_canonicalized(conn, ctx, in->buffer, NULL,
++				      XS_PERM_READ);
+ 	if (!node)
+ 		return errno;
+ 
+@@ -1266,7 +1269,7 @@ static int send_directory_part(struct connection *conn,
+ 			break;
+ 	}
+ 
+-	data = talloc_array(in, char, genlen + len + 1);
++	data = talloc_array(ctx, char, genlen + len + 1);
+ 	if (!data)
+ 		return ENOMEM;
+ 
+@@ -1282,11 +1285,13 @@ static int send_directory_part(struct connection *conn,
+ 	return 0;
+ }
+ 
+-static int do_read(struct connection *conn, struct buffered_data *in)
++static int do_read(const void *ctx, struct connection *conn,
++		   struct buffered_data *in)
+ {
+ 	struct node *node;
+ 
+-	node = get_node_canonicalized(conn, in, onearg(in), NULL, XS_PERM_READ);
++	node = get_node_canonicalized(conn, ctx, onearg(in), NULL,
++				      XS_PERM_READ);
+ 	if (!node)
+ 		return errno;
+ 
+@@ -1476,7 +1481,8 @@ err:
+ }
+ 
+ /* path, data... */
+-static int do_write(struct connection *conn, struct buffered_data *in)
++static int do_write(const void *ctx, struct connection *conn,
++		    struct buffered_data *in)
+ {
+ 	unsigned int offset, datalen;
+ 	struct node *node;
+@@ -1490,12 +1496,12 @@ static int do_write(struct connection *conn, struct buffered_data *in)
+ 	offset = strlen(vec[0]) + 1;
+ 	datalen = in->used - offset;
+ 
+-	node = get_node_canonicalized(conn, in, vec[0], &name, XS_PERM_WRITE);
++	node = get_node_canonicalized(conn, ctx, vec[0], &name, XS_PERM_WRITE);
+ 	if (!node) {
+ 		/* No permissions, invalid input? */
+ 		if (errno != ENOENT)
+ 			return errno;
+-		node = create_node(conn, in, name, in->buffer + offset,
++		node = create_node(conn, ctx, name, in->buffer + offset,
+ 				   datalen);
+ 		if (!node)
+ 			return errno;
+@@ -1506,18 +1512,19 @@ static int do_write(struct connection *conn, struct buffered_data *in)
+ 			return errno;
+ 	}
+ 
+-	fire_watches(conn, in, name, node, false, NULL);
++	fire_watches(conn, ctx, name, node, false, NULL);
+ 	send_ack(conn, XS_WRITE);
+ 
+ 	return 0;
+ }
+ 
+-static int do_mkdir(struct connection *conn, struct buffered_data *in)
++static int do_mkdir(const void *ctx, struct connection *conn,
++		    struct buffered_data *in)
+ {
+ 	struct node *node;
+ 	char *name;
+ 
+-	node = get_node_canonicalized(conn, in, onearg(in), &name,
++	node = get_node_canonicalized(conn, ctx, onearg(in), &name,
+ 				      XS_PERM_WRITE);
+ 
+ 	/* If it already exists, fine. */
+@@ -1527,10 +1534,10 @@ static int do_mkdir(struct connection *conn, struct buffered_data *in)
+ 			return errno;
+ 		if (!name)
+ 			return ENOMEM;
+-		node = create_node(conn, in, name, NULL, 0);
++		node = create_node(conn, ctx, name, NULL, 0);
+ 		if (!node)
+ 			return errno;
+-		fire_watches(conn, in, name, node, false, NULL);
++		fire_watches(conn, ctx, name, node, false, NULL);
+ 	}
+ 	send_ack(conn, XS_MKDIR);
+ 
+@@ -1628,24 +1635,25 @@ static int _rm(struct connection *conn, const void *ctx, struct node *node,
+ }
+ 
+ 
+-static int do_rm(struct connection *conn, struct buffered_data *in)
++static int do_rm(const void *ctx, struct connection *conn,
++		 struct buffered_data *in)
+ {
+ 	struct node *node;
+ 	int ret;
+ 	char *name;
+ 	char *parentname;
+ 
+-	node = get_node_canonicalized(conn, in, onearg(in), &name,
++	node = get_node_canonicalized(conn, ctx, onearg(in), &name,
+ 				      XS_PERM_WRITE);
+ 	if (!node) {
+ 		/* Didn't exist already?  Fine, if parent exists. */
+ 		if (errno == ENOENT) {
+ 			if (!name)
+ 				return ENOMEM;
+-			parentname = get_parent(in, name);
++			parentname = get_parent(ctx, name);
+ 			if (!parentname)
+ 				return errno;
+-			node = read_node(conn, in, parentname);
++			node = read_node(conn, ctx, parentname);
+ 			if (node) {
+ 				send_ack(conn, XS_RM);
+ 				return 0;
+@@ -1660,7 +1668,7 @@ static int do_rm(struct connection *conn, struct buffered_data *in)
+ 	if (streq(name, "/"))
+ 		return EINVAL;
+ 
+-	ret = _rm(conn, in, node, name);
++	ret = _rm(conn, ctx, node, name);
+ 	if (ret)
+ 		return ret;
+ 
+@@ -1670,13 +1678,15 @@ static int do_rm(struct connection *conn, struct buffered_data *in)
+ }
+ 
+ 
+-static int do_get_perms(struct connection *conn, struct buffered_data *in)
++static int do_get_perms(const void *ctx, struct connection *conn,
++			struct buffered_data *in)
+ {
+ 	struct node *node;
+ 	char *strings;
+ 	unsigned int len;
+ 
+-	node = get_node_canonicalized(conn, in, onearg(in), NULL, XS_PERM_READ);
++	node = get_node_canonicalized(conn, ctx, onearg(in), NULL,
++				      XS_PERM_READ);
+ 	if (!node)
+ 		return errno;
+ 
+@@ -1689,7 +1699,8 @@ static int do_get_perms(struct connection *conn, struct buffered_data *in)
+ 	return 0;
+ }
+ 
+-static int do_set_perms(struct connection *conn, struct buffered_data *in)
++static int do_set_perms(const void *ctx, struct connection *conn,
++			struct buffered_data *in)
+ {
+ 	struct node_perms perms, old_perms;
+ 	char *name, *permstr;
+@@ -1706,7 +1717,7 @@ static int do_set_perms(struct connection *conn, struct buffered_data *in)
+ 
+ 	permstr = in->buffer + strlen(in->buffer) + 1;
+ 
+-	perms.p = talloc_array(in, struct xs_permissions, perms.num);
++	perms.p = talloc_array(ctx, struct xs_permissions, perms.num);
+ 	if (!perms.p)
+ 		return ENOMEM;
+ 	if (!xs_strings_to_perms(perms.p, perms.num, permstr))
+@@ -1721,7 +1732,7 @@ static int do_set_perms(struct connection *conn, struct buffered_data *in)
+ 	}
+ 
+ 	/* We must own node to do this (tools can do this too). */
+-	node = get_node_canonicalized(conn, in, in->buffer, &name,
++	node = get_node_canonicalized(conn, ctx, in->buffer, &name,
+ 				      XS_PERM_WRITE | XS_PERM_OWNER);
+ 	if (!node)
+ 		return errno;
+@@ -1756,7 +1767,7 @@ static int do_set_perms(struct connection *conn, struct buffered_data *in)
+ 		return errno;
+ 	}
+ 
+-	fire_watches(conn, in, name, node, false, &old_perms);
++	fire_watches(conn, ctx, name, node, false, &old_perms);
+ 	send_ack(conn, XS_SET_PERMS);
+ 
+ 	return 0;
+@@ -1764,7 +1775,8 @@ static int do_set_perms(struct connection *conn, struct buffered_data *in)
+ 
+ static struct {
+ 	const char *str;
+-	int (*func)(struct connection *conn, struct buffered_data *in);
++	int (*func)(const void *ctx, struct connection *conn,
++		    struct buffered_data *in);
+ 	unsigned int flags;
+ #define XS_FLAG_NOTID		(1U << 0)	/* Ignore transaction id. */
+ #define XS_FLAG_PRIV		(1U << 1)	/* Privileged domain only. */
+@@ -1840,6 +1852,7 @@ static void process_message(struct connection *conn, struct buffered_data *in)
+ 	struct transaction *trans;
+ 	enum xsd_sockmsg_type type = in->hdr.msg.type;
+ 	int ret;
++	void *ctx;
+ 
+ 	if ((unsigned int)type >= XS_TYPE_COUNT || !wire_funcs[type].func) {
+ 		eprintf("Client unknown operation %i", type);
+@@ -1860,10 +1873,17 @@ static void process_message(struct connection *conn, struct buffered_data *in)
+ 		return;
+ 	}
+ 
++	ctx = talloc_new(NULL);
++	if (!ctx) {
++		send_error(conn, ENOMEM);
++		return;
++	}
++
+ 	assert(conn->transaction == NULL);
+ 	conn->transaction = trans;
+ 
+-	ret = wire_funcs[type].func(conn, in);
++	ret = wire_funcs[type].func(ctx, conn, in);
++	talloc_free(ctx);
+ 	if (ret)
+ 		send_error(conn, ret);
+ 
+diff --git a/tools/xenstore/xenstored_domain.c b/tools/xenstore/xenstored_domain.c
+index 3d51425813..d262f4e9db 100644
+--- a/tools/xenstore/xenstored_domain.c
++++ b/tools/xenstore/xenstored_domain.c
+@@ -336,7 +336,7 @@ bool domain_can_write(struct connection *conn)
+ 	return ((intf->rsp_prod - intf->rsp_cons) != XENSTORE_RING_SIZE);
+ }
+ 
+-static char *talloc_domain_path(void *context, unsigned int domid)
++static char *talloc_domain_path(const void *context, unsigned int domid)
+ {
+ 	return talloc_asprintf(context, "/local/domain/%u", domid);
+ }
+@@ -540,7 +540,8 @@ static struct domain *introduce_domain(const void *ctx,
+ }
+ 
+ /* domid, gfn, evtchn, path */
+-int do_introduce(struct connection *conn, struct buffered_data *in)
++int do_introduce(const void *ctx, struct connection *conn,
++		 struct buffered_data *in)
+ {
+ 	struct domain *domain;
+ 	char *vec[3];
+@@ -558,7 +559,7 @@ int do_introduce(struct connection *conn, struct buffered_data *in)
+ 	if (port <= 0)
+ 		return EINVAL;
+ 
+-	domain = introduce_domain(in, domid, port, false);
++	domain = introduce_domain(ctx, domid, port, false);
+ 	if (!domain)
+ 		return errno;
+ 
+@@ -581,7 +582,8 @@ static struct domain *find_connected_domain(unsigned int domid)
+ 	return domain;
+ }
+ 
+-int do_set_target(struct connection *conn, struct buffered_data *in)
++int do_set_target(const void *ctx, struct connection *conn,
++		  struct buffered_data *in)
+ {
+ 	char *vec[2];
+ 	unsigned int domid, tdomid;
+@@ -625,7 +627,8 @@ static struct domain *onearg_domain(struct connection *conn,
+ }
+ 
+ /* domid */
+-int do_release(struct connection *conn, struct buffered_data *in)
++int do_release(const void *ctx, struct connection *conn,
++	       struct buffered_data *in)
+ {
+ 	struct domain *domain;
+ 
+@@ -640,7 +643,8 @@ int do_release(struct connection *conn, struct buffered_data *in)
+ 	return 0;
+ }
+ 
+-int do_resume(struct connection *conn, struct buffered_data *in)
++int do_resume(const void *ctx, struct connection *conn,
++	      struct buffered_data *in)
+ {
+ 	struct domain *domain;
+ 
+@@ -655,7 +659,8 @@ int do_resume(struct connection *conn, struct buffered_data *in)
+ 	return 0;
+ }
+ 
+-int do_get_domain_path(struct connection *conn, struct buffered_data *in)
++int do_get_domain_path(const void *ctx, struct connection *conn,
++		       struct buffered_data *in)
+ {
+ 	char *path;
+ 	const char *domid_str = onearg(in);
+@@ -663,18 +668,17 @@ int do_get_domain_path(struct connection *conn, struct buffered_data *in)
+ 	if (!domid_str)
+ 		return EINVAL;
+ 
+-	path = talloc_domain_path(conn, atoi(domid_str));
++	path = talloc_domain_path(ctx, atoi(domid_str));
+ 	if (!path)
+ 		return errno;
+ 
+ 	send_reply(conn, XS_GET_DOMAIN_PATH, path, strlen(path) + 1);
+ 
+-	talloc_free(path);
+-
+ 	return 0;
+ }
+ 
+-int do_is_domain_introduced(struct connection *conn, struct buffered_data *in)
++int do_is_domain_introduced(const void *ctx, struct connection *conn,
++			    struct buffered_data *in)
+ {
+ 	int result;
+ 	unsigned int domid;
+@@ -695,7 +699,8 @@ int do_is_domain_introduced(struct connection *conn, struct buffered_data *in)
+ }
+ 
+ /* Allow guest to reset all watches */
+-int do_reset_watches(struct connection *conn, struct buffered_data *in)
++int do_reset_watches(const void *ctx, struct connection *conn,
++		     struct buffered_data *in)
+ {
+ 	conn_delete_all_watches(conn);
+ 	conn_delete_all_transactions(conn);
+diff --git a/tools/xenstore/xenstored_domain.h b/tools/xenstore/xenstored_domain.h
+index 0f883936f4..da513443cd 100644
+--- a/tools/xenstore/xenstored_domain.h
++++ b/tools/xenstore/xenstored_domain.h
+@@ -24,25 +24,32 @@ void handle_event(void);
+ void check_domains(bool restore);
+ 
+ /* domid, mfn, eventchn, path */
+-int do_introduce(struct connection *conn, struct buffered_data *in);
++int do_introduce(const void *ctx, struct connection *conn,
++		 struct buffered_data *in);
+ 
+ /* domid */
+-int do_is_domain_introduced(struct connection *conn, struct buffered_data *in);
++int do_is_domain_introduced(const void *ctx, struct connection *conn,
++			    struct buffered_data *in);
+ 
+ /* domid */
+-int do_release(struct connection *conn, struct buffered_data *in);
++int do_release(const void *ctx, struct connection *conn,
++	       struct buffered_data *in);
+ 
+ /* domid */
+-int do_resume(struct connection *conn, struct buffered_data *in);
++int do_resume(const void *ctx, struct connection *conn,
++	      struct buffered_data *in);
+ 
+ /* domid, target */
+-int do_set_target(struct connection *conn, struct buffered_data *in);
++int do_set_target(const void *ctx, struct connection *conn,
++		  struct buffered_data *in);
+ 
+ /* domid */
+-int do_get_domain_path(struct connection *conn, struct buffered_data *in);
++int do_get_domain_path(const void *ctx, struct connection *conn,
++		       struct buffered_data *in);
+ 
+ /* Allow guest to reset all watches */
+-int do_reset_watches(struct connection *conn, struct buffered_data *in);
++int do_reset_watches(const void *ctx, struct connection *conn,
++		     struct buffered_data *in);
+ 
+ void domain_init(int evtfd);
+ void dom0_init(void);
+diff --git a/tools/xenstore/xenstored_transaction.c b/tools/xenstore/xenstored_transaction.c
+index 28774813de..3e3eb47326 100644
+--- a/tools/xenstore/xenstored_transaction.c
++++ b/tools/xenstore/xenstored_transaction.c
+@@ -481,7 +481,8 @@ struct transaction *transaction_lookup(struct connection *conn, uint32_t id)
+ 	return ERR_PTR(-ENOENT);
+ }
+ 
+-int do_transaction_start(struct connection *conn, struct buffered_data *in)
++int do_transaction_start(const void *ctx, struct connection *conn,
++			 struct buffered_data *in)
+ {
+ 	struct transaction *trans, *exists;
+ 	char id_str[20];
+@@ -494,8 +495,8 @@ int do_transaction_start(struct connection *conn, struct buffered_data *in)
+ 	    conn->transaction_started > quota_max_transaction)
+ 		return ENOSPC;
+ 
+-	/* Attach transaction to input for autofree until it's complete */
+-	trans = talloc_zero(in, struct transaction);
++	/* Attach transaction to ctx for autofree until it's complete */
++	trans = talloc_zero(ctx, struct transaction);
+ 	if (!trans)
+ 		return ENOMEM;
+ 
+@@ -544,7 +545,8 @@ static int transaction_fix_domains(struct transaction *trans, bool update)
+ 	return 0;
+ }
+ 
+-int do_transaction_end(struct connection *conn, struct buffered_data *in)
++int do_transaction_end(const void *ctx, struct connection *conn,
++		       struct buffered_data *in)
+ {
+ 	const char *arg = onearg(in);
+ 	struct transaction *trans;
+@@ -562,8 +564,8 @@ int do_transaction_end(struct connection *conn, struct buffered_data *in)
+ 	if (!conn->transaction_started)
+ 		conn->ta_start_time = 0;
+ 
+-	/* Attach transaction to in for auto-cleanup */
+-	talloc_steal(in, trans);
++	/* Attach transaction to ctx for auto-cleanup */
++	talloc_steal(ctx, trans);
+ 
+ 	if (streq(arg, "T")) {
+ 		if (trans->fail)
+diff --git a/tools/xenstore/xenstored_transaction.h b/tools/xenstore/xenstored_transaction.h
+index e3cbd6b230..39d7f81c51 100644
+--- a/tools/xenstore/xenstored_transaction.h
++++ b/tools/xenstore/xenstored_transaction.h
+@@ -29,8 +29,10 @@ struct transaction;
+ 
+ extern uint64_t generation;
+ 
+-int do_transaction_start(struct connection *conn, struct buffered_data *node);
+-int do_transaction_end(struct connection *conn, struct buffered_data *in);
++int do_transaction_start(const void *ctx, struct connection *conn,
++			 struct buffered_data *node);
++int do_transaction_end(const void *ctx, struct connection *conn,
++		       struct buffered_data *in);
+ 
+ struct transaction *transaction_lookup(struct connection *conn, uint32_t id);
+ 
+diff --git a/tools/xenstore/xenstored_watch.c b/tools/xenstore/xenstored_watch.c
+index 4970e9f1a1..854bbcad6e 100644
+--- a/tools/xenstore/xenstored_watch.c
++++ b/tools/xenstore/xenstored_watch.c
+@@ -243,7 +243,7 @@ static struct watch *add_watch(struct connection *conn, char *path, char *token,
+ 	return NULL;
+ }
+ 
+-int do_watch(struct connection *conn, struct buffered_data *in)
++int do_watch(const void *ctx, struct connection *conn, struct buffered_data *in)
+ {
+ 	struct watch *watch;
+ 	char *vec[2];
+@@ -252,7 +252,7 @@ int do_watch(struct connection *conn, struct buffered_data *in)
+ 	if (get_strings(in, vec, ARRAY_SIZE(vec)) != ARRAY_SIZE(vec))
+ 		return EINVAL;
+ 
+-	errno = check_watch_path(conn, in, &(vec[0]), &relative);
++	errno = check_watch_path(conn, ctx, &(vec[0]), &relative);
+ 	if (errno)
+ 		return errno;
+ 
+@@ -283,7 +283,8 @@ int do_watch(struct connection *conn, struct buffered_data *in)
+ 	return 0;
+ }
+ 
+-int do_unwatch(struct connection *conn, struct buffered_data *in)
++int do_unwatch(const void *ctx, struct connection *conn,
++	       struct buffered_data *in)
+ {
+ 	struct watch *watch;
+ 	char *node, *vec[2];
+@@ -291,7 +292,7 @@ int do_unwatch(struct connection *conn, struct buffered_data *in)
+ 	if (get_strings(in, vec, ARRAY_SIZE(vec)) != ARRAY_SIZE(vec))
+ 		return EINVAL;
+ 
+-	node = canonicalize(conn, in, vec[0]);
++	node = canonicalize(conn, ctx, vec[0]);
+ 	if (!node)
+ 		return ENOMEM;
+ 	list_for_each_entry(watch, &conn->watches, list) {
+diff --git a/tools/xenstore/xenstored_watch.h b/tools/xenstore/xenstored_watch.h
+index 0e693f0839..091890edca 100644
+--- a/tools/xenstore/xenstored_watch.h
++++ b/tools/xenstore/xenstored_watch.h
+@@ -21,8 +21,10 @@
+ 
+ #include "xenstored_core.h"
+ 
+-int do_watch(struct connection *conn, struct buffered_data *in);
+-int do_unwatch(struct connection *conn, struct buffered_data *in);
++int do_watch(const void *ctx, struct connection *conn,
++	     struct buffered_data *in);
++int do_unwatch(const void *ctx, struct connection *conn,
++	       struct buffered_data *in);
+ 
+ /* Fire all watches: !exact means all the children are affected (ie. rm). */
+ void fire_watches(struct connection *conn, const void *tmp, const char *name,
+-- 
+2.30.2
+

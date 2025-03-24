@@ -1,0 +1,31 @@
+From d204083a01ccf13df9f6e03e423476b9d8a85c85 Mon Sep 17 00:00:00 2001
+From: Bertrand Marquis <bertrand.marquis@arm.com>
+Date: Wed, 7 Oct 2020 14:57:02 +0100
+Subject: [PATCH] tool/libs/light: Fix libxenlight gcc warning
+
+Fix gcc10 compilation warning about uninitialized variable by setting
+it to 0.
+
+Signed-off-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Wei Liu <wl@xen.org>
+(cherry picked from commit 0241809bf838875615797f52af34222e5ab8e98f)
+---
+ tools/libxl/libxl_mem.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libxl/libxl_mem.c b/tools/libxl/libxl_mem.c
+index 7c01fac7e5..f5ba1e2234 100644
+--- a/tools/libxl/libxl_mem.c
++++ b/tools/libxl/libxl_mem.c
+@@ -560,7 +560,7 @@ out:
+ 
+ int libxl_get_free_memory_0x040700(libxl_ctx *ctx, uint32_t *memkb)
+ {
+-    uint64_t my_memkb;
++    uint64_t my_memkb = 0;
+     int rc;
+ 
+     rc = libxl_get_free_memory(ctx, &my_memkb);
+-- 
+2.30.2
+

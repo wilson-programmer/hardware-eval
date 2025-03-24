@@ -1,0 +1,28 @@
+From c4cf5388652e8434652e30c73aa79635b4253675 Mon Sep 17 00:00:00 2001
+From: Ian Jackson <iwj@xenproject.org>
+Date: Mon, 6 Dec 2021 14:40:24 +0000
+Subject: [PATCH] MAINTAINERS: Resign from tools stable branch maintainership
+
+Signed-off-by: Ian Jackson <iwj@xenproject.org>
+Signed-off-by: Ian Jackson <ian.jackson@eu.citrix.com>
+(cherry picked from commit c623a84c2a4fda1cd25f5347a6298706218eb5fb)
+---
+ MAINTAINERS | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 4b72a6adae..04eb361222 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -60,7 +60,7 @@ The maintainer for this branch is:
+ 
+ Tools backport requests should also be copied to:
+ 
+-	Ian Jackson <Ian.Jackson@eu.citrix.com>
++	TODO - Loooking for new tools stable maintainer
+ 
+ 
+ 	Unstable Subsystem Maintainers
+-- 
+2.30.2
+

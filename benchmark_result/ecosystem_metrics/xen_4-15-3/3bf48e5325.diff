@@ -1,0 +1,130 @@
+From 3bf48e5325b6eb4d01e1707e6b2c79f08afb16a0 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Wed, 16 Feb 2022 16:03:56 +0100
+Subject: [PATCH] tools/libs: Fix build dependencies
+
+Some libs' Makefile aren't loading the dependencies files *.d2.
+
+We can load them from "libs.mk" as none of the Makefile here are
+changing $(DEPS) or $(DEPS_INCLUDE) so it is fine to move the
+"include" to "libs.mk".
+
+As a little improvement, don't load the dependencies files (and thus
+avoid regenerating the *.d2 files) during `make clean`.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+master commit: e62cc29f9b6c42b67182a1362e2ea18bad75b5ff
+master date: 2022-02-08 11:15:53 +0000
+---
+ tools/libs/ctrl/Makefile  | 2 --
+ tools/libs/guest/Makefile | 2 --
+ tools/libs/libs.mk        | 4 ++++
+ tools/libs/light/Makefile | 2 --
+ tools/libs/stat/Makefile  | 2 --
+ tools/libs/store/Makefile | 2 --
+ tools/libs/util/Makefile  | 2 --
+ tools/libs/vchan/Makefile | 1 -
+ 8 files changed, 4 insertions(+), 13 deletions(-)
+
+diff --git a/tools/libs/ctrl/Makefile b/tools/libs/ctrl/Makefile
+index ce9ecae710..449c89f440 100644
+--- a/tools/libs/ctrl/Makefile
++++ b/tools/libs/ctrl/Makefile
+@@ -63,8 +63,6 @@ $(eval $(genpath-target))
+ 
+ $(LIB_OBJS) $(PIC_OBJS): _paths.h
+ 
+--include $(DEPS_INCLUDE)
+-
+ clean: cleanlocal
+ 
+ .PHONY: cleanlocal
+diff --git a/tools/libs/guest/Makefile b/tools/libs/guest/Makefile
+index 604e1695d6..58c50250df 100644
+--- a/tools/libs/guest/Makefile
++++ b/tools/libs/guest/Makefile
+@@ -109,8 +109,6 @@ $(eval $(genpath-target))
+ 
+ xc_private.h: _paths.h
+ 
+--include $(DEPS_INCLUDE)
+-
+ .PHONY: cleanlocal
+ cleanlocal:
+ 	rm -f libxenguest.map
+diff --git a/tools/libs/libs.mk b/tools/libs/libs.mk
+index 2d973ccb95..c453a46858 100644
+--- a/tools/libs/libs.mk
++++ b/tools/libs/libs.mk
+@@ -140,3 +140,7 @@ distclean: clean
+ 
+ .PHONY: FORCE
+ FORCE:
++
++ifeq ($(filter clean distclean,$(MAKECMDGOALS)),)
++-include $(DEPS_INCLUDE)
++endif
+diff --git a/tools/libs/light/Makefile b/tools/libs/light/Makefile
+index 7d8c51d492..273fab6608 100644
+--- a/tools/libs/light/Makefile
++++ b/tools/libs/light/Makefile
+@@ -271,5 +271,3 @@ cleanlocal:
+ 	$(RM) -f libxenlight.map
+ 	$(RM) -f $(AUTOSRCS) $(AUTOINCS)
+ 	$(MAKE) -C $(ACPI_PATH) ACPI_BUILD_DIR=$(CURDIR) clean
+-
+--include $(DEPS_INCLUDE)
+diff --git a/tools/libs/stat/Makefile b/tools/libs/stat/Makefile
+index c99508ae6b..89b5412132 100644
+--- a/tools/libs/stat/Makefile
++++ b/tools/libs/stat/Makefile
+@@ -124,7 +124,5 @@ cleanlocal:
+ 	rm -f $(BINDINGS) $(BINDINGSRC) $(DEPS_RM) _paths.h
+ 	rm -f libxenstat.map
+ 
+--include $(DEPS_INCLUDE)
+-
+ genpath-target = $(call buildmakevars2header,_paths.h)
+ $(eval $(genpath-target))
+diff --git a/tools/libs/store/Makefile b/tools/libs/store/Makefile
+index bee57b5629..bc89b9cd70 100644
+--- a/tools/libs/store/Makefile
++++ b/tools/libs/store/Makefile
+@@ -31,8 +31,6 @@ else
+ PKG_CONFIG_REMOVE += -ldl
+ endif
+ 
+--include $(DEPS_INCLUDE)
+-
+ .PHONY: install
+ install: install-headers
+ 
+diff --git a/tools/libs/util/Makefile b/tools/libs/util/Makefile
+index f5f9e89fee..b739360be7 100644
+--- a/tools/libs/util/Makefile
++++ b/tools/libs/util/Makefile
+@@ -52,8 +52,6 @@ $(LIB_OBJS) $(PIC_OBJS): $(AUTOINCS) _paths.h
+ genpath-target = $(call buildmakevars2header,_paths.h)
+ $(eval $(genpath-target))
+ 
+--include $(DEPS_INCLUDE)
+-
+ clean: cleanlocal
+ 
+ .PHONY: cleanlocal
+diff --git a/tools/libs/vchan/Makefile b/tools/libs/vchan/Makefile
+index df112f1b88..83a45d2817 100644
+--- a/tools/libs/vchan/Makefile
++++ b/tools/libs/vchan/Makefile
+@@ -11,7 +11,6 @@ SRCS-y += io.c
+ NO_HEADERS_CHK := y
+ 
+ include $(XEN_ROOT)/tools/libs/libs.mk
+--include $(DEPS_INCLUDE)
+ 
+ clean: cleanlocal
+ 
+-- 
+2.30.2
+

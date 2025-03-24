@@ -1,0 +1,48 @@
+From 675ccffbb20c111db2c2703c26e8e151f993e2e5 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Fri, 5 Jul 2019 10:24:30 +0200
+Subject: [PATCH] x86/cpuid: leak OSXSAVE only when XSAVE is not clear in
+ policy
+
+This fixes booting of old non-PV-OPS kernels which historically
+looked for OSXSAVE instead of XSAVE bit in CPUID to check whether
+XSAVE feature is enabled. If such a guest appears to be started on
+an XSAVE enabled CPU and the feature is explicitly cleared in
+policy, leaked OSXSAVE bit from Xen will lead to guest crash early in
+boot.
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 902888922e6feda2c485cc4bdeffd0d6e6c26e14
+master date: 2019-06-28 13:17:53 +0100
+---
+ xen/arch/x86/cpuid.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/cpuid.c b/xen/arch/x86/cpuid.c
+index 3efad9cf17..57e80694f2 100644
+--- a/xen/arch/x86/cpuid.c
++++ b/xen/arch/x86/cpuid.c
+@@ -781,7 +781,8 @@ void guest_cpuid(const struct vcpu *v, uint32_t leaf,
+              *    damage itself.
+              *
+              * - Enlightened CPUID or CPUID faulting available:
+-             *    Xen can fully control what is seen here.  Guest kernels need
++             *    Xen can fully control what is seen here.  When the guest has
++             *    been configured to have XSAVE available, guest kernels need
+              *    to see the leaked OSXSAVE via the enlightened path, but
+              *    guest userspace and the native is given architectural
+              *    behaviour.
+@@ -791,7 +792,8 @@ void guest_cpuid(const struct vcpu *v, uint32_t leaf,
+              */
+             /* OSXSAVE clear in policy.  Fast-forward CR4 back in. */
+             if ( (v->arch.pv.ctrlreg[4] & X86_CR4_OSXSAVE) ||
+-                 (regs->entry_vector == TRAP_invalid_op &&
++                 (p->basic.xsave &&
++                  regs->entry_vector == TRAP_invalid_op &&
+                   guest_kernel_mode(v, regs) &&
+                   (read_cr4() & X86_CR4_OSXSAVE)) )
+                 res->c |= cpufeat_mask(X86_FEATURE_OSXSAVE);
+-- 
+2.30.2
+

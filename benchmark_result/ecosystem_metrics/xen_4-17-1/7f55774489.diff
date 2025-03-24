@@ -1,0 +1,56 @@
+From 7f55774489d2f12a23f2ac0f516b62e2709cea99 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 31 Mar 2023 08:33:28 +0200
+Subject: [PATCH] x86/ucode: Fix error paths control_thread_fn()
+
+These two early exits skipped re-enabling the watchdog, restoring the NMI
+callback, and clearing the nmi_patch global pointer.  Always execute the tail
+of the function on the way out.
+
+Fixes: 8dd4dfa92d62 ("x86/microcode: Synchronize late microcode loading")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Sergey Dyasli <sergey.dyasli@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: fc2e1f3aad602a66c14b8285a1bd38a82f8fd02d
+master date: 2023-03-28 11:57:56 +0100
+---
+ xen/arch/x86/cpu/microcode/core.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/x86/cpu/microcode/core.c b/xen/arch/x86/cpu/microcode/core.c
+index 2497630bbe..c760723e4f 100644
+--- a/xen/arch/x86/cpu/microcode/core.c
++++ b/xen/arch/x86/cpu/microcode/core.c
+@@ -490,10 +490,7 @@ static int control_thread_fn(const struct microcode_patch *patch)
+     ret = wait_for_condition(wait_cpu_callin, num_online_cpus(),
+                              MICROCODE_CALLIN_TIMEOUT_US);
+     if ( ret )
+-    {
+-        set_state(LOADING_EXIT);
+-        return ret;
+-    }
++        goto out;
+ 
+     /* Control thread loads ucode first while others are in NMI handler. */
+     ret = alternative_call(ucode_ops.apply_microcode, patch);
+@@ -505,8 +502,7 @@ static int control_thread_fn(const struct microcode_patch *patch)
+     {
+         printk(XENLOG_ERR
+                "Late loading aborted: CPU%u failed to update ucode\n", cpu);
+-        set_state(LOADING_EXIT);
+-        return ret;
++        goto out;
+     }
+ 
+     /* Let primary threads load the given ucode update */
+@@ -537,6 +533,7 @@ static int control_thread_fn(const struct microcode_patch *patch)
+         }
+     }
+ 
++ out:
+     /* Mark loading is done to unblock other threads */
+     set_state(LOADING_EXIT);
+ 
+-- 
+2.30.2
+

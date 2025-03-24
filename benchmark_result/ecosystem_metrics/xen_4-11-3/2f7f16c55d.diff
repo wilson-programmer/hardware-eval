@@ -1,0 +1,53 @@
+From 2f7f16c55d70e300bc8ee11d01f6015fadeb9d02 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 5 Jul 2019 10:30:45 +0200
+Subject: [PATCH] x86/pv: Fix undefined behaviour in check_descriptor()
+
+UBSAN reports:
+
+  (XEN) ================================================================================
+  (XEN) UBSAN: Undefined behaviour in x86_64/mm.c:1108:31
+  (XEN) left shift of 255 by 24 places cannot be represented in type 'int'
+  (XEN) ----[ Xen-4.13-unstable  x86_64  debug=y   Tainted:    H ]----
+  (XEN) CPU:    60
+  (XEN) RIP:    e008:[<ffff82d0802a54ce>] ubsan.c#ubsan_epilogue+0xa/0xc2
+  <snip>
+  (XEN) Xen call trace:
+  (XEN)    [<ffff82d0802a54ce>] ubsan.c#ubsan_epilogue+0xa/0xc2
+  (XEN)    [<ffff82d0802a6009>] __ubsan_handle_shift_out_of_bounds+0x15d/0x16c
+  (XEN)    [<ffff82d08033abd7>] check_descriptor+0x191/0x3dd
+  (XEN)    [<ffff82d0804ef920>] do_update_descriptor+0x7f/0x2b6
+  (XEN)    [<ffff82d0804efb75>] compat_update_descriptor+0x1e/0x20
+  (XEN)    [<ffff82d0804fa1cc>] pv_hypercall+0x87f/0xa6f
+  (XEN)    [<ffff82d080501acb>] do_entry_int82+0x53/0x58
+  (XEN)    [<ffff82d08050702b>] entry_int82+0xbb/0xc0
+  (XEN)
+  (XEN) ================================================================================
+
+As this is a constant, express it in longhand for correctness, and consistency
+with the surrounding code.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: bd5be40ce2307ea5e8f52e3103d1b48ca9dfdce9
+master date: 2019-06-06 20:04:33 +0100
+---
+ xen/arch/x86/x86_64/mm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/x86_64/mm.c b/xen/arch/x86/x86_64/mm.c
+index cca4ae926e..6d6edecc37 100644
+--- a/xen/arch/x86/x86_64/mm.c
++++ b/xen/arch/x86/x86_64/mm.c
+@@ -1105,7 +1105,7 @@ int check_descriptor(const struct domain *dom, struct desc_struct *d)
+              * 0xf6800000. Extend these to allow access to the larger read-only
+              * M2P table available in 32on64 mode.
+              */
+-            base = (b & (0xff << 24)) | ((b & 0xff) << 16) | (a >> 16);
++            base = (b & 0xff000000) | ((b & 0xff) << 16) | (a >> 16);
+ 
+             limit = (b & 0xf0000) | (a & 0xffff);
+             limit++; /* We add one because limit is inclusive. */
+-- 
+2.30.2
+

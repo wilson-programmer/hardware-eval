@@ -1,0 +1,139 @@
+From f6cc822fe248b586c3ec3a97dc4a11f0c60d744d Mon Sep 17 00:00:00 2001
+From: Petre Pircalabu <ppircalabu@bitdefender.com>
+Date: Wed, 15 May 2019 09:54:00 +0200
+Subject: [PATCH] vm_event: fix XEN_VM_EVENT_RESUME domctl
+
+Make XEN_VM_EVENT_RESUME return 0 in case of success, instead of
+-EINVAL.
+Remove vm_event_resume form vm_event.h header and set the function's
+visibility to static as is used only in vm_event.c.
+Move the vm_event_check_ring test inside vm_event_resume in order to
+simplify the code.
+
+Signed-off-by: Petre Pircalabu <ppircalabu@bitdefender.com>
+Acked-by: Razvan Cojocaru <rcojocaru@bitdefender.com>
+master commit: b32c0446b103aa801ee18780b2fdd78dfc0b9052
+master date: 2019-04-05 15:42:03 +0200
+---
+ xen/common/vm_event.c      | 37 ++++++++++++-------------------------
+ xen/include/xen/vm_event.h |  2 --
+ 2 files changed, 12 insertions(+), 27 deletions(-)
+
+diff --git a/xen/common/vm_event.c b/xen/common/vm_event.c
+index 144ab81c86..b029c1f1a7 100644
+--- a/xen/common/vm_event.c
++++ b/xen/common/vm_event.c
+@@ -366,7 +366,7 @@ int vm_event_get_response(struct domain *d, struct vm_event_domain *ved,
+  * Note: responses are handled the same way regardless of which ring they
+  * arrive on.
+  */
+-void vm_event_resume(struct domain *d, struct vm_event_domain *ved)
++static int vm_event_resume(struct domain *d, struct vm_event_domain *ved)
+ {
+     vm_event_response_t rsp;
+ 
+@@ -380,6 +380,9 @@ void vm_event_resume(struct domain *d, struct vm_event_domain *ved)
+      */
+     ASSERT(d != current->domain);
+ 
++    if ( unlikely(!vm_event_check_ring(ved)) )
++         return -ENODEV;
++
+     /* Pull all responses off the ring. */
+     while ( vm_event_get_response(d, ved, &rsp) )
+     {
+@@ -443,6 +446,8 @@ void vm_event_resume(struct domain *d, struct vm_event_domain *ved)
+                 vm_event_vcpu_unpause(v);
+         }
+     }
++
++    return 0;
+ }
+ 
+ void vm_event_cancel_slot(struct domain *d, struct vm_event_domain *ved)
+@@ -529,30 +534,21 @@ int __vm_event_claim_slot(struct domain *d, struct vm_event_domain *ved,
+ /* Registered with Xen-bound event channel for incoming notifications. */
+ static void mem_paging_notification(struct vcpu *v, unsigned int port)
+ {
+-    struct domain *domain = v->domain;
+-
+-    if ( likely(vm_event_check_ring(domain->vm_event_paging)) )
+-        vm_event_resume(domain, domain->vm_event_paging);
++    vm_event_resume(v->domain, v->domain->vm_event_paging);
+ }
+ #endif
+ 
+ /* Registered with Xen-bound event channel for incoming notifications. */
+ static void monitor_notification(struct vcpu *v, unsigned int port)
+ {
+-    struct domain *domain = v->domain;
+-
+-    if ( likely(vm_event_check_ring(domain->vm_event_monitor)) )
+-        vm_event_resume(domain, domain->vm_event_monitor);
++    vm_event_resume(v->domain, v->domain->vm_event_monitor);
+ }
+ 
+ #ifdef CONFIG_HAS_MEM_SHARING
+ /* Registered with Xen-bound event channel for incoming notifications. */
+ static void mem_sharing_notification(struct vcpu *v, unsigned int port)
+ {
+-    struct domain *domain = v->domain;
+-
+-    if ( likely(vm_event_check_ring(domain->vm_event_share)) )
+-        vm_event_resume(domain, domain->vm_event_share);
++    vm_event_resume(v->domain, v->domain->vm_event_share);
+ }
+ #endif
+ 
+@@ -669,10 +665,7 @@ int vm_event_domctl(struct domain *d, struct xen_domctl_vm_event_op *vec,
+             break;
+ 
+         case XEN_VM_EVENT_RESUME:
+-            if ( vm_event_check_ring(d->vm_event_paging) )
+-                vm_event_resume(d, d->vm_event_paging);
+-            else
+-                rc = -ENODEV;
++            rc = vm_event_resume(d, d->vm_event_paging);
+             break;
+ 
+         default:
+@@ -710,10 +703,7 @@ int vm_event_domctl(struct domain *d, struct xen_domctl_vm_event_op *vec,
+             break;
+ 
+         case XEN_VM_EVENT_RESUME:
+-            if ( vm_event_check_ring(d->vm_event_monitor) )
+-                vm_event_resume(d, d->vm_event_monitor);
+-            else
+-                rc = -ENODEV;
++            rc = vm_event_resume(d, d->vm_event_monitor);
+             break;
+ 
+         default:
+@@ -757,10 +747,7 @@ int vm_event_domctl(struct domain *d, struct xen_domctl_vm_event_op *vec,
+             break;
+ 
+         case XEN_VM_EVENT_RESUME:
+-            if ( vm_event_check_ring(d->vm_event_share) )
+-                vm_event_resume(d, d->vm_event_share);
+-            else
+-                rc = -ENODEV;
++            rc = vm_event_resume(d, d->vm_event_share);
+             break;
+ 
+         default:
+diff --git a/xen/include/xen/vm_event.h b/xen/include/xen/vm_event.h
+index 2ff6e1c333..8c70524105 100644
+--- a/xen/include/xen/vm_event.h
++++ b/xen/include/xen/vm_event.h
+@@ -67,8 +67,6 @@ void vm_event_put_request(struct domain *d, struct vm_event_domain *ved,
+ int vm_event_get_response(struct domain *d, struct vm_event_domain *ved,
+                           vm_event_response_t *rsp);
+ 
+-void vm_event_resume(struct domain *d, struct vm_event_domain *ved);
+-
+ int vm_event_domctl(struct domain *d, struct xen_domctl_vm_event_op *vec,
+                     XEN_GUEST_HANDLE_PARAM(void) u_domctl);
+ 
+-- 
+2.30.2
+

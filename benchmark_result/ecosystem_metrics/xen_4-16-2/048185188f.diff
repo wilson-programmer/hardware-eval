@@ -1,0 +1,35 @@
+From 048185188fbae9d0e7d25992d8318be2a4a5a2cc Mon Sep 17 00:00:00 2001
+From: Michal Orzel <michal.orzel@arm.com>
+Date: Thu, 5 May 2022 13:59:06 +0200
+Subject: [PATCH] xen/arm: Avoid overflow using MIDR_IMPLEMENTOR_MASK
+
+Value of macro MIDR_IMPLEMENTOR_MASK exceeds the range of integer
+and can lead to overflow. Currently there is no issue as it is used
+in an expression implicitly casted to u32 in MIDR_IS_CPU_MODEL_RANGE.
+To avoid possible problems, fix the macro.
+
+Signed-off-by: Michal Orzel <michal.orzel@arm.com>
+Link: https://lore.kernel.org/r/20220426070603.56031-1-michal.orzel@arm.com
+Acked-by: Catalin Marinas <catalin.marinas@arm.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit aa1cba100bff84b211f27639bd6efeaf7e701bcc)
+---
+ xen/include/asm-arm/processor.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/asm-arm/processor.h b/xen/include/asm-arm/processor.h
+index 852b5f3c24..7a1c4c4410 100644
+--- a/xen/include/asm-arm/processor.h
++++ b/xen/include/asm-arm/processor.h
+@@ -39,7 +39,7 @@
+ #define MIDR_VARIANT(midr) \
+     (((midr) & MIDR_VARIANT_MASK) >> MIDR_VARIANT_SHIFT)
+ #define MIDR_IMPLEMENTOR_SHIFT  24
+-#define MIDR_IMPLEMENTOR_MASK   (0xff << MIDR_IMPLEMENTOR_SHIFT)
++#define MIDR_IMPLEMENTOR_MASK   (0xffU << MIDR_IMPLEMENTOR_SHIFT)
+ #define MIDR_IMPLEMENTOR(midr) \
+     (((midr) & MIDR_IMPLEMENTOR_MASK) >> MIDR_IMPLEMENTOR_SHIFT)
+ 
+-- 
+2.30.2
+

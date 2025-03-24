@@ -1,0 +1,42 @@
+From bcdaffc58987c943e553739b6bcbfa4323cc5bd8 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 24 Jun 2020 16:59:49 +0200
+Subject: [PATCH] x86/build: Unilaterally disable -fcf-protection
+
+Xen doesn't support CET-IBT yet.  At a minimum, logic is required to enable it
+for supervisor use, but the livepatch functionality needs to learn not to
+overwrite ENDBR64 instructions.
+
+Furthermore, Ubuntu enables -fcf-protection by default, along with a buggy
+version of GCC-9 which objects to it in combination with
+-mindirect-branch=thunk-extern (Fixed in GCC 10, 9.4).
+
+Various objects (Xen boot path, Rombios 32 stubs) require .text to be at the
+beginning of the object.  These paths explode when .note.gnu.properties gets
+put ahead of .text and we end up executing the notes data.
+
+Disable -fcf-protection for all embedded objects.
+
+Reported-by: Jason Andryuk <jandryuk@gmail.com>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+---
+ Config.mk | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Config.mk b/Config.mk
+index 952b398174..be5634f26e 100644
+--- a/Config.mk
++++ b/Config.mk
+@@ -236,6 +236,7 @@ APPEND_CFLAGS += $(foreach i, $(APPEND_INCLUDES), -I$(i))
+ 
+ EMBEDDED_EXTRA_CFLAGS := -nopie -fno-stack-protector -fno-stack-protector-all
+ EMBEDDED_EXTRA_CFLAGS += -fno-exceptions -fno-asynchronous-unwind-tables
++EMBEDDED_EXTRA_CFLAGS += -fcf-protection=none
+ 
+ XEN_EXTFILES_URL ?= http://xenbits.xen.org/xen-extfiles
+ # All the files at that location were downloaded from elsewhere on
+-- 
+2.30.2
+

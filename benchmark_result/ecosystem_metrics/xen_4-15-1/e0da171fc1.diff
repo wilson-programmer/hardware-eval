@@ -1,0 +1,73 @@
+From e0da171fc15557ebdf4ee75638cbea81a5d47f0a Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 24 Jun 2021 16:39:02 +0200
+Subject: [PATCH] libxencall: introduce variant of xencall2() returning long
+
+Some hypercalls, memory-op in particular, can return values requiring
+more than 31 bits to represent. Hence the underlying layers need to make
+sure they won't truncate such values.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Backport-requested-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit bef64f2c0019f828824a67f918604fe40768b1de)
+---
+ tools/include/xencall.h        |  4 ++++
+ tools/libs/call/core.c         | 11 +++++++++++
+ tools/libs/call/libxencall.map |  5 +++++
+ 3 files changed, 20 insertions(+)
+
+diff --git a/tools/include/xencall.h b/tools/include/xencall.h
+index 2d0c42ad5e..fc95ed0fe5 100644
+--- a/tools/include/xencall.h
++++ b/tools/include/xencall.h
+@@ -113,6 +113,10 @@ int xencall5(xencall_handle *xcall, unsigned int op,
+              uint64_t arg1, uint64_t arg2, uint64_t arg3,
+              uint64_t arg4, uint64_t arg5);
+ 
++/* Variant(s) of the above, as needed, returning "long" instead of "int". */
++long xencall2L(xencall_handle *xcall, unsigned int op,
++               uint64_t arg1, uint64_t arg2);
++
+ /*
+  * Allocate and free memory which is suitable for use as a pointer
+  * argument to a hypercall.
+diff --git a/tools/libs/call/core.c b/tools/libs/call/core.c
+index 57d3a33e6b..02c4f8e1ae 100644
+--- a/tools/libs/call/core.c
++++ b/tools/libs/call/core.c
+@@ -127,6 +127,17 @@ int xencall2(xencall_handle *xcall, unsigned int op,
+     return osdep_hypercall(xcall, &call);
+ }
+ 
++long xencall2L(xencall_handle *xcall, unsigned int op,
++               uint64_t arg1, uint64_t arg2)
++{
++    privcmd_hypercall_t call = {
++        .op = op,
++        .arg = { arg1, arg2 },
++    };
++
++    return osdep_hypercall(xcall, &call);
++}
++
+ int xencall3(xencall_handle *xcall, unsigned int op,
+              uint64_t arg1, uint64_t arg2, uint64_t arg3)
+ {
+diff --git a/tools/libs/call/libxencall.map b/tools/libs/call/libxencall.map
+index 6922b96511..ad7518b0e0 100644
+--- a/tools/libs/call/libxencall.map
++++ b/tools/libs/call/libxencall.map
+@@ -27,3 +27,8 @@ VERS_1.2 {
+ 	global:
+ 		xencall_fd;
+ } VERS_1.1;
++
++VERS_1.3 {
++	global:
++		xencall2L;
++} VERS_1.2;
+-- 
+2.30.2
+

@@ -1,0 +1,59 @@
+From c5a08918762e5fd7fb4c0fcc7385e3283828ed15 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Tue, 24 Sep 2019 13:33:44 +0100
+Subject: [PATCH] xen/arm: asm: Replace use of ALTERNATIVE with alternative_if
+
+Using alternative_if makes the code a bit more streamlined.
+
+Take the opportunity to use the new auto-nop infrastructure to avoid
+counting the number of nop in the else part for arch/arm/arm64/entry.S
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit f9e10a9edcaa8d13c667b6ebfc7424b9ca58e78e)
+---
+ xen/arch/arm/arm32/entry.S | 7 ++++---
+ xen/arch/arm/arm64/entry.S | 8 +++++---
+ 2 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/arm/arm32/entry.S b/xen/arch/arm/arm32/entry.S
+index d5c2982e4a..6185f46114 100644
+--- a/xen/arch/arm/arm32/entry.S
++++ b/xen/arch/arm/arm32/entry.S
+@@ -59,9 +59,10 @@ prepare_context_from_guest:
+          * If the SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT has been set in the cpu
+          * feature, the checking of pending SErrors will be skipped.
+          */
+-        ALTERNATIVE("nop",
+-                    "b skip_check",
+-                    SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT)
++        alternative_if SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT
++        b   skip_check
++        alternative_else_nop_endif
++
+         /*
+          * Start to check pending virtual abort in the gap of Guest -> HYP
+          * world switch.
+diff --git a/xen/arch/arm/arm64/entry.S b/xen/arch/arm/arm64/entry.S
+index c476108b7b..dca42a79bf 100644
+--- a/xen/arch/arm/arm64/entry.S
++++ b/xen/arch/arm/arm64/entry.S
+@@ -193,9 +193,11 @@ lr      .req    x30             /* link register */
+          * is not set. If a vSError took place, the initial exception will be
+          * skipped. Exit ASAP
+          */
+-        ALTERNATIVE("bl check_pending_vserror; cbnz x0, 1f",
+-                    "nop; nop",
+-                    SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT)
++        alternative_if_not SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT
++        bl      check_pending_vserror
++        cbnz    x0, 1f
++        alternative_else_nop_endif
++
+         bl      enter_hypervisor_from_guest_preirq
+         msr     daifclr, \iflags
+         bl      enter_hypervisor_from_guest
+-- 
+2.30.2
+

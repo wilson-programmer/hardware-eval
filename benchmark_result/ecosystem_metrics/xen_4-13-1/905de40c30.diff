@@ -1,0 +1,77 @@
+From 905de40c3031ae7ba47b4a659626b62d900aab1f Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 7 May 2020 14:49:42 +0200
+Subject: [PATCH] x86/hvm: simplify hvm_physdev_op allowance control
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+PVHv1 dom0 was given access to all PHYSDEVOP hypercalls, and such
+restriction was not removed when PVHv1 code was removed. As a result
+the switch in hvm_physdev_op was more complicated than required, and
+relied on PVHv2 dom0 not having PIRQ support in order to prevent
+access to some PV specific PHYSDEVOPs.
+
+Fix this by moving the default case to the bottom of the switch, since
+there's no need for any fall through now. Also remove the hardware
+domain check, as all the not explicitly listed PHYSDEVOPs are
+forbidden for HVM domains.
+
+Finally tighten the condition to allow usage of
+PHYSDEVOP_pci_mmcfg_reserved: apart from having vPCI enabled it should
+only be used by the hardware domain. Note that the code in
+do_physdev_op is already restricting the call to privileged domains
+only, but it can be further restricted to the hardware domain only, as
+other privileged domains don't have access to MMCFG regions anyway.
+
+Overall no functional change should arise from this change.
+
+Reported-by: Julien Grall <jgrall@amazon.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: a00e3737e085ebc1f313e36b188d4958e939e531
+master date: 2020-05-05 09:52:28 +0200
+---
+ xen/arch/x86/hvm/hypercall.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/hypercall.c b/xen/arch/x86/hvm/hypercall.c
+index 0d24550dcc..cacc3a57fc 100644
+--- a/xen/arch/x86/hvm/hypercall.c
++++ b/xen/arch/x86/hvm/hypercall.c
+@@ -77,26 +77,26 @@ static long hvm_grant_table_op(
+ static long hvm_physdev_op(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+ {
+     const struct vcpu *curr = current;
++    const struct domain *currd = curr->domain;
+ 
+     switch ( cmd )
+     {
+-    default:
+-        if ( !is_hardware_domain(curr->domain) )
+-            return -ENOSYS;
+-        /* fall through */
+     case PHYSDEVOP_map_pirq:
+     case PHYSDEVOP_unmap_pirq:
+     case PHYSDEVOP_eoi:
+     case PHYSDEVOP_irq_status_query:
+     case PHYSDEVOP_get_free_pirq:
+-        if ( !has_pirq(curr->domain) )
++        if ( !has_pirq(currd) )
+             return -ENOSYS;
+         break;
+ 
+     case PHYSDEVOP_pci_mmcfg_reserved:
+-        if ( !has_vpci(curr->domain) )
++        if ( !has_vpci(currd) || !is_hardware_domain(currd) )
+             return -ENOSYS;
+         break;
++
++    default:
++        return -ENOSYS;
+     }
+ 
+     if ( !curr->hcall_compat )
+-- 
+2.30.2
+

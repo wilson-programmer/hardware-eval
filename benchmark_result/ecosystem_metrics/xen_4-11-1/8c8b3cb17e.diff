@@ -1,0 +1,40 @@
+From 8c8b3cb17ee53b1871b524e05a38c3aabd238fea Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 14 Sep 2018 13:01:52 +0200
+Subject: [PATCH] x86/vmx: Avoid hitting BUG_ON() after EPTP-related
+ domain_crash()
+
+If the EPTP pointer can't be located in the altp2m list, the domain
+is (legitimately) crashed.
+
+Under those circumstances, execution will continue and guarentee to hit the
+BUG_ON(idx >= MAX_ALTP2M) (unfortunately, just out of context).
+
+Return from vmx_vmexit_handler() after the domain_crash(), which also has the
+side effect of reentering the scheduler more promptly.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Razvan Cojocaru <rcojocaru@bitdefender.com>
+Acked-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 48dbb2dbe9d9f92a2890a15bb48a0598c065b9f8
+master date: 2018-08-02 10:10:43 +0100
+---
+ xen/arch/x86/hvm/vmx/vmx.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index b0fababede..a6415f08f9 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -3644,6 +3644,8 @@ void vmx_vmexit_handler(struct cpu_user_regs *regs)
+             {
+                 gdprintk(XENLOG_ERR, "EPTP not found in alternate p2m list\n");
+                 domain_crash(v->domain);
++
++                return;
+             }
+         }
+ 
+-- 
+2.30.2
+

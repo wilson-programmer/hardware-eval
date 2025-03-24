@@ -1,0 +1,56 @@
+From 8e11ec8fbf6f933f8854f4bc54226653316903f2 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 7 Jun 2022 14:08:06 +0200
+Subject: [PATCH] PCI: don't allow "pci-phantom=" to mark real devices as
+ phantom functions
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+IOMMU code mapping / unmapping devices and interrupts will misbehave if
+a wrong command line option declared a function "phantom" when there's a
+real device at that position. Warn about this and adjust the specified
+stride (in the worst case ignoring the option altogether).
+
+Requested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 444b555dc9e09fa3ce90f066e0c88dec9b47f422
+master date: 2022-05-20 12:20:35 +0200
+---
+ xen/drivers/passthrough/pci.c | 19 ++++++++++++++++++-
+ 1 file changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/xen/drivers/passthrough/pci.c b/xen/drivers/passthrough/pci.c
+index 395958698e..e0491c908f 100644
+--- a/xen/drivers/passthrough/pci.c
++++ b/xen/drivers/passthrough/pci.c
+@@ -382,7 +382,24 @@ static struct pci_dev *alloc_pdev(struct pci_seg *pseg, u8 bus, u8 devfn)
+                          phantom_devs[i].slot == PCI_SLOT(devfn) &&
+                          phantom_devs[i].stride > PCI_FUNC(devfn) )
+                     {
+-                        pdev->phantom_stride = phantom_devs[i].stride;
++                        pci_sbdf_t sbdf = pdev->sbdf;
++                        unsigned int stride = phantom_devs[i].stride;
++
++                        while ( (sbdf.fn += stride) > PCI_FUNC(devfn) )
++                        {
++                            if ( pci_conf_read16(sbdf, PCI_VENDOR_ID) == 0xffff &&
++                                 pci_conf_read16(sbdf, PCI_DEVICE_ID) == 0xffff )
++                                continue;
++                            stride <<= 1;
++                            printk(XENLOG_WARNING
++                                   "%pp looks to be a real device; bumping %04x:%02x:%02x stride to %u\n",
++                                   &sbdf, phantom_devs[i].seg,
++                                   phantom_devs[i].bus, phantom_devs[i].slot,
++                                   stride);
++                            sbdf = pdev->sbdf;
++                        }
++                        if ( PCI_FUNC(stride) )
++                           pdev->phantom_stride = stride;
+                         break;
+                     }
+             }
+-- 
+2.30.2
+

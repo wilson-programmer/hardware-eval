@@ -1,0 +1,35 @@
+From daa4149647e1ba5ea22de346e1894ae793a17500 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 5 Mar 2021 15:31:50 +0100
+Subject: [PATCH] x86/ucode/amd: Fix OoB read in cpu_request_microcode()
+
+verify_patch_size() is a maximum size check, and doesn't have a minimum bound.
+
+If the microcode container encodes a blob with a length less than 64 bytes,
+the subsequent calls to microcode_fits()/compare_header() may read off the end
+of the buffer.
+
+Fixes: 4de936a38a ("x86/ucode/amd: Rework parsing logic in cpu_request_microcode()")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 1cbc4d89c45cba3929f1c0cb4bca0b000c4f174b
+master date: 2021-02-10 13:23:51 +0000
+---
+ xen/arch/x86/cpu/microcode/amd.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/xen/arch/x86/cpu/microcode/amd.c b/xen/arch/x86/cpu/microcode/amd.c
+index cd532321e8..5b45530d93 100644
+--- a/xen/arch/x86/cpu/microcode/amd.c
++++ b/xen/arch/x86/cpu/microcode/amd.c
+@@ -346,6 +346,7 @@ static struct microcode_patch *cpu_request_microcode(const void *buf, size_t siz
+             if ( size < sizeof(*mc) ||
+                  (mc = buf)->type != UCODE_UCODE_TYPE ||
+                  size - sizeof(*mc) < mc->len ||
++                 mc->len < sizeof(struct microcode_patch) ||
+                  (!skip_ucode && !verify_patch_size(mc->len)) )
+             {
+                 printk(XENLOG_ERR "microcode: Bad microcode data\n");
+-- 
+2.30.2
+

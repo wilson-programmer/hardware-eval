@@ -1,0 +1,159 @@
+From 0f1002d40644841295578b2189c1489b0a9276ec Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 24 Jun 2021 16:35:39 +0200
+Subject: [PATCH] x86/HVM: wire up multicalls
+
+To be able to use them from, in particular, the tool stack, they need to
+be supported for all guest types. Note that xc_resource_op() already
+does, so would not work without this on PVH Dom0.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Begrudingly acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+Backport-requested-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 198a2bc6f149ca41e16d90fc73de2c81affe4490)
+---
+ xen/arch/x86/hvm/hypercall.c    | 35 +++++++++++++++++++++++++++++++++
+ xen/arch/x86/hypercall.c        | 14 +++++++++----
+ xen/arch/x86/pv/hypercall.c     |  3 ++-
+ xen/include/asm-x86/multicall.h | 12 +++++++++++
+ 4 files changed, 59 insertions(+), 5 deletions(-)
+ create mode 100644 xen/include/asm-x86/multicall.h
+
+diff --git a/xen/arch/x86/hvm/hypercall.c b/xen/arch/x86/hvm/hypercall.c
+index b084afcbce..01846b0718 100644
+--- a/xen/arch/x86/hvm/hypercall.c
++++ b/xen/arch/x86/hvm/hypercall.c
+@@ -26,6 +26,7 @@
+ #include <asm/hvm/emulate.h>
+ #include <asm/hvm/support.h>
+ #include <asm/hvm/viridian.h>
++#include <asm/multicall.h>
+ 
+ #include <public/hvm/hvm_op.h>
+ #include <public/hvm/params.h>
+@@ -123,6 +124,7 @@ static long hvm_physdev_op(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+ 
+ static const hypercall_table_t hvm_hypercall_table[] = {
+     HVM_CALL(memory_op),
++    COMPAT_CALL(multicall),
+ #ifdef CONFIG_GRANT_TABLE
+     HVM_CALL(grant_table_op),
+ #endif
+@@ -332,6 +334,39 @@ int hvm_hypercall(struct cpu_user_regs *regs)
+     return curr->hcall_preempted ? HVM_HCALL_preempted : HVM_HCALL_completed;
+ }
+ 
++enum mc_disposition hvm_do_multicall_call(struct mc_state *state)
++{
++    struct vcpu *curr = current;
++    hypercall_fn_t *func = NULL;
++
++    if ( hvm_guest_x86_mode(curr) == 8 )
++    {
++        struct multicall_entry *call = &state->call;
++
++        if ( call->op < ARRAY_SIZE(hvm_hypercall_table) )
++            func = array_access_nospec(hvm_hypercall_table, call->op).native;
++        if ( func )
++            call->result = func(call->args[0], call->args[1], call->args[2],
++                                call->args[3], call->args[4], call->args[5]);
++        else
++            call->result = -ENOSYS;
++    }
++    else
++    {
++        struct compat_multicall_entry *call = &state->compat_call;
++
++        if ( call->op < ARRAY_SIZE(hvm_hypercall_table) )
++            func = array_access_nospec(hvm_hypercall_table, call->op).compat;
++        if ( func )
++            call->result = func(call->args[0], call->args[1], call->args[2],
++                                call->args[3], call->args[4], call->args[5]);
++        else
++            call->result = -ENOSYS;
++    }
++
++    return !hvm_get_cpl(curr) ? mc_continue : mc_preempt;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/xen/arch/x86/hypercall.c b/xen/arch/x86/hypercall.c
+index 14da9bc4ad..791b4c7585 100644
+--- a/xen/arch/x86/hypercall.c
++++ b/xen/arch/x86/hypercall.c
+@@ -20,6 +20,7 @@
+  */
+ 
+ #include <xen/hypercall.h>
++#include <asm/multicall.h>
+ 
+ #define ARGS(x, n)                              \
+     [ __HYPERVISOR_ ## x ] = { n, n }
+@@ -264,13 +265,18 @@ int hypercall_xlat_continuation(unsigned int *id, unsigned int nr,
+     return rc;
+ }
+ 
+-#ifndef CONFIG_PV
+-/* Stub for arch_do_multicall_call */
+-enum mc_disposition arch_do_multicall_call(struct mc_state *mc)
++enum mc_disposition arch_do_multicall_call(struct mc_state *state)
+ {
++    const struct domain *currd = current->domain;
++
++    if ( is_pv_domain(currd) )
++        return pv_do_multicall_call(state);
++
++    if ( is_hvm_domain(currd) )
++        return hvm_do_multicall_call(state);
++
+     return mc_exit;
+ }
+-#endif
+ 
+ /*
+  * Local variables:
+diff --git a/xen/arch/x86/pv/hypercall.c b/xen/arch/x86/pv/hypercall.c
+index 20795b4b57..73ccbe05ce 100644
+--- a/xen/arch/x86/pv/hypercall.c
++++ b/xen/arch/x86/pv/hypercall.c
+@@ -23,6 +23,7 @@
+ #include <xen/hypercall.h>
+ #include <xen/nospec.h>
+ #include <xen/trace.h>
++#include <asm/multicall.h>
+ #include <irq_vectors.h>
+ 
+ #define HYPERCALL(x)                                                \
+@@ -237,7 +238,7 @@ void pv_hypercall(struct cpu_user_regs *regs)
+     perfc_incr(hypercalls);
+ }
+ 
+-enum mc_disposition arch_do_multicall_call(struct mc_state *state)
++enum mc_disposition pv_do_multicall_call(struct mc_state *state)
+ {
+     struct vcpu *curr = current;
+     unsigned long op;
+diff --git a/xen/include/asm-x86/multicall.h b/xen/include/asm-x86/multicall.h
+new file mode 100644
+index 0000000000..7e1d4c121a
+--- /dev/null
++++ b/xen/include/asm-x86/multicall.h
+@@ -0,0 +1,12 @@
++/******************************************************************************
++ * asm-x86/multicall.h
++ */
++
++#ifndef __ASM_X86_MULTICALL_H__
++#define __ASM_X86_MULTICALL_H__
++
++#include <xen/multicall.h>
++
++typeof(arch_do_multicall_call) pv_do_multicall_call, hvm_do_multicall_call;
++
++#endif /* __ASM_X86_MULTICALL_H__ */
+-- 
+2.30.2
+

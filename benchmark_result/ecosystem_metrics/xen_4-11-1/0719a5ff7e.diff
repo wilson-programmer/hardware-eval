@@ -1,0 +1,178 @@
+From 0719a5ff7ee0fc5d71c3e0ac96a53ed854a1b0a8 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 14 Sep 2018 13:05:52 +0200
+Subject: [PATCH] x86: assorted array_index_nospec() insertions
+
+Don't chance having Spectre v1 (including BCBS) gadgets. In some of the
+cases the insertions are more of precautionary nature rather than there
+provably being a gadget, but I think we should err on the safe (secure)
+side here.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul.durrant@citrix.com>
+Acked-by: Razvan Cojocaru <rcojocaru@bitdefender.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 3f2002614af51dfd507168a1696658bac91155ce
+master date: 2018-09-03 17:50:10 +0200
+---
+ xen/arch/x86/hvm/dm.c        | 17 +++++++++++------
+ xen/arch/x86/hvm/hypercall.c | 12 ++++++++++--
+ xen/arch/x86/mm/mem_access.c |  2 ++
+ xen/arch/x86/pv/hypercall.c  | 12 ++++++++++--
+ 4 files changed, 33 insertions(+), 10 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/dm.c b/xen/arch/x86/hvm/dm.c
+index 6755f3fd96..efd7d48ce6 100644
+--- a/xen/arch/x86/hvm/dm.c
++++ b/xen/arch/x86/hvm/dm.c
+@@ -17,6 +17,7 @@
+ #include <xen/event.h>
+ #include <xen/guest_access.h>
+ #include <xen/hypercall.h>
++#include <xen/nospec.h>
+ #include <xen/sched.h>
+ 
+ #include <asm/hap.h>
+@@ -232,7 +233,7 @@ static int set_mem_type(struct domain *d,
+                         struct xen_dm_op_set_mem_type *data)
+ {
+     xen_pfn_t last_pfn = data->first_pfn + data->nr - 1;
+-    unsigned int iter = 0;
++    unsigned int iter = 0, mem_type;
+     int rc = 0;
+ 
+     /* Interface types to internal p2m types */
+@@ -252,7 +253,9 @@ static int set_mem_type(struct domain *d,
+          unlikely(data->mem_type == HVMMEM_unused) )
+         return -EINVAL;
+ 
+-    if ( data->mem_type  == HVMMEM_ioreq_server )
++    mem_type = array_index_nospec(data->mem_type, ARRAY_SIZE(memtype));
++
++    if ( mem_type == HVMMEM_ioreq_server )
+     {
+         unsigned int flags;
+ 
+@@ -279,10 +282,10 @@ static int set_mem_type(struct domain *d,
+ 
+         if ( p2m_is_shared(t) )
+             rc = -EAGAIN;
+-        else if ( !allow_p2m_type_change(t, memtype[data->mem_type]) )
++        else if ( !allow_p2m_type_change(t, memtype[mem_type]) )
+             rc = -EINVAL;
+         else
+-            rc = p2m_change_type_one(d, pfn, t, memtype[data->mem_type]);
++            rc = p2m_change_type_one(d, pfn, t, memtype[mem_type]);
+ 
+         put_gfn(d, pfn);
+ 
+@@ -387,6 +390,8 @@ static int dm_op(const struct dmop_args *op_args)
+         goto out;
+     }
+ 
++    op.op = array_index_nospec(op.op, ARRAY_SIZE(op_size));
++
+     if ( op_args->buf[0].size < offset + op_size[op.op] )
+         goto out;
+ 
+@@ -739,7 +744,7 @@ int compat_dm_op(domid_t domid,
+         return -E2BIG;
+ 
+     args.domid = domid;
+-    args.nr_bufs = nr_bufs;
++    args.nr_bufs = array_index_nospec(nr_bufs, ARRAY_SIZE(args.buf) + 1);
+ 
+     for ( i = 0; i < args.nr_bufs; i++ )
+     {
+@@ -776,7 +781,7 @@ long do_dm_op(domid_t domid,
+         return -E2BIG;
+ 
+     args.domid = domid;
+-    args.nr_bufs = nr_bufs;
++    args.nr_bufs = array_index_nospec(nr_bufs, ARRAY_SIZE(args.buf) + 1);
+ 
+     if ( copy_from_guest_offset(&args.buf[0], bufs, 0, args.nr_bufs) )
+         return -EFAULT;
+diff --git a/xen/arch/x86/hvm/hypercall.c b/xen/arch/x86/hvm/hypercall.c
+index 85eacd7d33..13dc322369 100644
+--- a/xen/arch/x86/hvm/hypercall.c
++++ b/xen/arch/x86/hvm/hypercall.c
+@@ -20,6 +20,7 @@
+  */
+ #include <xen/lib.h>
+ #include <xen/hypercall.h>
++#include <xen/nospec.h>
+ 
+ #include <asm/hvm/support.h>
+ 
+@@ -181,8 +182,15 @@ int hvm_hypercall(struct cpu_user_regs *regs)
+     BUILD_BUG_ON(ARRAY_SIZE(hvm_hypercall_table) >
+                  ARRAY_SIZE(hypercall_args_table));
+ 
+-    if ( (eax >= ARRAY_SIZE(hvm_hypercall_table)) ||
+-         !hvm_hypercall_table[eax].native )
++    if ( eax >= ARRAY_SIZE(hvm_hypercall_table) )
++    {
++        regs->rax = -ENOSYS;
++        return HVM_HCALL_completed;
++    }
++
++    eax = array_index_nospec(eax, ARRAY_SIZE(hvm_hypercall_table));
++
++    if ( !hvm_hypercall_table[eax].native )
+     {
+         regs->rax = -ENOSYS;
+         return HVM_HCALL_completed;
+diff --git a/xen/arch/x86/mm/mem_access.c b/xen/arch/x86/mm/mem_access.c
+index c0cd0174cf..d8a4ea4cf6 100644
+--- a/xen/arch/x86/mm/mem_access.c
++++ b/xen/arch/x86/mm/mem_access.c
+@@ -23,6 +23,7 @@
+ 
+ #include <xen/guest_access.h> /* copy_from_guest() */
+ #include <xen/mem_access.h>
++#include <xen/nospec.h>
+ #include <xen/vm_event.h>
+ #include <xen/event.h>
+ #include <public/vm_event.h>
+@@ -325,6 +326,7 @@ static bool xenmem_access_to_p2m_access(struct p2m_domain *p2m,
+     switch ( xaccess )
+     {
+     case 0 ... ARRAY_SIZE(memaccess) - 1:
++        xaccess = array_index_nospec(xaccess, ARRAY_SIZE(memaccess));
+         *paccess = memaccess[xaccess];
+         break;
+     case XENMEM_access_default:
+diff --git a/xen/arch/x86/pv/hypercall.c b/xen/arch/x86/pv/hypercall.c
+index bbc3011d1a..8c0979e4ee 100644
+--- a/xen/arch/x86/pv/hypercall.c
++++ b/xen/arch/x86/pv/hypercall.c
+@@ -21,6 +21,7 @@
+ 
+ #include <xen/compiler.h>
+ #include <xen/hypercall.h>
++#include <xen/nospec.h>
+ #include <xen/trace.h>
+ 
+ #define HYPERCALL(x)                                                \
+@@ -99,8 +100,15 @@ void pv_hypercall(struct cpu_user_regs *regs)
+     BUILD_BUG_ON(ARRAY_SIZE(pv_hypercall_table) >
+                  ARRAY_SIZE(hypercall_args_table));
+ 
+-    if ( (eax >= ARRAY_SIZE(pv_hypercall_table)) ||
+-         !pv_hypercall_table[eax].native )
++    if ( eax >= ARRAY_SIZE(pv_hypercall_table) )
++    {
++        regs->rax = -ENOSYS;
++        return;
++    }
++
++    eax = array_index_nospec(eax, ARRAY_SIZE(pv_hypercall_table));
++
++    if ( !pv_hypercall_table[eax].native )
+     {
+         regs->rax = -ENOSYS;
+         return;
+-- 
+2.30.2
+

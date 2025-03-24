@@ -1,0 +1,61 @@
+From eff203e185ed2fc60880b4691ae4265783171513 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 24 Apr 2023 13:03:59 +0200
+Subject: [PATCH] x86emul: pull permission check ahead for REP INS/OUTS
+
+Based on observations on a fair range of hardware from both primary
+vendors even zero-iteration-count instances of these insns perform the
+port related permission checking first.
+
+Fixes: fe300600464c ("x86: Fix emulation of REP prefix")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: f41c88a6fca59f99a2eb5e7ed3d90ab7bca08b1b
+master date: 2023-03-30 13:07:16 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index 847f8f3771..c4ff341405 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -4249,14 +4249,15 @@ x86_emulate(
+         goto imul;
+ 
+     case 0x6c ... 0x6d: /* ins %dx,%es:%edi */ {
+-        unsigned long nr_reps = get_rep_prefix(false, true);
++        unsigned long nr_reps;
+         unsigned int port = _regs.dx;
+ 
+         dst.bytes = !(b & 1) ? 1 : (op_bytes == 8) ? 4 : op_bytes;
+-        dst.mem.seg = x86_seg_es;
+-        dst.mem.off = truncate_ea_and_reps(_regs.r(di), nr_reps, dst.bytes);
+         if ( (rc = ioport_access_check(port, dst.bytes, ctxt, ops)) != 0 )
+             goto done;
++        nr_reps = get_rep_prefix(false, true);
++        dst.mem.off = truncate_ea_and_reps(_regs.r(di), nr_reps, dst.bytes);
++        dst.mem.seg = x86_seg_es;
+         /* Try the presumably most efficient approach first. */
+         if ( !ops->rep_ins )
+             nr_reps = 1;
+@@ -4290,13 +4291,14 @@ x86_emulate(
+     }
+ 
+     case 0x6e ... 0x6f: /* outs %esi,%dx */ {
+-        unsigned long nr_reps = get_rep_prefix(true, false);
++        unsigned long nr_reps;
+         unsigned int port = _regs.dx;
+ 
+         dst.bytes = !(b & 1) ? 1 : (op_bytes == 8) ? 4 : op_bytes;
+-        ea.mem.off = truncate_ea_and_reps(_regs.r(si), nr_reps, dst.bytes);
+         if ( (rc = ioport_access_check(port, dst.bytes, ctxt, ops)) != 0 )
+             goto done;
++        nr_reps = get_rep_prefix(true, false);
++        ea.mem.off = truncate_ea_and_reps(_regs.r(si), nr_reps, dst.bytes);
+         /* Try the presumably most efficient approach first. */
+         if ( !ops->rep_outs )
+             nr_reps = 1;
+-- 
+2.30.2
+

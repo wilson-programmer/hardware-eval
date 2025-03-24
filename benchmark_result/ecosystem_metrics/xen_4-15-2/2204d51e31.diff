@@ -1,0 +1,36 @@
+From 2204d51e3140d3261675c44c548056a7dd209467 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 7 Jan 2022 08:14:41 +0100
+Subject: [PATCH] x86/HVM: permit CLFLUSH{,OPT} on execute-only code segments
+
+Both SDM and PM explicitly permit this.
+
+Fixes: 52dba7bd0b36 ("x86emul: generalize wbinvd() hook")
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Paul Durrant <paul@xen.org>
+master commit: df3e1a5efe700a9f59eced801cac73f9fd02a0e2
+master date: 2021-12-10 14:03:56 +0100
+---
+ xen/arch/x86/hvm/emulate.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/emulate.c b/xen/arch/x86/hvm/emulate.c
+index 425c8ddd97..76a2ccfafe 100644
+--- a/xen/arch/x86/hvm/emulate.c
++++ b/xen/arch/x86/hvm/emulate.c
+@@ -2310,7 +2310,9 @@ static int hvmemul_cache_op(
+         ASSERT(!is_x86_system_segment(seg));
+ 
+         rc = hvmemul_virtual_to_linear(seg, offset, 0, NULL,
+-                                       hvm_access_read, hvmemul_ctxt, &addr);
++                                       op != x86emul_clwb ? hvm_access_none
++                                                          : hvm_access_read,
++                                       hvmemul_ctxt, &addr);
+         if ( rc != X86EMUL_OKAY )
+             break;
+ 
+-- 
+2.30.2
+

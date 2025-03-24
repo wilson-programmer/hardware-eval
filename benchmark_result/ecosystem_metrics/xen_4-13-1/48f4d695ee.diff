@@ -1,0 +1,32 @@
+From 48f4d695ee5713a25fc383d669b6142fbcbb7e20 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Thu, 23 Jan 2020 16:56:46 +0000
+Subject: [PATCH] libxl: Fix comment about dcs.sdss
+
+The field 'sdss' was named 'dmss' before, commit 3148bebbf0ab did the
+renamed but didn't update the comment.
+
+Fixes: 3148bebbf0ab ("libxl: rename a field in libxl__domain_create_state")
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+(cherry picked from commit 035c4d771600f300382a1637f2da33023f76b4c1)
+---
+ tools/libxl/libxl_internal.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libxl/libxl_internal.h b/tools/libxl/libxl_internal.h
+index b5adbfe4b7..247518a7ac 100644
+--- a/tools/libxl/libxl_internal.h
++++ b/tools/libxl/libxl_internal.h
+@@ -4148,7 +4148,7 @@ struct libxl__domain_create_state {
+     libxl__checkpoint_devices_state cds;
+     libxl__bootloader_state bl;
+     libxl__stub_dm_spawn_state sdss;
+-        /* If we're not doing stubdom, we use only dmss.dm,
++        /* If we're not doing stubdom, we use only sdss.dm,
+          * for the non-stubdom device model. */
+     libxl__stream_read_state srs;
+     /* necessary if the domain creation failed and we have to destroy it */
+-- 
+2.30.2
+

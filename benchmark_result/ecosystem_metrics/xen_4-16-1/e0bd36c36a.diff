@@ -1,0 +1,161 @@
+From e0bd36c36ae1088b6687da7351a035b6d9a02940 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 5 Apr 2022 14:45:29 +0200
+Subject: [PATCH] IOMMU/x86: tighten iommu_alloc_pgtable()'s parameter
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+This is to make more obvious that nothing outside of domain_iommu(d)
+actually changes or is otherwise needed by the function.
+
+No functional change intended.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: eba09b9dd78f9e8cbaa78ef0edb301b32def2c7a
+master date: 2022-04-05 14:16:46 +0200
+---
+ xen/drivers/passthrough/amd/iommu_map.c     | 10 +++++-----
+ xen/drivers/passthrough/amd/pci_amd_iommu.c |  2 +-
+ xen/drivers/passthrough/vtd/iommu.c         |  8 ++++----
+ xen/drivers/passthrough/x86/iommu.c         |  3 +--
+ xen/include/asm-x86/iommu.h                 |  3 ++-
+ 5 files changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_map.c b/xen/drivers/passthrough/amd/iommu_map.c
+index b0330157ea..8f9be319ad 100644
+--- a/xen/drivers/passthrough/amd/iommu_map.c
++++ b/xen/drivers/passthrough/amd/iommu_map.c
+@@ -184,7 +184,7 @@ static int iommu_pde_from_dfn(struct domain *d, unsigned long dfn,
+     unsigned long  next_table_mfn;
+     unsigned int level;
+     struct page_info *table;
+-    const struct domain_iommu *hd = dom_iommu(d);
++    struct domain_iommu *hd = dom_iommu(d);
+ 
+     table = hd->arch.amd.root_table;
+     level = hd->arch.amd.paging_mode;
+@@ -219,7 +219,7 @@ static int iommu_pde_from_dfn(struct domain *d, unsigned long dfn,
+             mfn = next_table_mfn;
+ 
+             /* allocate lower level page table */
+-            table = iommu_alloc_pgtable(d);
++            table = iommu_alloc_pgtable(hd);
+             if ( table == NULL )
+             {
+                 AMD_IOMMU_ERROR("cannot allocate I/O page table\n");
+@@ -249,7 +249,7 @@ static int iommu_pde_from_dfn(struct domain *d, unsigned long dfn,
+ 
+             if ( next_table_mfn == 0 )
+             {
+-                table = iommu_alloc_pgtable(d);
++                table = iommu_alloc_pgtable(hd);
+                 if ( table == NULL )
+                 {
+                     AMD_IOMMU_ERROR("cannot allocate I/O page table\n");
+@@ -553,7 +553,7 @@ int __init amd_iommu_quarantine_init(struct domain *d)
+ 
+     spin_lock(&hd->arch.mapping_lock);
+ 
+-    hd->arch.amd.root_table = iommu_alloc_pgtable(d);
++    hd->arch.amd.root_table = iommu_alloc_pgtable(hd);
+     if ( !hd->arch.amd.root_table )
+         goto out;
+ 
+@@ -568,7 +568,7 @@ int __init amd_iommu_quarantine_init(struct domain *d)
+          * page table pages, and the resulting allocations are always
+          * zeroed.
+          */
+-        pg = iommu_alloc_pgtable(d);
++        pg = iommu_alloc_pgtable(hd);
+         if ( !pg )
+             break;
+ 
+diff --git a/xen/drivers/passthrough/amd/pci_amd_iommu.c b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+index 9642bba43a..31e8c5dd3d 100644
+--- a/xen/drivers/passthrough/amd/pci_amd_iommu.c
++++ b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+@@ -242,7 +242,7 @@ int amd_iommu_alloc_root(struct domain *d)
+ 
+     if ( unlikely(!hd->arch.amd.root_table) )
+     {
+-        hd->arch.amd.root_table = iommu_alloc_pgtable(d);
++        hd->arch.amd.root_table = iommu_alloc_pgtable(hd);
+         if ( !hd->arch.amd.root_table )
+             return -ENOMEM;
+     }
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index 19696a8818..1b04a261f2 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -330,7 +330,7 @@ static u64 addr_to_dma_page_maddr(struct domain *domain, u64 addr, int alloc)
+     {
+         struct page_info *pg;
+ 
+-        if ( !alloc || !(pg = iommu_alloc_pgtable(domain)) )
++        if ( !alloc || !(pg = iommu_alloc_pgtable(hd)) )
+             goto out;
+ 
+         hd->arch.vtd.pgd_maddr = page_to_maddr(pg);
+@@ -350,7 +350,7 @@ static u64 addr_to_dma_page_maddr(struct domain *domain, u64 addr, int alloc)
+             if ( !alloc )
+                 break;
+ 
+-            pg = iommu_alloc_pgtable(domain);
++            pg = iommu_alloc_pgtable(hd);
+             if ( !pg )
+                 break;
+ 
+@@ -2766,7 +2766,7 @@ static int __init intel_iommu_quarantine_init(struct domain *d)
+         goto out;
+     }
+ 
+-    pg = iommu_alloc_pgtable(d);
++    pg = iommu_alloc_pgtable(hd);
+ 
+     rc = -ENOMEM;
+     if ( !pg )
+@@ -2785,7 +2785,7 @@ static int __init intel_iommu_quarantine_init(struct domain *d)
+          * page table pages, and the resulting allocations are always
+          * zeroed.
+          */
+-        pg = iommu_alloc_pgtable(d);
++        pg = iommu_alloc_pgtable(hd);
+ 
+         if ( !pg )
+             goto out;
+diff --git a/xen/drivers/passthrough/x86/iommu.c b/xen/drivers/passthrough/x86/iommu.c
+index b2284ae001..295d853003 100644
+--- a/xen/drivers/passthrough/x86/iommu.c
++++ b/xen/drivers/passthrough/x86/iommu.c
+@@ -416,9 +416,8 @@ int iommu_free_pgtables(struct domain *d)
+     return 0;
+ }
+ 
+-struct page_info *iommu_alloc_pgtable(struct domain *d)
++struct page_info *iommu_alloc_pgtable(struct domain_iommu *hd)
+ {
+-    struct domain_iommu *hd = dom_iommu(d);
+     unsigned int memflags = 0;
+     struct page_info *pg;
+     void *p;
+diff --git a/xen/include/asm-x86/iommu.h b/xen/include/asm-x86/iommu.h
+index de46149b40..cb794fe1ef 100644
+--- a/xen/include/asm-x86/iommu.h
++++ b/xen/include/asm-x86/iommu.h
+@@ -142,7 +142,8 @@ int pi_update_irte(const struct pi_desc *pi_desc, const struct pirq *pirq,
+ })
+ 
+ int __must_check iommu_free_pgtables(struct domain *d);
+-struct page_info *__must_check iommu_alloc_pgtable(struct domain *d);
++struct domain_iommu;
++struct page_info *__must_check iommu_alloc_pgtable(struct domain_iommu *hd);
+ 
+ #endif /* !__ARCH_X86_IOMMU_H__ */
+ /*
+-- 
+2.30.2
+

@@ -1,0 +1,37 @@
+From 35b80b2a011416383466f21e32cb72cf73df491b Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Mon, 27 Apr 2020 15:07:46 +0200
+Subject: [PATCH] build,xsm: fix multiple call
+
+Both script mkflask.sh and mkaccess_vector.sh generates multiple
+files. Exploits the 'multi-target pattern rule' trick to call each
+scripts only once.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 52f3f319851e40892fbafeae53e512c7d61f03d0
+master date: 2020-04-23 09:59:05 +0200
+---
+ xen/xsm/flask/Makefile | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/xsm/flask/Makefile b/xen/xsm/flask/Makefile
+index 7c3f381287..874fd362b9 100644
+--- a/xen/xsm/flask/Makefile
++++ b/xen/xsm/flask/Makefile
+@@ -21,10 +21,10 @@ ALL_H_FILES = $(FLASK_H_FILES) $(AV_H_FILES)
+ 
+ $(obj-y) ss/built_in.o: $(ALL_H_FILES)
+ 
+-$(FLASK_H_FILES): $(FLASK_H_DEPEND)
++$(subst include/,%/,$(FLASK_H_FILES)): $(FLASK_H_DEPEND)
+ 	$(CONFIG_SHELL) policy/mkflask.sh $(AWK) include $(FLASK_H_DEPEND)
+ 
+-$(AV_H_FILES): $(AV_H_DEPEND)
++$(subst include/,%/,$(AV_H_FILES)): $(AV_H_DEPEND)
+ 	$(CONFIG_SHELL) policy/mkaccess_vector.sh $(AWK) $(AV_H_DEPEND)
+ 
+ obj-bin-$(CONFIG_XSM_FLASK_POLICY) += flask-policy.o
+-- 
+2.30.2
+

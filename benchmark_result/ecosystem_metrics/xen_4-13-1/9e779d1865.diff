@@ -1,0 +1,71 @@
+From 9e779d186500e9147bca256d5622a2e610dd6f1c Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 5 Mar 2020 11:01:01 +0100
+Subject: [PATCH] xmalloc: guard against integer overflow
+
+There are hypercall handling paths (EFI ones are what this was found
+with) needing to allocate buffers of a caller specified size. This is
+generally fine, as our page allocator enforces an upper bound on all
+allocations. However, certain extremely large sizes could, when adding
+in allocator overhead, result in an apparently tiny allocation size,
+which would typically result in either a successful allocation, but a
+severe buffer overrun when using that memory block, or in a crash right
+in the allocator code.
+
+Reported-by: Ilja Van Sprundel <ivansprundel@ioactive.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: George Dunlap <george.dunlap@citrix.com>
+master commit: cf38b4926e2b55d1d7715cff5095a7444f5ed42d
+master date: 2020-02-06 09:53:12 +0100
+---
+ xen/common/xmalloc_tlsf.c | 20 +++++++++++++++++++-
+ 1 file changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/xen/common/xmalloc_tlsf.c b/xen/common/xmalloc_tlsf.c
+index 0b92a7a7a3..e3f6886e6b 100644
+--- a/xen/common/xmalloc_tlsf.c
++++ b/xen/common/xmalloc_tlsf.c
+@@ -378,7 +378,17 @@ void *xmem_pool_alloc(unsigned long size, struct xmem_pool *pool)
+     int fl, sl;
+     unsigned long tmp_size;
+ 
+-    size = (size < MIN_BLOCK_SIZE) ? MIN_BLOCK_SIZE : ROUNDUP_SIZE(size);
++    if ( size < MIN_BLOCK_SIZE )
++        size = MIN_BLOCK_SIZE;
++    else
++    {
++        tmp_size = ROUNDUP_SIZE(size);
++        /* Guard against overflow. */
++        if ( tmp_size < size )
++            return NULL;
++        size = tmp_size;
++    }
++
+     /* Rounding up the requested size and calculating fl and sl */
+ 
+     spin_lock(&pool->lock);
+@@ -594,6 +604,10 @@ void *_xmalloc(unsigned long size, unsigned long align)
+         align = MEM_ALIGN;
+     size += align - MEM_ALIGN;
+ 
++    /* Guard against overflow. */
++    if ( size < align - MEM_ALIGN )
++        return NULL;
++
+     if ( !xenpool )
+         tlsf_init();
+ 
+@@ -646,6 +660,10 @@ void *_xrealloc(void *ptr, unsigned long size, unsigned long align)
+         unsigned long tmp_size = size + align - MEM_ALIGN;
+         const struct bhdr *b;
+ 
++        /* Guard against overflow. */
++        if ( tmp_size < size )
++            return NULL;
++
+         if ( tmp_size < PAGE_SIZE )
+             tmp_size = (tmp_size < MIN_BLOCK_SIZE) ? MIN_BLOCK_SIZE :
+                 ROUNDUP_SIZE(tmp_size);
+-- 
+2.30.2
+

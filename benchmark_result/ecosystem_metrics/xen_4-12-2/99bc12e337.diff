@@ -1,0 +1,63 @@
+From 99bc12e337612c42abb56afbb97e97b633cdad81 Mon Sep 17 00:00:00 2001
+From: George Dunlap <george.dunlap@citrix.com>
+Date: Fri, 6 Dec 2019 12:39:02 +0100
+Subject: [PATCH] x86: Don't increase ApicIdCoreSize past 7
+
+Changeset ca2eee92df44 ("x86, hvm: Expose host core/HT topology to HVM
+guests") attempted to "fake up" a topology which would induce guest
+operating systems to not treat vcpus as sibling hyperthreads.  This
+involved actually reporting hyperthreading as available, but giving
+vcpus every other ApicId; which in turn led to doubling the ApicIds
+per core by bumping the ApicIdCoreSize by one.  In particular, Ryzen
+3xxx series processors, and reportedly EPYC "Rome" cpus -- have an
+ApicIdCoreSize of 7; the "fake" topology increases this to 8.
+
+Unfortunately, Windows running on modern AMD hardware -- including
+Ryzen 3xxx series processors, and reportedly EPYC "Rome" cpus --
+doesn't seem to cope with this value being higher than 7.  (Linux
+guests have so far continued to cope.)
+
+A "proper" fix is complicated and it's too late to fix it either for
+4.13, or to backport to supported branches.  As a short-term fix,
+limit this value to 7.
+
+This does mean that a Linux guest, booted on such a system without
+this change, and then migrating to a system with this change, with
+more than 64 vcpus, would see an apparent topology change.  This is a
+low enough risk in practice that enabling this limit unilaterally, to
+allow other guests to boot without manual intervention, is worth it.
+
+Reported-by: Steven Haigh <netwiz@crc.id.au>
+Reported-by: Andreas Kinzler <hfp@posteo.de>
+Signed-off-by: George Dunlap <george.dunlap@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 8c79c129a6db2220c1089e0ce5fa49e7298b1d3e
+master date: 2019-11-26 10:33:52 +0000
+---
+ tools/libxc/xc_cpuid_x86.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/tools/libxc/xc_cpuid_x86.c b/tools/libxc/xc_cpuid_x86.c
+index acefa44103..53754a5466 100644
+--- a/tools/libxc/xc_cpuid_x86.c
++++ b/tools/libxc/xc_cpuid_x86.c
+@@ -414,10 +414,15 @@ static void amd_xc_cpuid_policy(const struct cpuid_domain_info *info,
+          * - going out of sync with leaf 1 EBX[23:16],
+          * - incrementing ApicIdCoreSize when it's zero (which changes the
+          *   meaning of bits 7:0).
++         *
++         * UPDATE: In addition to avoiding overflow, some
++         * proprietary operating systems have trouble with
++         * apic_id_size values greater than 7.  Limit the value to
++         * 7 for now.
+          */
+         if ( (regs[2] & 0xffu) < 0x7fu )
+         {
+-            if ( (regs[2] & 0xf000u) && (regs[2] & 0xf000u) != 0xf000u )
++            if ( (regs[2] & 0xf000u) && (regs[2] & 0xf000u) < 0x7000u )
+                 regs[2] = ((regs[2] + 0x1000u) & 0xf000u) | (regs[2] & 0xffu);
+             regs[2] = (regs[2] & 0xf000u) | ((regs[2] & 0x7fu) << 1) | 1u;
+         }
+-- 
+2.30.2
+

@@ -1,0 +1,36 @@
+From 11ffc5a3c5ef1fc7b75daf198bad5c1521cf6dc1 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 15 May 2019 09:36:09 +0200
+Subject: [PATCH] x86emul: suppress general register update upon AVX gather
+ failures
+
+While destination and mask registers may indeed need updating in this
+case, the rIP update in particular needs to be avoided, as well as e.g.
+raising a single step trap.
+
+Reported-by: George Dunlap <george.dunlap@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 74f299bbd7d5cc52325b5866c17b44dd0bd1c5a2
+master date: 2019-04-03 10:14:32 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index e3b7e8c396..651194a683 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -8549,6 +8549,9 @@ x86_emulate(
+         invoke_stub("", "", "+m" (mask) : "a" (&mask));
+         put_stub(stub);
+ 
++        if ( rc != X86EMUL_OKAY )
++            goto done;
++
+         state->simd_size = simd_none;
+         break;
+     }
+-- 
+2.30.2
+

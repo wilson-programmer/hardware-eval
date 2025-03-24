@@ -1,0 +1,82 @@
+From 7cdc0cff95776a25edc05488da0b76930c463e80 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 24 Jun 2020 17:15:53 +0200
+Subject: [PATCH] build: fix dependency tracking for preprocessed files
+
+While the issue is more general, I noticed that asm-macros.i not getting
+re-generated as needed. This was due to its .*.d file mentioning
+asm-macros.o instead of asm-macros.i. Use -MQ here as well, and while at
+it also use -MQ to avoid the somewhat fragile sed-ary on the *.lds
+dependency tracking files. While there, further avoid open-coding $(CPP)
+and drop the bogus (Arm) / stale (x86) -Ui386.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+master commit: 75131ad75bb3c91717b5dfda6881e61c52bfd22e
+master date: 2020-06-08 10:25:40 +0200
+---
+ xen/Rules.mk          | 4 ++--
+ xen/arch/arm/Makefile | 4 +---
+ xen/arch/x86/Makefile | 8 ++------
+ 3 files changed, 5 insertions(+), 11 deletions(-)
+
+diff --git a/xen/Rules.mk b/xen/Rules.mk
+index a151b3f625..dc0632ddf5 100644
+--- a/xen/Rules.mk
++++ b/xen/Rules.mk
+@@ -217,13 +217,13 @@ $(filter %.init.o,$(obj-y) $(obj-bin-y) $(extra-y)): %.init.o: %.o Makefile
+ 	$(OBJCOPY) $(foreach s,$(SPECIAL_DATA_SECTIONS),--rename-section .$(s)=.init.$(s)) $< $@
+ 
+ %.i: %.c Makefile
+-	$(CPP) $(filter-out -Wa$(comma)%,$(CFLAGS)) $< -o $@
++	$(CPP) $(filter-out -Wa$(comma)%,$(CFLAGS)) -MQ $@ -o $@ $<
+ 
+ %.s: %.c Makefile
+ 	$(CC) $(filter-out -Wa$(comma)%,$(CFLAGS)) -S $< -o $@
+ 
+ # -std=gnu{89,99} gets confused by # as an end-of-line comment marker
+ %.s: %.S Makefile
+-	$(CPP) $(filter-out -Wa$(comma)%,$(AFLAGS)) $< -o $@
++	$(CPP) $(filter-out -Wa$(comma)%,$(AFLAGS)) -MQ $@ -o $@ $<
+ 
+ -include $(DEPS_INCLUDE)
+diff --git a/xen/arch/arm/Makefile b/xen/arch/arm/Makefile
+index 872a155b60..6b29e45bbe 100644
+--- a/xen/arch/arm/Makefile
++++ b/xen/arch/arm/Makefile
+@@ -123,9 +123,7 @@ asm-offsets.s: $(TARGET_SUBARCH)/asm-offsets.c
+ 	$(CC) $(filter-out -flto,$(CFLAGS)) -S -o $@ $<
+ 
+ xen.lds: xen.lds.S
+-	$(CC) -P -E -Ui386 $(AFLAGS) -o $@ $<
+-	sed -e 's/xen\.lds\.o:/xen\.lds:/g' <.xen.lds.d >.xen.lds.d.new
+-	mv -f .xen.lds.d.new .xen.lds.d
++	$(CPP) -P $(AFLAGS) -MQ $@ -o $@ $<
+ 
+ dtb.o: $(CONFIG_DTB_FILE)
+ 
+diff --git a/xen/arch/x86/Makefile b/xen/arch/x86/Makefile
+index a53bdcf979..beaa5ec016 100644
+--- a/xen/arch/x86/Makefile
++++ b/xen/arch/x86/Makefile
+@@ -233,14 +233,10 @@ $(BASEDIR)/include/asm-x86/asm-macros.h: asm-macros.i Makefile
+ 	$(call move-if-changed,$@.new,$@)
+ 
+ xen.lds: xen.lds.S
+-	$(CC) -P -E -Ui386 $(filter-out -Wa$(comma)%,$(AFLAGS)) -o $@ $<
+-	sed -e 's/.*\.lds\.o:/$(@F):/g' <.$(@F).d >.$(@F).d.new
+-	mv -f .$(@F).d.new .$(@F).d
++	$(CPP) -P $(filter-out -Wa$(comma)%,$(AFLAGS)) -MQ $@ -o $@ $<
+ 
+ efi.lds: xen.lds.S
+-	$(CC) -P -E -Ui386 -DEFI $(filter-out -Wa$(comma)%,$(AFLAGS)) -o $@ $<
+-	sed -e 's/.*\.lds\.o:/$(@F):/g' <.$(@F).d >.$(@F).d.new
+-	mv -f .$(@F).d.new .$(@F).d
++	$(CPP) -P -DEFI $(filter-out -Wa$(comma)%,$(AFLAGS)) -MQ $@ -o $@ $<
+ 
+ boot/mkelf32: boot/mkelf32.c
+ 	$(HOSTCC) $(HOSTCFLAGS) -o $@ $<
+-- 
+2.30.2
+

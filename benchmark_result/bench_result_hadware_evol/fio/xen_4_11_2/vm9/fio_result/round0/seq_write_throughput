@@ -1,0 +1,36 @@
+seq_write_throughput: (g=0): rw=write, bs=(R) 1024KiB-1024KiB, (W) 1024KiB-1024KiB, (T) 1024KiB-1024KiB, ioengine=libaio, iodepth=64
+...
+fio-3.1
+Starting 4 processes
+seq_write_throughput: Laying out IO file (1 file / 100MiB)
+seq_write_throughput: Laying out IO file (1 file / 100MiB)
+seq_write_throughput: Laying out IO file (1 file / 100MiB)
+seq_write_throughput: Laying out IO file (1 file / 100MiB)
+
+seq_write_throughput: (groupid=0, jobs=4): err= 0: pid=15786: Fri Jun  7 03:25:33 2024
+  write: IOPS=537, BW=542MiB/s (568MB/s)(32.4GiB/61245msec)
+    slat (usec): min=372, max=3597.0k, avg=7667.83, stdev=109753.83
+    clat (msec): min=6, max=4097, avg=487.49, stdev=883.07
+     lat (msec): min=86, max=4104, avg=495.17, stdev=889.46
+    clat percentiles (msec):
+     |  1.00th=[  104],  5.00th=[  120], 10.00th=[  134], 20.00th=[  150],
+     | 30.00th=[  167], 40.00th=[  182], 50.00th=[  194], 60.00th=[  209],
+     | 70.00th=[  226], 80.00th=[  251], 90.00th=[  978], 95.00th=[ 3037],
+     | 99.00th=[ 3910], 99.50th=[ 3977], 99.90th=[ 4044], 99.95th=[ 4077],
+     | 99.99th=[ 4111]
+   bw (  KiB/s): min= 2056, max=522281, per=46.43%, avg=257738.40, stdev=126395.49, samples=264
+   iops        : min=    2, max=  510, avg=251.33, stdev=123.38, samples=264
+  lat (msec)   : 10=0.01%, 100=0.64%, 250=79.46%, 500=9.21%, 750=0.10%
+  lat (msec)   : 1000=1.32%, 2000=0.12%, >=2000=9.90%
+  cpu          : usr=2.55%, sys=7.92%, ctx=52010, majf=0, minf=12
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.1%, 16=0.2%, 32=0.4%, >=64=104.6%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.1%, >=64=0.0%
+     issued rwt: total=0,32945,0, short=0,0,0, dropped=0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=64
+
+Run status group 0 (all jobs):
+  WRITE: bw=542MiB/s (568MB/s), 542MiB/s-542MiB/s (568MB/s-568MB/s), io=32.4GiB (34.8GB), run=61245-61245msec
+
+Disk stats (read/write):
+  xvda: ios=11/277764, merge=0/97, ticks=76/3916124, in_queue=1754412, util=45.04%

@@ -1,0 +1,51 @@
+From b66ce5058ec9ce84418cedd39b2bf07b7c5a1f65 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 14 Apr 2020 14:53:03 +0200
+Subject: [PATCH] gnttab: fix GNTTABOP_copy continuation handling
+
+The XSA-226 fix was flawed - the backwards transformation on rc was done
+too early, causing a continuation to not get invoked when the need for
+preemption was determined at the very first iteration of the request.
+This in particular means that all of the status fields of the individual
+operations would be left untouched, i.e. set to whatever the caller may
+or may not have initialized them to.
+
+This is part of XSA-318.
+
+Reported-by: Pawel Wieczorkiewicz <wipawel@amazon.de>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Tested-by: Pawel Wieczorkiewicz <wipawel@amazon.de>
+master commit: d6f22d5d9e8d6848ec229083ac9fb044f0adea93
+master date: 2020-04-14 14:42:32 +0200
+---
+ xen/common/grant_table.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/xen/common/grant_table.c b/xen/common/grant_table.c
+index ce0ad578e3..917e63d370 100644
+--- a/xen/common/grant_table.c
++++ b/xen/common/grant_table.c
+@@ -3583,8 +3583,7 @@ do_grant_table_op(
+         rc = gnttab_copy(copy, count);
+         if ( rc > 0 )
+         {
+-            rc = count - rc;
+-            guest_handle_add_offset(copy, rc);
++            guest_handle_add_offset(copy, count - rc);
+             uop = guest_handle_cast(copy, void);
+         }
+         break;
+@@ -3651,6 +3650,9 @@ do_grant_table_op(
+   out:
+     if ( rc > 0 || opaque_out != 0 )
+     {
++        /* Adjust rc, see gnttab_copy() for why this is needed. */
++        if ( cmd == GNTTABOP_copy )
++            rc = count - rc;
+         ASSERT(rc < count);
+         ASSERT((opaque_out & GNTTABOP_CMD_MASK) == 0);
+         rc = hypercall_create_continuation(__HYPERVISOR_grant_table_op, "ihi",
+-- 
+2.30.2
+

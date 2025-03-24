@@ -1,0 +1,66 @@
+From b67bb90a6bc7dc9df97c9ca6a1b6d85157f657c1 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 7 Aug 2020 17:20:50 +0200
+Subject: [PATCH] x86: restore pv_rtc_handler() invocation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+This was lost when making the logic accessible to PVH Dom0.
+
+While doing so make the access to the global function pointer safe
+against races (as noticed by Roger): The only current user wants to be
+invoked just once (but can tolerate to be invoked multiple times),
+zapping the pointer at that point.
+
+Fixes: 835d8d69d96a ("x86/rtc: provide mediated access to RTC for PVH dom0")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: f8fe3c07363d11fc81d8e7382dbcaa357c861569
+master date: 2020-07-15 15:46:30 +0200
+---
+ xen/arch/x86/hpet.c | 2 +-
+ xen/arch/x86/time.c | 7 +++++++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hpet.c b/xen/arch/x86/hpet.c
+index 57f68fa81b..e99d7116b6 100644
+--- a/xen/arch/x86/hpet.c
++++ b/xen/arch/x86/hpet.c
+@@ -542,7 +542,7 @@ static void handle_rtc_once(uint8_t index, uint8_t value)
+     if ( value & (RTC_PIE | RTC_AIE | RTC_UIE ) )
+     {
+         cpuidle_disable_deep_cstate();
+-        pv_rtc_handler = NULL;
++        ACCESS_ONCE(pv_rtc_handler) = NULL;
+     }
+ }
+ 
+diff --git a/xen/arch/x86/time.c b/xen/arch/x86/time.c
+index 5893292424..8816b3ceb0 100644
+--- a/xen/arch/x86/time.c
++++ b/xen/arch/x86/time.c
+@@ -1046,6 +1046,8 @@ void rtc_guest_write(unsigned int port, unsigned int data)
+ 
+     switch ( port )
+     {
++        typeof(pv_rtc_handler) hook;
++
+     case RTC_PORT(0):
+         /*
+          * All PV domains (and PVH dom0) are allowed to write to the latched
+@@ -1058,6 +1060,11 @@ void rtc_guest_write(unsigned int port, unsigned int data)
+     case RTC_PORT(1):
+         if ( !ioports_access_permitted(currd, RTC_PORT(0), RTC_PORT(1)) )
+             break;
++
++        hook = ACCESS_ONCE(pv_rtc_handler);
++        if ( hook )
++            hook(currd->arch.cmos_idx & 0x7f, data);
++
+         spin_lock_irqsave(&rtc_lock, flags);
+         outb(currd->arch.cmos_idx & 0x7f, RTC_PORT(0));
+         outb(data, RTC_PORT(1));
+-- 
+2.30.2
+

@@ -1,0 +1,26 @@
+From c4b1a75d7c13d4b141627fe50d8f0c80588f8f64 Mon Sep 17 00:00:00 2001
+From: Ian Jackson <ian.jackson@eu.citrix.com>
+Date: Mon, 1 Apr 2019 13:11:17 +0100
+Subject: [PATCH] SUPPORT.md: Fix release notes link
+
+Signed-off-by: Ian Jackson <ian.jackson@eu.citrix.com>
+---
+ SUPPORT.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/SUPPORT.md b/SUPPORT.md
+index d7bcf71d09..52f25fa85a 100644
+--- a/SUPPORT.md
++++ b/SUPPORT.md
+@@ -15,7 +15,7 @@ for the definitions of the support status levels etc.
+     Security-Support-Until: 2022-04-02
+ 
+ Release Notes
+-: <a href="https://wiki.xenproject.org/wiki/Xen_Project_X.YY_Release_Notes">RN</a>
++: <a href="https://wiki.xenproject.org/wiki/Xen_Project_4.12_Release_Notes">RN</a>
+ 
+ # Feature Support
+ 
+-- 
+2.30.2
+

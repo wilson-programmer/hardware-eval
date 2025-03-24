@@ -1,0 +1,110 @@
+From 36d2ecb9991bf2d1ddb933872c3dfbd26300ca68 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 25 Nov 2019 16:01:00 +0100
+Subject: [PATCH] AMD/IOMMU: don't needlessly trigger errors/crashes when
+ unmapping a page
+
+Unmapping a page which has never been mapped should be a no-op (note how
+it already is in case there was no root page table allocated). There's
+in particular no need to grow the number of page table levels in use,
+and there's also no need to allocate intermediate page tables except
+when needing to split a large page.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: ad591454f069647c36a7daaa9ec23384c0263f0b
+master date: 2019-11-12 11:08:34 +0100
+---
+ xen/drivers/passthrough/amd/iommu_map.c | 40 +++++++++++--------------
+ 1 file changed, 18 insertions(+), 22 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_map.c b/xen/drivers/passthrough/amd/iommu_map.c
+index 67329b0c95..628aa60230 100644
+--- a/xen/drivers/passthrough/amd/iommu_map.c
++++ b/xen/drivers/passthrough/amd/iommu_map.c
+@@ -343,7 +343,7 @@ uint64_t amd_iommu_get_address_from_pte(void *pte)
+  * page tables.
+  */
+ static int iommu_pde_from_dfn(struct domain *d, unsigned long dfn,
+-                              unsigned long pt_mfn[])
++                              unsigned long pt_mfn[], bool map)
+ {
+     uint64_t *pde, *next_table_vaddr;
+     unsigned long  next_table_mfn;
+@@ -356,6 +356,13 @@ static int iommu_pde_from_dfn(struct domain *d, unsigned long dfn,
+ 
+     BUG_ON( table == NULL || level < 1 || level > 6 );
+ 
++    /*
++     * A frame number past what the current page tables can represent can't
++     * possibly have a mapping.
++     */
++    if ( dfn >> (PTE_PER_TABLE_SHIFT * level) )
++        return 0;
++
+     next_table_mfn = mfn_x(page_to_mfn(table));
+ 
+     if ( level == 1 )
+@@ -415,6 +422,9 @@ static int iommu_pde_from_dfn(struct domain *d, unsigned long dfn,
+         /* Install lower level page table for non-present entries */
+         else if ( !iommu_is_pte_present((uint32_t *)pde) )
+         {
++            if ( !map )
++                return 0;
++
+             if ( next_table_mfn == 0 )
+             {
+                 table = alloc_amd_iommu_pgtable();
+@@ -577,7 +587,7 @@ int amd_iommu_map_page(struct domain *d, dfn_t dfn, mfn_t mfn,
+         }
+     }
+ 
+-    if ( iommu_pde_from_dfn(d, dfn_x(dfn), pt_mfn) || (pt_mfn[1] == 0) )
++    if ( iommu_pde_from_dfn(d, dfn_x(dfn), pt_mfn, true) || (pt_mfn[1] == 0) )
+     {
+         spin_unlock(&hd->arch.mapping_lock);
+         AMD_IOMMU_DEBUG("Invalid IO pagetable entry dfn = %"PRI_dfn"\n",
+@@ -615,24 +625,7 @@ int amd_iommu_unmap_page(struct domain *d, dfn_t dfn,
+         return 0;
+     }
+ 
+-    /* Since HVM domain is initialized with 2 level IO page table,
+-     * we might need a deeper page table for lager dfn now */
+-    if ( is_hvm_domain(d) )
+-    {
+-        int rc = update_paging_mode(d, dfn_x(dfn));
+-
+-        if ( rc )
+-        {
+-            spin_unlock(&hd->arch.mapping_lock);
+-            AMD_IOMMU_DEBUG("Update page mode failed dfn = %"PRI_dfn"\n",
+-                            dfn_x(dfn));
+-            if ( rc != -EADDRNOTAVAIL )
+-                domain_crash(d);
+-            return rc;
+-        }
+-    }
+-
+-    if ( iommu_pde_from_dfn(d, dfn_x(dfn), pt_mfn) || (pt_mfn[1] == 0) )
++    if ( iommu_pde_from_dfn(d, dfn_x(dfn), pt_mfn, false) )
+     {
+         spin_unlock(&hd->arch.mapping_lock);
+         AMD_IOMMU_DEBUG("Invalid IO pagetable entry dfn = %"PRI_dfn"\n",
+@@ -641,8 +634,11 @@ int amd_iommu_unmap_page(struct domain *d, dfn_t dfn,
+         return -EFAULT;
+     }
+ 
+-    /* mark PTE as 'page not present' */
+-    *flush_flags |= clear_iommu_pte_present(pt_mfn[1], dfn_x(dfn));
++    if ( pt_mfn[1] )
++    {
++        /* Mark PTE as 'page not present'. */
++        *flush_flags |= clear_iommu_pte_present(pt_mfn[1], dfn_x(dfn));
++    }
+ 
+     spin_unlock(&hd->arch.mapping_lock);
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,50 @@
+From dea9fc0e02d92f5e6d46680aa0a52fa758eca9c4 Mon Sep 17 00:00:00 2001
+From: Olaf Hering <olaf@aepfle.de>
+Date: Mon, 18 Jun 2018 14:55:36 +0200
+Subject: [PATCH] stubdom/vtpm: fix memcmp in TPM_ChangeAuthAsymFinish
+
+gcc8 spotted this error:
+error: 'memcmp' reading 20 bytes from a region of size 8 [-Werror=stringop-overflow=]
+
+Signed-off-by: Olaf Hering <olaf@aepfle.de>
+Reviewed-by: Samuel Thibault <samuel.thibault@ens-lyon.org>
+(cherry picked from commit 22bf5be3237cb482a2ffd772ffd20ce37285eebf)
+---
+ stubdom/Makefile                            |  1 +
+ stubdom/vtpm_TPM_ChangeAuthAsymFinish.patch | 12 ++++++++++++
+ 2 files changed, 13 insertions(+)
+ create mode 100644 stubdom/vtpm_TPM_ChangeAuthAsymFinish.patch
+
+diff --git a/stubdom/Makefile b/stubdom/Makefile
+index 7cb62e6c36..34bd9e238b 100644
+--- a/stubdom/Makefile
++++ b/stubdom/Makefile
+@@ -229,6 +229,7 @@ tpm_emulator-$(XEN_TARGET_ARCH): tpm_emulator-$(TPMEMU_VERSION).tar.gz
+ 	patch -d $@ -p1 < vtpm-deepquote-anyloc.patch
+ 	patch -d $@ -p1 < vtpm-cmake-Wextra.patch
+ 	patch -d $@ -p1 < vtpm-implicit-fallthrough.patch
++	patch -d $@ -p1 < vtpm_TPM_ChangeAuthAsymFinish.patch
+ 	mkdir $@/build
+ 	cd $@/build; CC=${CC} $(CMAKE) .. -DCMAKE_C_FLAGS:STRING="-std=c99 -DTPM_NO_EXTERN $(TARGET_CPPFLAGS) $(TARGET_CFLAGS) -Wno-declaration-after-statement"
+ 	touch $@
+diff --git a/stubdom/vtpm_TPM_ChangeAuthAsymFinish.patch b/stubdom/vtpm_TPM_ChangeAuthAsymFinish.patch
+new file mode 100644
+index 0000000000..10b89a4c3a
+--- /dev/null
++++ b/stubdom/vtpm_TPM_ChangeAuthAsymFinish.patch
+@@ -0,0 +1,12 @@
++error: 'memcmp' reading 20 bytes from a region of size 8 [-Werror=stringop-overflow=]
++--- a/tpm/tpm_deprecated.c
+++++ b/tpm/tpm_deprecated.c
++@@ -434,7 +434,7 @@ TPM_RESULT TPM_ChangeAuthAsymFinish(TPM_
++   tpm_hmac_final(&hmac_ctx, b1.digest);
++   /* 6. The TPM SHALL compare b1 with newAuthLink. The TPM SHALL
++         indicate a failure if the values do not match. */
++-  if (memcmp(&b1, &newAuthLink, sizeof(TPM_HMAC))) {
+++  if (memcmp(&b1, newAuthLink, sizeof(TPM_HMAC))) {
++     debug("TPM_ChangeAuthAsymFinish(): newAuthLink value does not match.");
++     return TPM_FAIL;
++   }
+-- 
+2.30.2
+

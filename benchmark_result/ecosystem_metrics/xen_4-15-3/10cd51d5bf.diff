@@ -1,0 +1,58 @@
+From 10cd51d5bf5f2d9ebe5f36a1b428f65ff5efd115 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 6 Apr 2022 10:24:10 +0200
+Subject: [PATCH] tools/firmware: do not add a .note.gnu.property section
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Prevent the assembler from creating a .note.gnu.property section on
+the output objects, as it's not useful for firmware related binaries,
+and breaks the resulting rombios image.
+
+This requires modifying the cc-option Makefile macro so it can test
+assembler options (by replacing the usage of the -S flag with -c) and
+also stripping the -Wa, prefix if present when checking for the test
+output.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: e270af94280e6a9610705ebc1fdd1d7a9b1f8a98
+master date: 2022-04-04 12:30:07 +0100
+---
+ Config.mk               | 2 +-
+ tools/firmware/Rules.mk | 4 ++++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/Config.mk b/Config.mk
+index ae5eaecd62..2593e5aa78 100644
+--- a/Config.mk
++++ b/Config.mk
+@@ -91,7 +91,7 @@ PYTHON_PREFIX_ARG ?= --prefix="$(prefix)"
+ #
+ # Usage: cflags-y += $(call cc-option,$(CC),-march=winchip-c6,-march=i586)
+ cc-option = $(shell if test -z "`echo 'void*p=1;' | \
+-              $(1) $(2) -S -o /dev/null -x c - 2>&1 | grep -- $(2) -`"; \
++              $(1) $(2) -c -o /dev/null -x c - 2>&1 | grep -- $(2:-Wa$(comma)%=%) -`"; \
+               then echo "$(2)"; else echo "$(3)"; fi ;)
+ 
+ # cc-option-add: Add an option to compilation flags, but only if supported.
+diff --git a/tools/firmware/Rules.mk b/tools/firmware/Rules.mk
+index c227fe2524..278cca01e4 100644
+--- a/tools/firmware/Rules.mk
++++ b/tools/firmware/Rules.mk
+@@ -17,6 +17,10 @@ $(call cc-options-add,CFLAGS,CC,$(EMBEDDED_EXTRA_CFLAGS))
+ 
+ $(call cc-option-add,CFLAGS,CC,-fcf-protection=none)
+ 
++# Do not add the .note.gnu.property section to any of the firmware objects: it
++# breaks the rombios binary and is not useful for firmware anyway.
++$(call cc-option-add,CFLAGS,CC,-Wa$$(comma)-mx86-used-note=no)
++
+ # Extra CFLAGS suitable for an embedded type of environment.
+ CFLAGS += -ffreestanding -msoft-float
+ 
+-- 
+2.30.2
+

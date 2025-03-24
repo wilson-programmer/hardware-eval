@@ -1,0 +1,66 @@
+From 6e5608d1c50e0f91ed3226489d9591c70fa37c30 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 11 Oct 2022 15:42:48 +0200
+Subject: [PATCH] gnttab: correct locking on transitive grant copy error path
+
+While the comment next to the lock dropping in preparation of
+recursively calling acquire_grant_for_copy() mistakenly talks about the
+rd == td case (excluded a few lines further up), the same concerns apply
+to the calling of release_grant_for_copy() on a subsequent error path.
+
+This is CVE-2022-33748 / XSA-411.
+
+Fixes: ad48fb963dbf ("gnttab: fix transitive grant handling")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+master commit: 6e3aab858eef614a21a782a3b73acc88e74690ea
+master date: 2022-10-11 14:29:30 +0200
+---
+ xen/common/grant_table.c | 21 +++++++++++++++++----
+ 1 file changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/xen/common/grant_table.c b/xen/common/grant_table.c
+index 34498d4652..576b1d34dc 100644
+--- a/xen/common/grant_table.c
++++ b/xen/common/grant_table.c
+@@ -2617,9 +2617,8 @@ acquire_grant_for_copy(
+                      trans_domid);
+ 
+         /*
+-         * acquire_grant_for_copy() could take the lock on the
+-         * remote table (if rd == td), so we have to drop the lock
+-         * here and reacquire.
++         * acquire_grant_for_copy() will take the lock on the remote table,
++         * so we have to drop the lock here and reacquire.
+          */
+         active_entry_release(act);
+         grant_read_unlock(rgt);
+@@ -2656,11 +2655,25 @@ acquire_grant_for_copy(
+                           act->trans_gref != trans_gref ||
+                           !act->is_sub_page)) )
+         {
++            /*
++             * Like above for acquire_grant_for_copy() we need to drop and then
++             * re-acquire the locks here to prevent lock order inversion issues.
++             * Unlike for acquire_grant_for_copy() we don't need to re-check
++             * anything, as release_grant_for_copy() doesn't depend on the grant
++             * table entry: It only updates internal state and the status flags.
++             */
++            active_entry_release(act);
++            grant_read_unlock(rgt);
++
+             release_grant_for_copy(td, trans_gref, readonly);
+-            fixup_status_for_copy_pin(rd, act, status);
+             rcu_unlock_domain(td);
++
++            grant_read_lock(rgt);
++            act = active_entry_acquire(rgt, gref);
++            fixup_status_for_copy_pin(rd, act, status);
+             active_entry_release(act);
+             grant_read_unlock(rgt);
++
+             put_page(*page);
+             *page = NULL;
+             return ERESTART;
+-- 
+2.30.2
+

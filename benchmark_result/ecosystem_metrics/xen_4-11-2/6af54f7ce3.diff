@@ -1,0 +1,52 @@
+From 6af54f7ce3b2391ff9f93e0ee085cad9dd8471f7 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 23 Sep 2019 14:32:53 +0200
+Subject: [PATCH] x86/boot: Fix build dependenices for reloc.c
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+c/s 201f852eaf added start_info.h and kconfig.h to reloc.c, but only updated
+start_info.h in RELOC_DEPS.
+
+This causes reloc.c to not be regenerated when Kconfig changes.  It is most
+noticeable when enabling CONFIG_PVH and finding the resulting binary crash
+early with:
+
+  (d9) (XEN)
+  (d9) (XEN) ****************************************
+  (d9) (XEN) Panic on CPU 0:
+  (d9) (XEN) Magic value is wrong: c2c2c2c2
+  (d9) (XEN) ****************************************
+  (d9) (XEN)
+  (d9) (XEN) Reboot in five seconds...
+  (XEN) d9v0 Triple fault - invoking HVM shutdown action 1
+
+Reported-by: Paul Durrant <paul.durrant@citrix.com>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 78c0000c87ce498bf621914c0554b83fac3ee00d
+master date: 2019-07-31 11:19:45 +0100
+---
+ xen/arch/x86/boot/Makefile | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/boot/Makefile b/xen/arch/x86/boot/Makefile
+index e10388282f..9b31bfcbfb 100644
+--- a/xen/arch/x86/boot/Makefile
++++ b/xen/arch/x86/boot/Makefile
+@@ -4,7 +4,10 @@ DEFS_H_DEPS = defs.h $(BASEDIR)/include/xen/stdbool.h
+ 
+ CMDLINE_DEPS = $(DEFS_H_DEPS) video.h
+ 
+-RELOC_DEPS = $(DEFS_H_DEPS) $(BASEDIR)/include/xen/multiboot.h \
++RELOC_DEPS = $(DEFS_H_DEPS) \
++	     $(BASEDIR)/include/generated/autoconf.h \
++	     $(BASEDIR)/include/xen/kconfig.h \
++	     $(BASEDIR)/include/xen/multiboot.h \
+ 	     $(BASEDIR)/include/xen/multiboot2.h \
+ 	     $(BASEDIR)/include/public/arch-x86/hvm/start_info.h
+ 
+-- 
+2.30.2
+

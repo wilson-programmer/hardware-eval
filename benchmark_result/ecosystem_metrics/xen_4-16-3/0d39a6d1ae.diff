@@ -1,0 +1,28 @@
+From 0d39a6d1ae3df67e11548dedfc8e1923a9002fcd Mon Sep 17 00:00:00 2001
+From: Henry Wang <Henry.Wang@arm.com>
+Date: Mon, 14 Nov 2022 12:01:47 +0100
+Subject: [PATCH] CHANGELOG: update link for RELEASE-4.16.0
+
+Signed-off-by: Henry Wang <Henry.Wang@arm.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+---
+ CHANGELOG.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 731db3590e..3d9f54d0f5 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,7 +4,7 @@ Notable changes to Xen will be documented in this file.
+ 
+ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+ 
+-## [4.16.0](https://xenbits.xen.org/gitweb/?p=xen.git;a=shortlog;h=staging) - 2021-12-02
++## [4.16.0](https://xenbits.xen.org/gitweb/?p=xen.git;a=shortlog;h=RELEASE-4.16.0) - 2021-12-02
+ 
+ ### Removed
+  - XENSTORED_ROOTDIR environment variable from configuartion files and
+-- 
+2.30.2
+

@@ -1,0 +1,36 @@
+From 4cf9a7c7bdb9d544fbac81105bbc1059ba3dd932 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 7 Jun 2022 14:02:30 +0200
+Subject: [PATCH] IOMMU: make domctl handler tolerate NULL domain
+
+Besides the reporter's issue of hitting a NULL deref when !CONFIG_GDBSX,
+XEN_DOMCTL_test_assign_device can legitimately end up having NULL passed
+here, when the domctl was passed DOMID_INVALID.
+
+Fixes: 71e617a6b8f6 ("use is_iommu_enabled() where appropriate...")
+Reported-by: Cheyenne Wills <cheyenne.wills@gmail.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+master commit: fa4d84e6dd3c3bfd23a525b75a5483d4ce15adbb
+master date: 2022-04-26 10:25:54 +0200
+---
+ xen/drivers/passthrough/iommu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/drivers/passthrough/iommu.c b/xen/drivers/passthrough/iommu.c
+index caaba62c88..287f63fc73 100644
+--- a/xen/drivers/passthrough/iommu.c
++++ b/xen/drivers/passthrough/iommu.c
+@@ -535,7 +535,7 @@ int iommu_do_domctl(
+ {
+     int ret = -ENODEV;
+ 
+-    if ( !is_iommu_enabled(d) )
++    if ( !(d ? is_iommu_enabled(d) : iommu_enabled) )
+         return -EOPNOTSUPP;
+ 
+ #ifdef CONFIG_HAS_PCI
+-- 
+2.30.2
+

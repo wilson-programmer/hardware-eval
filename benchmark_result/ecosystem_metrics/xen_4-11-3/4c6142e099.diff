@@ -1,0 +1,44 @@
+From 4c6142e0991228f1aeb2075a553200d75a725017 Mon Sep 17 00:00:00 2001
+From: Sergey Dyasli <sergey.dyasli@citrix.com>
+Date: Fri, 25 Oct 2019 11:59:35 +0200
+Subject: [PATCH] x86/shim: fix ballooning down the guest
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Currently ballooning down a pvshim guest causes the following errors
+inside the shim:
+
+    d3v0 failed to reserve 512 extents of order 512 for offlining
+
+And the ballooned-out pages stay inside shim and don't reach L0 Xen.
+
+Fix this by passing the correct arguments to pv_shim_offline_memory()
+during a XENMEM_decrease_reservation request.
+
+Fixes: b2245acc60c3 ('xen/pvshim: memory hotplug')
+Signed-off-by: Sergey Dyasli <sergey.dyasli@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: ddc5a85fbcfbacc34bbd9abcdb12923de2fc27b3
+master date: 2019-09-26 18:06:07 +0200
+---
+ xen/common/memory.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/common/memory.c b/xen/common/memory.c
+index f71163221f..dee85f1496 100644
+--- a/xen/common/memory.c
++++ b/xen/common/memory.c
+@@ -1163,7 +1163,7 @@ long do_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+              * hypercall has failed and only part of the extents where
+              * processed.
+              */
+-            pv_shim_offline_memory(args.nr_extents, args.nr_done);
++            pv_shim_offline_memory(args.nr_done, args.extent_order);
+ #endif
+ 
+         break;
+-- 
+2.30.2
+

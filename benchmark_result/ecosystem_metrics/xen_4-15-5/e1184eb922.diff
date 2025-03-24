@@ -1,0 +1,46 @@
+From e1184eb9226164ebd722d3d2acf95ab094f0aa6f Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 9 Apr 2021 09:14:25 +0200
+Subject: [PATCH] x86/CPUID: move some static masks into .init
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Except for hvm_shadow_max_featuremask and deep_features they're
+referenced by __init functions only.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+(cherry picked from commit 186b09ea01c925c3997f1a05f585b35151d32d1a)
+---
+ xen/arch/x86/cpuid.c | 13 ++++++++-----
+ 1 file changed, 8 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/x86/cpuid.c b/xen/arch/x86/cpuid.c
+index 79950dc3ea..c8e1a3e580 100644
+--- a/xen/arch/x86/cpuid.c
++++ b/xen/arch/x86/cpuid.c
+@@ -15,12 +15,15 @@
+ 
+ const uint32_t known_features[] = INIT_KNOWN_FEATURES;
+ 
+-static const uint32_t pv_max_featuremask[] = INIT_PV_MAX_FEATURES;
++static const uint32_t __initconst pv_max_featuremask[] = INIT_PV_MAX_FEATURES;
+ static const uint32_t hvm_shadow_max_featuremask[] = INIT_HVM_SHADOW_MAX_FEATURES;
+-static const uint32_t hvm_hap_max_featuremask[] = INIT_HVM_HAP_MAX_FEATURES;
+-static const uint32_t pv_def_featuremask[] = INIT_PV_DEF_FEATURES;
+-static const uint32_t hvm_shadow_def_featuremask[] = INIT_HVM_SHADOW_DEF_FEATURES;
+-static const uint32_t hvm_hap_def_featuremask[] = INIT_HVM_HAP_DEF_FEATURES;
++static const uint32_t __initconst hvm_hap_max_featuremask[] =
++    INIT_HVM_HAP_MAX_FEATURES;
++static const uint32_t __initconst pv_def_featuremask[] = INIT_PV_DEF_FEATURES;
++static const uint32_t __initconst hvm_shadow_def_featuremask[] =
++    INIT_HVM_SHADOW_DEF_FEATURES;
++static const uint32_t __initconst hvm_hap_def_featuremask[] =
++    INIT_HVM_HAP_DEF_FEATURES;
+ static const uint32_t deep_features[] = INIT_DEEP_FEATURES;
+ 
+ static int __init parse_xen_cpuid(const char *s)
+-- 
+2.30.2
+

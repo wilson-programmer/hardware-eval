@@ -1,0 +1,248 @@
+From 4d30175fdadb75c55acb8abb186727eda7cd5585 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 13 Sep 2022 07:35:10 +0200
+Subject: [PATCH] tools/xenstore: add control command for setting and showing
+ quota
+
+Add a xenstore-control command "quota" to:
+- show current quota settings
+- change quota settings
+- show current quota related values of a domain
+
+Note that in the case the new quota is lower than existing one,
+Xenstored may continue to handle requests from a domain exceeding the
+new limit (depends on which one has been broken) and the amount of
+resource used will not change. However the domain will not be able to
+create more resource (associated to the quota) until it is back to below
+the limit.
+
+This is part of XSA-326.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 9c484bef83496b683b0087e3bd2a560da4aa37af)
+---
+ docs/misc/xenstore.txt             |  11 +++
+ tools/xenstore/xenstored_control.c | 111 +++++++++++++++++++++++++++++
+ tools/xenstore/xenstored_domain.c  |  33 +++++++++
+ tools/xenstore/xenstored_domain.h  |   2 +
+ 4 files changed, 157 insertions(+)
+
+diff --git a/docs/misc/xenstore.txt b/docs/misc/xenstore.txt
+index 334dc8b6fd..a7d006519a 100644
+--- a/docs/misc/xenstore.txt
++++ b/docs/misc/xenstore.txt
+@@ -366,6 +366,17 @@ CONTROL			<command>|[<parameters>|]
+ 	print|<string>
+ 		print <string> to syslog (xenstore runs as daemon) or
+ 		to console (xenstore runs as stubdom)
++	quota|[set <name> <val>|<domid>]
++		without parameters: print the current quota settings
++		with "set <name> <val>": set the quota <name> to new value
++		<val> (The admin should make sure all the domain usage is
++		below the quota. If it is not, then Xenstored may continue to
++		handle requests from the domain as long as the resource
++		violating the new quota setting isn't increased further)
++		with "<domid>": print quota related accounting data for
++		the domain <domid>
++	quota-soft|[set <name> <val>]
++		like the "quota" command, but for soft-quota.
+ 	help			<supported-commands>
+ 		return list of supported commands for CONTROL
+ 
+diff --git a/tools/xenstore/xenstored_control.c b/tools/xenstore/xenstored_control.c
+index 211fe1fd9b..980279fa53 100644
+--- a/tools/xenstore/xenstored_control.c
++++ b/tools/xenstore/xenstored_control.c
+@@ -148,6 +148,115 @@ static int do_control_log(void *ctx, struct connection *conn,
+ 	return 0;
+ }
+ 
++struct quota {
++	const char *name;
++	int *quota;
++	const char *descr;
++};
++
++static const struct quota hard_quotas[] = {
++	{ "nodes", &quota_nb_entry_per_domain, "Nodes per domain" },
++	{ "watches", &quota_nb_watch_per_domain, "Watches per domain" },
++	{ "transactions", &quota_max_transaction, "Transactions per domain" },
++	{ "outstanding", &quota_req_outstanding,
++		"Outstanding requests per domain" },
++	{ "transaction-nodes", &quota_trans_nodes,
++		"Max. number of accessed nodes per transaction" },
++	{ "memory", &quota_memory_per_domain_hard,
++		"Total Xenstore memory per domain (error level)" },
++	{ "node-size", &quota_max_entry_size, "Max. size of a node" },
++	{ "path-max", &quota_max_path_len, "Max. length of a node path" },
++	{ "permissions", &quota_nb_perms_per_node,
++		"Max. number of permissions per node" },
++	{ NULL, NULL, NULL }
++};
++
++static const struct quota soft_quotas[] = {
++	{ "memory", &quota_memory_per_domain_soft,
++		"Total Xenstore memory per domain (warning level)" },
++	{ NULL, NULL, NULL }
++};
++
++static int quota_show_current(const void *ctx, struct connection *conn,
++			      const struct quota *quotas)
++{
++	char *resp;
++	unsigned int i;
++
++	resp = talloc_strdup(ctx, "Quota settings:\n");
++	if (!resp)
++		return ENOMEM;
++
++	for (i = 0; quotas[i].quota; i++) {
++		resp = talloc_asprintf_append(resp, "%-17s: %8d %s\n",
++					      quotas[i].name, *quotas[i].quota,
++					      quotas[i].descr);
++		if (!resp)
++			return ENOMEM;
++	}
++
++	send_reply(conn, XS_CONTROL, resp, strlen(resp) + 1);
++
++	return 0;
++}
++
++static int quota_set(const void *ctx, struct connection *conn,
++		     char **vec, int num, const struct quota *quotas)
++{
++	unsigned int i;
++	int val;
++
++	if (num != 2)
++		return EINVAL;
++
++	val = atoi(vec[1]);
++	if (val < 1)
++		return EINVAL;
++
++	for (i = 0; quotas[i].quota; i++) {
++		if (!strcmp(vec[0], quotas[i].name)) {
++			*quotas[i].quota = val;
++			send_ack(conn, XS_CONTROL);
++			return 0;
++		}
++	}
++
++	return EINVAL;
++}
++
++static int quota_get(const void *ctx, struct connection *conn,
++		     char **vec, int num)
++{
++	if (num != 1)
++		return EINVAL;
++
++	return domain_get_quota(ctx, conn, atoi(vec[0]));
++}
++
++static int do_control_quota(void *ctx, struct connection *conn,
++			    char **vec, int num)
++{
++	if (num == 0)
++		return quota_show_current(ctx, conn, hard_quotas);
++
++	if (!strcmp(vec[0], "set"))
++		return quota_set(ctx, conn, vec + 1, num - 1, hard_quotas);
++
++	return quota_get(ctx, conn, vec, num);
++}
++
++static int do_control_quota_s(void *ctx, struct connection *conn,
++			      char **vec, int num)
++{
++	if (num == 0)
++		return quota_show_current(ctx, conn, soft_quotas);
++
++	if (!strcmp(vec[0], "set"))
++		return quota_set(ctx, conn, vec + 1, num - 1, soft_quotas);
++
++	return EINVAL;
++}
++
+ #ifdef __MINIOS__
+ static int do_control_memreport(void *ctx, struct connection *conn,
+ 				char **vec, int num)
+@@ -777,6 +886,8 @@ static struct cmd_s cmds[] = {
+ 	{ "memreport", do_control_memreport, "[<file>]" },
+ #endif
+ 	{ "print", do_control_print, "<string>" },
++	{ "quota", do_control_quota, "[set <name> <val>|<domid>]" },
++	{ "quota-soft", do_control_quota_s, "[set <name> <val>]" },
+ 	{ "help", do_control_help, "" },
+ };
+ 
+diff --git a/tools/xenstore/xenstored_domain.c b/tools/xenstore/xenstored_domain.c
+index ec542df6a6..3d51425813 100644
+--- a/tools/xenstore/xenstored_domain.c
++++ b/tools/xenstore/xenstored_domain.c
+@@ -31,6 +31,7 @@
+ #include "xenstored_domain.h"
+ #include "xenstored_transaction.h"
+ #include "xenstored_watch.h"
++#include "xenstored_control.h"
+ 
+ #include <xenevtchn.h>
+ #include <xenctrl.h>
+@@ -351,6 +352,38 @@ static struct domain *find_domain_struct(unsigned int domid)
+ 	return NULL;
+ }
+ 
++int domain_get_quota(const void *ctx, struct connection *conn,
++		     unsigned int domid)
++{
++	struct domain *d = find_domain_struct(domid);
++	char *resp;
++	int ta;
++
++	if (!d)
++		return ENOENT;
++
++	ta = d->conn ? d->conn->transaction_started : 0;
++	resp = talloc_asprintf(ctx, "Domain %u:\n", domid);
++	if (!resp)
++		return ENOMEM;
++
++#define ent(t, e) \
++	resp = talloc_asprintf_append(resp, "%-16s: %8d\n", #t, e); \
++	if (!resp) return ENOMEM
++
++	ent(nodes, d->nbentry);
++	ent(watches, d->nbwatch);
++	ent(transactions, ta);
++	ent(outstanding, d->nboutstanding);
++	ent(memory, d->memory);
++
++#undef ent
++
++	send_reply(conn, XS_CONTROL, resp, strlen(resp) + 1);
++
++	return 0;
++}
++
+ static struct domain *alloc_domain(const void *context, unsigned int domid)
+ {
+ 	struct domain *domain;
+diff --git a/tools/xenstore/xenstored_domain.h b/tools/xenstore/xenstored_domain.h
+index 571aa46d15..0f883936f4 100644
+--- a/tools/xenstore/xenstored_domain.h
++++ b/tools/xenstore/xenstored_domain.h
+@@ -91,6 +91,8 @@ int domain_watch(struct connection *conn);
+ void domain_outstanding_inc(struct connection *conn);
+ void domain_outstanding_dec(struct connection *conn);
+ void domain_outstanding_domid_dec(unsigned int domid);
++int domain_get_quota(const void *ctx, struct connection *conn,
++		     unsigned int domid);
+ 
+ /* Special node permission handling. */
+ int set_perms_special(struct connection *conn, const char *name,
+-- 
+2.30.2
+

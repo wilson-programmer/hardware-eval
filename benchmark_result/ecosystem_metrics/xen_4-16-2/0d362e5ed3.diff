@@ -1,0 +1,51 @@
+From 0d362e5ed3fa1b307834bcffbf7fd5341e32ebfd Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Sat, 16 Jul 2022 15:34:07 +0100
+Subject: [PATCH] xen/arm: head: Add missing isb after writing to
+ SCTLR_EL2/HSCTLR
+
+Write to SCTLR_EL2/HSCTLR may not be visible until the next context
+synchronization. When initializing the CPU, we want the update to take
+effect right now. So add an isb afterwards.
+
+Spec references:
+    - AArch64: D13.1.2 ARM DDI 0406C.d
+    - AArch32 v8: G8.1.2 ARM DDI 0406C.d
+    - AArch32 v7: B5.6.3 ARM DDI 0406C.d
+
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Michal Orzel <michal.orzel@arm.com>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+(cherry picked from commit 25424d1a6b7b7e875230aba77c2f044a4883e49a)
+---
+ xen/arch/arm/arm32/head.S | 1 +
+ xen/arch/arm/arm64/head.S | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/xen/arch/arm/arm32/head.S b/xen/arch/arm/arm32/head.S
+index 7178865f48..854481f4f9 100644
+--- a/xen/arch/arm/arm32/head.S
++++ b/xen/arch/arm/arm32/head.S
+@@ -353,6 +353,7 @@ cpu_init_done:
+ 
+         ldr   r0, =HSCTLR_SET
+         mcr   CP32(r0, HSCTLR)
++        isb
+ 
+         mov   pc, r5                        /* Return address is in r5 */
+ ENDPROC(cpu_init)
+diff --git a/xen/arch/arm/arm64/head.S b/xen/arch/arm/arm64/head.S
+index 057dd5d925..42a2177c53 100644
+--- a/xen/arch/arm/arm64/head.S
++++ b/xen/arch/arm/arm64/head.S
+@@ -485,6 +485,7 @@ cpu_init:
+ 
+         ldr   x0, =SCTLR_EL2_SET
+         msr   SCTLR_EL2, x0
++        isb
+ 
+         /*
+          * Ensure that any exceptions encountered at EL2
+-- 
+2.30.2
+

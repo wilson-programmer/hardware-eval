@@ -1,0 +1,43 @@
+From 4320b31106efe4cf78867e1da379f7534e1c5c34 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Mon, 28 Nov 2022 11:46:53 +0100
+Subject: [PATCH] libs/light: Propagate libxl__arch_domain_create() return code
+
+Commit 34990446ca91 started to overwrite the `rc` value from
+libxl__arch_domain_create(), thus error aren't propagated anymore.
+
+Check `rc` value before doing the next thing.
+
+Fixes: 34990446ca91 ("libxl: don't ignore the return value from xc_cpuid_apply_policy")
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+master commit: 8cdfbf95b19c01fbb741c41d5ea5a94f8823964c
+master date: 2022-11-21 12:23:01 +0100
+---
+ tools/libs/light/libxl_dom.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tools/libs/light/libxl_dom.c b/tools/libs/light/libxl_dom.c
+index fe9f760f71..73fccd9243 100644
+--- a/tools/libs/light/libxl_dom.c
++++ b/tools/libs/light/libxl_dom.c
+@@ -379,6 +379,7 @@ int libxl__build_pre(libxl__gc *gc, uint32_t domid,
+     state->console_port = xc_evtchn_alloc_unbound(ctx->xch, domid, state->console_domid);
+ 
+     rc = libxl__arch_domain_create(gc, d_config, state, domid);
++    if (rc) goto out;
+ 
+     /* Construct a CPUID policy, but only for brand new domains.  Domains
+      * being migrated-in/restored have CPUID handled during the
+@@ -386,6 +387,7 @@ int libxl__build_pre(libxl__gc *gc, uint32_t domid,
+     if (!state->restore)
+         rc = libxl__cpuid_legacy(ctx, domid, false, info);
+ 
++out:
+     return rc;
+ }
+ 
+-- 
+2.30.2
+

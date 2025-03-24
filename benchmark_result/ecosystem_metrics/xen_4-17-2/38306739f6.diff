@@ -1,0 +1,41 @@
+From 38306739f6c48d76a33c510cdabee78ec1f1138d Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 8 Aug 2023 14:53:42 +0100
+Subject: [PATCH] libs/vchan: Fix -Wsingle-bit-bitfield-constant-conversion
+
+Gitlab reports:
+
+  init.c:348:18: error: implicit truncation from 'int' to a one-bit wide bit-field changes value from 1 to -1 [-Werror,-Wsingle-bit-bitfield-constant-conversion]
+          ctrl->is_server = 1;
+                          ^ ~
+  1 error generated.
+  make[6]: *** [/builds/xen-project/people/andyhhp/xen/tools/libs/vchan/../../../tools/Rules.mk:188: init.o] Error 1
+
+In Xen 4.18, this was fixed with c/s 99ab02f63ea8 ("tools: convert bitfields
+to unsigned type") but this is an ABI change which can't be backported.
+
+Swich 1 for -1 to provide a minimally invasive way to fix the build.
+
+No functional change.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+---
+ tools/libs/vchan/init.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libs/vchan/init.c b/tools/libs/vchan/init.c
+index 9195bd3b98..b3de8f96fe 100644
+--- a/tools/libs/vchan/init.c
++++ b/tools/libs/vchan/init.c
+@@ -345,7 +345,7 @@ struct libxenvchan *libxenvchan_server_init(struct xentoollog_logger *logger,
+ 
+ 	ctrl->ring = NULL;
+ 	ctrl->event = NULL;
+-	ctrl->is_server = 1;
++	ctrl->is_server = -1;
+ 	ctrl->server_persist = 0;
+ 
+ 	ctrl->read.order = min_order(left_min);
+-- 
+2.30.2
+

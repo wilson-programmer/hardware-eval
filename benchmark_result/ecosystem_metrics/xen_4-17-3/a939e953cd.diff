@@ -1,0 +1,29 @@
+From a939e953cdd522da3d8f0efeaea84448b5b570f9 Mon Sep 17 00:00:00 2001
+From: Jinoh Kang <jinoh.kang.kr@gmail.com>
+Date: Tue, 5 Sep 2023 08:53:01 +0200
+Subject: [PATCH] x86/svm: Fix valid condition in svm_get_pending_event()
+
+Fixes: 9864841914c2 ("x86/vm_event: add support for VM_EVENT_REASON_INTERRUPT")
+Signed-off-by: Jinoh Kang <jinoh.kang.kr@gmail.com>
+master commit: b2865c2b6f164d2c379177cdd1cb200e4eaba549
+master date: 2023-08-18 20:21:44 +0100
+---
+ xen/arch/x86/hvm/svm/svm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/svm/svm.c b/xen/arch/x86/hvm/svm/svm.c
+index 5fa945c526..e8f50e7c5e 100644
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -2490,7 +2490,7 @@ static bool cf_check svm_get_pending_event(
+ {
+     const struct vmcb_struct *vmcb = v->arch.hvm.svm.vmcb;
+ 
+-    if ( vmcb->event_inj.v )
++    if ( !vmcb->event_inj.v )
+         return false;
+ 
+     info->vector = vmcb->event_inj.vector;
+-- 
+2.30.2
+

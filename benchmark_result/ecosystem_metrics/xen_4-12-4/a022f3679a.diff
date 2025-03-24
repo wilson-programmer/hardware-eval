@@ -1,0 +1,56 @@
+From a022f3679aae642d702f9ef3137c8d3db46018a7 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 24 Jun 2020 16:58:51 +0200
+Subject: [PATCH] x86/build32: Discard all orphaned sections
+
+Linkers may put orphaned sections ahead of .text, which breaks the calling
+requirements.  A concrete example is Ubuntu's GCC-9 default of enabling
+-fcf-protection which causes us to try and execute .note.gnu.properties during
+Xen's boot.
+
+Put .got.plt in its own section as it specifically needs preserving from the
+linkers point of view, and discard everything else.  This will hopefully be
+more robust to other unexpected toolchain properties.
+
+Fixes boot from an Ubuntu build of Xen.
+
+Reported-by: Jason Andryuk <jandryuk@gmail.com>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Tested-by: Jason Andryuk <jandryuk@gmail.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+---
+ xen/arch/x86/boot/build32.lds | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/boot/build32.lds b/xen/arch/x86/boot/build32.lds
+index da35aee910..97454b40ff 100644
+--- a/xen/arch/x86/boot/build32.lds
++++ b/xen/arch/x86/boot/build32.lds
+@@ -31,7 +31,7 @@ SECTIONS
+         *(.bss.*)
+   }
+ 
+-  /DISCARD/ : {
++  .got.plt : {
+         /*
+          * PIC/PIE executable contains .got.plt section even if it is not linked
+          * with dynamic libraries. In such case it is just placeholder for
+@@ -47,6 +47,14 @@ SECTIONS
+          *
+          * Please check build32.mk for more details.
+          */
+-        /* *(.got.plt) */
++        *(.got.plt)
++  }
++
++  /DISCARD/ : {
++        /*
++         * Discard everything else, to prevent linkers from putting
++         * orphaned sections ahead of .text, which needs to be first.
++         */
++        *(*)
+   }
+ }
+-- 
+2.30.2
+

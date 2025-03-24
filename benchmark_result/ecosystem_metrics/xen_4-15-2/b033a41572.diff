@@ -1,0 +1,51 @@
+From b033a41572333936b9b859280875fc73e72c3e47 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 19 Nov 2021 09:29:12 +0100
+Subject: [PATCH] x86/PV: make '0' debug key dump Dom0's stacks again
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The conversion to __get_guest() failed to account for the fact that for
+remote vCPU-s dumping gets done through a pointer obtained from
+map_domain_page(): __get_guest() arranges for (apparent) accesses to
+hypervisor space to cause #GP(0).
+
+Fixes: 6a1d72d3739e ('x86: split __{get,put}_user() into "guest" and "unsafe" variants')
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 4843546fef5e024d5754f722fd01a8dfb482ac7d
+master date: 2021-10-19 10:07:00 +0200
+---
+ xen/arch/x86/traps.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
+index 939c91a0ca..948e422397 100644
+--- a/xen/arch/x86/traps.c
++++ b/xen/arch/x86/traps.c
+@@ -274,7 +274,9 @@ static void compat_show_guest_stack(struct vcpu *v,
+     {
+         if ( (((long)stack - 1) ^ ((long)(stack + 1) - 1)) & mask )
+             break;
+-        if ( __get_guest(addr, stack) )
++        if ( stack_page )
++            addr = *stack;
++        else if ( __get_guest(addr, stack) )
+         {
+             if ( i != 0 )
+                 printk("\n    ");
+@@ -343,7 +345,9 @@ static void show_guest_stack(struct vcpu *v, const struct cpu_user_regs *regs)
+     {
+         if ( (((long)stack - 1) ^ ((long)(stack + 1) - 1)) & mask )
+             break;
+-        if ( __get_guest(addr, stack) )
++        if ( stack_page )
++            addr = *stack;
++        else if ( __get_guest(addr, stack) )
+         {
+             if ( i != 0 )
+                 printk("\n    ");
+-- 
+2.30.2
+

@@ -1,0 +1,39 @@
+From 267ac3c5921e8c34b4ad401ff9c351c7b533f7af Mon Sep 17 00:00:00 2001
+From: David Woodhouse <dwmw@amazon.co.uk>
+Date: Tue, 14 Nov 2023 14:00:37 +0100
+Subject: [PATCH] x86/pv-shim: fix grant table operations for 32-bit guests
+
+When switching to call the shim functions from the normal handlers, the
+compat_grant_table_op() function was omitted, leaving it calling the
+real grant table operations in !PV_SHIM_EXCLUSIVE builds. This leaves a
+32-bit shim guest failing to set up its real grant table with the parent
+hypervisor.
+
+Fixes: e7db635f4428 ("x86/pv-shim: Don't modify the hypercall table")
+Signed-off-by: David Woodhouse <dwmw@amazon.co.uk>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 93ec30bc545f15760039c23ee4b97b80c0b3b3b3
+master date: 2023-10-31 16:10:14 +0000
+---
+ xen/common/compat/grant_table.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/xen/common/compat/grant_table.c b/xen/common/compat/grant_table.c
+index 4705ee5f76..2e159d6666 100644
+--- a/xen/common/compat/grant_table.c
++++ b/xen/common/compat/grant_table.c
+@@ -63,6 +63,11 @@ int compat_grant_table_op(
+     unsigned int i, cmd_op;
+     XEN_GUEST_HANDLE_PARAM(void) cnt_uop;
+ 
++#ifdef CONFIG_PV_SHIM
++    if ( unlikely(pv_shim) )
++        return pv_shim_grant_table_op(cmd, uop, count);
++#endif
++
+     set_xen_guest_handle(cnt_uop, NULL);
+     cmd_op = cmd & GNTTABOP_CMD_MASK;
+     if ( cmd_op != GNTTABOP_cache_flush )
+-- 
+2.30.2
+

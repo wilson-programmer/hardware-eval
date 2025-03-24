@@ -1,0 +1,49 @@
+From e73ab4e84bb065b65c502750413f2db3e7ced7e1 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 7 Jun 2022 14:14:41 +0200
+Subject: [PATCH] VT-d: refuse to use IOMMU with reserved CAP.ND value
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The field taking the value 7 (resulting in 18-bit DIDs when using the
+calculation in cap_ndoms(), when the DID fields are only 16 bits wide)
+is reserved. Instead of misbehaving in case we would encounter such an
+IOMMU, refuse to use it.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: a1545fbf45c689aff39ce76a6eaa609d32ef72a7
+master date: 2022-04-20 10:54:26 +0200
+---
+ xen/drivers/passthrough/vtd/iommu.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index 68dd2f5500..a063462cff 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -1276,8 +1276,11 @@ int __init iommu_alloc(struct acpi_drhd_unit *drhd)
+ 
+     quirk_iommu_caps(iommu);
+ 
++    nr_dom = cap_ndoms(iommu->cap);
++
+     if ( cap_fault_reg_offset(iommu->cap) +
+          cap_num_fault_regs(iommu->cap) * PRIMARY_FAULT_REG_LEN >= PAGE_SIZE ||
++         ((nr_dom - 1) >> 16) /* I.e. cap.nd > 6 */ ||
+          ecap_iotlb_offset(iommu->ecap) >= PAGE_SIZE )
+     {
+         printk(XENLOG_ERR VTDPREFIX "IOMMU: unsupported\n");
+@@ -1302,7 +1305,6 @@ int __init iommu_alloc(struct acpi_drhd_unit *drhd)
+         vtd_ops.sync_cache = sync_cache;
+ 
+     /* allocate domain id bitmap */
+-    nr_dom = cap_ndoms(iommu->cap);
+     iommu->domid_bitmap = xzalloc_array(unsigned long, BITS_TO_LONGS(nr_dom));
+     if ( !iommu->domid_bitmap )
+         return -ENOMEM;
+-- 
+2.30.2
+

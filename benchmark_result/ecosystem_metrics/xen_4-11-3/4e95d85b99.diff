@@ -1,0 +1,57 @@
+From 4e95d85b991f5d7e9a881e176395340a4441b44b Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Micha=C5=82=20Kowalczyk?= <mkow@invisiblethingslab.com>
+Date: Mon, 23 Sep 2019 14:38:26 +0200
+Subject: [PATCH] x86: Restore IA32_MISC_ENABLE on wakeup
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Code in intel.c:early_init_intel() modifies IA32_MISC_ENABLE MSR. Those
+modifications must be restored after resuming from S3 (see e.g. Linux wakeup
+code), otherwise bad things may happen (e.g. wakeup code may cause #GP when
+trying to set IA32_EFER.NXE [1]).
+
+This bug was noticed on a ThinkPad x230 with NX disabled in the BIOS:
+Xen could correctly boot, but crashed when resuming from suspend.
+Applying this patch fixed the problem.
+
+[1] Intel SDM vol 3: "If the execute-disable capability is not
+available, a write to set IA32_EFER.NXE produces a #GP exception."
+
+Signed-off-by: MichaÅ Kowalczyk <mkow@invisiblethingslab.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: c3cfa5b3084d71bccd8360d044bea813688b587c
+master date: 2019-08-19 15:07:34 +0100
+---
+ xen/arch/x86/boot/wakeup.S | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/xen/arch/x86/boot/wakeup.S b/xen/arch/x86/boot/wakeup.S
+index f9632eef95..4320bb4666 100644
+--- a/xen/arch/x86/boot/wakeup.S
++++ b/xen/arch/x86/boot/wakeup.S
+@@ -137,6 +137,21 @@ wakeup_32:
+         add     bootsym_rel(trampoline_xen_phys_start,4,%eax)
+         mov     %eax,%cr3
+ 
++        /* Reapply IA32_MISC_ENABLE modifications from early_init_intel(). */
++        mov     bootsym_rel(trampoline_misc_enable_off, 4, %esi)
++        mov     bootsym_rel(trampoline_misc_enable_off + 4, 4, %edi)
++        mov     %esi, %eax
++        or      %edi, %eax
++        jz      1f
++        mov     $MSR_IA32_MISC_ENABLE, %ecx
++        rdmsr
++        not     %esi
++        not     %edi
++        and     %esi, %eax
++        and     %edi, %edx
++        wrmsr
++1:
++
+         /* Will cpuid feature change after resume? */
+         /* Set up EFER (Extended Feature Enable Register). */
+         mov     bootsym_rel(cpuid_ext_features,4,%edi)
+-- 
+2.30.2
+

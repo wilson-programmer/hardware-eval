@@ -1,0 +1,44 @@
+From 2119c91edb6f6df8014c04b94a920f4cbf32f2fa Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 8 Apr 2022 15:02:45 +0200
+Subject: [PATCH] vPCI: fix MSI-X PBA read/write gprintk()s
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+%pp wants the address of an SBDF, not that of a PCI device.
+
+Fixes: b4f211606011 ("vpci/msix: fix PBA accesses")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: d3f61beea4255e2d86ae82303384c57a3262435e
+master date: 2022-04-07 18:01:24 +0200
+---
+ xen/drivers/vpci/msix.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/drivers/vpci/msix.c b/xen/drivers/vpci/msix.c
+index ac5de98f6d..ea5d73a02a 100644
+--- a/xen/drivers/vpci/msix.c
++++ b/xen/drivers/vpci/msix.c
+@@ -247,7 +247,7 @@ static int msix_read(struct vcpu *v, unsigned long addr, unsigned int len,
+         {
+             gprintk(XENLOG_WARNING,
+                     "%pp: unable to map MSI-X PBA, report all pending\n",
+-                    msix->pdev);
++                    &msix->pdev->sbdf);
+             return X86EMUL_OKAY;
+         }
+ 
+@@ -331,7 +331,7 @@ static int msix_write(struct vcpu *v, unsigned long addr, unsigned int len,
+                 /* Unable to map the PBA, ignore write. */
+                 gprintk(XENLOG_WARNING,
+                         "%pp: unable to map MSI-X PBA, write ignored\n",
+-                        msix->pdev);
++                        &msix->pdev->sbdf);
+                 return X86EMUL_OKAY;
+             }
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,72 @@
+From f4a82a324d87453c003e8c7508842253c45da272 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 25 Nov 2019 15:58:26 +0100
+Subject: [PATCH] x86/pv: Fix !CONFIG_PV build following XSA-299
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+PTF_* are declared within CONFIG_PV, and used outside:
+
+  mm.c: In function â_put_page_typeâ:
+  mm.c:2819:32: error: âPTF_preemptibleâ undeclared (first use in this function)
+       bool preemptible = flags & PTF_preemptible;
+                                  ^~~~~~~~~~~~~~~
+  mm.c:2819:32: note: each undeclared identifier is reported only once for each
+  function it appears in
+  mm.c:2842:24: error: âPTF_partial_setâ undeclared (first use in this function)
+           if ( !(flags & PTF_partial_set) )
+                          ^~~~~~~~~~~~~~~
+  mm.c: In function âput_page_type_preemptibleâ:
+  mm.c:3090:33: error: âPTF_preemptibleâ undeclared (first use in this function)
+       return _put_page_type(page, PTF_preemptible, NULL);
+                                   ^~~~~~~~~~~~~~~
+  mm.c: In function âput_old_guest_tableâ:
+  mm.c:3108:25: error: âPTF_preemptibleâ undeclared (first use in this function)
+                           PTF_preemptible |
+                           ^~~~~~~~~~~~~~~
+  mm.c:3110:27: error: âPTF_partial_setâ undeclared (first use in this function)
+                             PTF_partial_set : 0 ),
+                             ^~~~~~~~~~~~~~~
+  mm.c: In function âput_page_type_preemptibleâ:
+  mm.c:3091:1: error: control reaches end of non-void function
+  [-Werror=return-type]
+   }
+   ^
+  cc1: all warnings being treated as errors
+
+Re-position the definitions to be outside of the #ifdef CONFIG_PV
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+master commit: 7e4404f8c66f94ac173a3232712074677415d842
+master date: 2019-11-01 10:48:04 +0000
+---
+ xen/arch/x86/mm.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/mm.c b/xen/arch/x86/mm.c
+index 633f9f622e..1b650468fd 100644
+--- a/xen/arch/x86/mm.c
++++ b/xen/arch/x86/mm.c
+@@ -1095,8 +1095,6 @@ get_page_from_l1e(
+     return -EBUSY;
+ }
+ 
+-#ifdef CONFIG_PV
+-
+ /*
+  * The following flags are used to specify behavior of various get and
+  * put commands.  The first is also stored in page->partial_flags to
+@@ -1109,6 +1107,8 @@ get_page_from_l1e(
+ #define PTF_defer                 (1 << 3)
+ #define PTF_retain_ref_on_restart (1 << 4)
+ 
++#ifdef CONFIG_PV
++
+ static int get_page_and_type_from_mfn(
+     mfn_t mfn, unsigned long type, struct domain *d,
+     unsigned int flags)
+-- 
+2.30.2
+

@@ -1,0 +1,56 @@
+From 47dbbe3878a002bb9bfa7ab24c0e7dc57b894ac7 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 3 Feb 2022 18:03:49 +0000
+Subject: [PATCH] tools/guest: Fix comment regarding CPUID compatibility
+
+It was Xen 4.14 where CPUID data was added to the migration stream, and 4.13
+that we need to worry about with regards to compatibility.  Xen 4.12 isn't
+relevant.
+
+Expand and correct the commentary.
+
+Fixes: 111c8c33a8a1 ("x86/cpuid: do not expand max leaves on restore")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 820cc393434097f3b7976acdccbf1d96071d6d23)
+---
+ tools/libs/guest/xg_cpuid_x86.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/tools/libs/guest/xg_cpuid_x86.c b/tools/libs/guest/xg_cpuid_x86.c
+index 198892ebdf..6ea14c4c56 100644
+--- a/tools/libs/guest/xg_cpuid_x86.c
++++ b/tools/libs/guest/xg_cpuid_x86.c
+@@ -498,9 +498,19 @@ int xc_cpuid_apply_policy(xc_interface *xch, uint32_t domid, bool restore,
+     if ( restore )
+     {
+         /*
+-         * Account for feature which have been disabled by default since Xen 4.13,
+-         * so migrated-in VM's don't risk seeing features disappearing.
++         * Xen 4.14 introduced support to move the guest's CPUID data in the
++         * migration stream.  Previously, the destination side would invent a
++         * policy out of thin air in the hopes that it was ok.
++         *
++         * This restore path is used for incoming VMs with no CPUID data
++         * i.e. originated on Xen 4.13 or earlier.  We must invent a policy
++         * compatible with what Xen 4.13 would have done on the same hardware.
++         *
++         * Specifically:
++         * - Clamp max leaves.
++         * - Re-enable features which have become (possibly) off by default.
+          */
++
+         p->basic.rdrand = test_bit(X86_FEATURE_RDRAND, host_featureset);
+         p->feat.hle = test_bit(X86_FEATURE_HLE, host_featureset);
+         p->feat.rtm = test_bit(X86_FEATURE_RTM, host_featureset);
+@@ -510,7 +520,6 @@ int xc_cpuid_apply_policy(xc_interface *xch, uint32_t domid, bool restore,
+             p->feat.mpx = test_bit(X86_FEATURE_MPX, host_featureset);
+         }
+ 
+-        /* Clamp maximum leaves to the ones supported on 4.12. */
+         p->basic.max_leaf = min(p->basic.max_leaf, 0xdu);
+         p->feat.max_subleaf = 0;
+         p->extd.max_leaf = min(p->extd.max_leaf, 0x8000001c);
+-- 
+2.30.2
+

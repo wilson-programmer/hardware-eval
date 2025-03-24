@@ -1,0 +1,66 @@
+From 89fe6d0edea841d1d2690cf3f5173e334c687823 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Wed, 3 Aug 2022 12:39:13 +0200
+Subject: [PATCH] x86/msr: fix X2APIC_LAST
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The latest Intel manual now says the X2APIC reserved range is only
+0x800 to 0x8ff (NOT 0xbff).
+This changed between SDM 68 (Nov 2018) and SDM 69 (Jan 2019).
+The AMD manual documents 0x800-0x8ff too.
+
+There are non-X2APIC MSRs in the 0x900-0xbff range now:
+e.g. 0x981 is IA32_TME_CAPABILITY, an architectural MSR.
+
+The new MSR in this range appears to have been introduced in Icelake,
+so this commit should be backported to Xen versions supporting Icelake.
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 13316827faadbb4f72ae6c625af9938d8f976f86
+master date: 2022-07-27 12:57:10 +0200
+---
+ xen/arch/x86/hvm/vmx/vmx.c      | 4 ++--
+ xen/include/asm-x86/msr-index.h | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index a555930f8f..d429d76c18 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -3376,7 +3376,7 @@ void vmx_vlapic_msr_changed(struct vcpu *v)
+             if ( cpu_has_vmx_apic_reg_virt )
+             {
+                 for ( msr = MSR_X2APIC_FIRST;
+-                      msr <= MSR_X2APIC_FIRST + 0xff; msr++ )
++                      msr <= MSR_X2APIC_LAST; msr++ )
+                     vmx_clear_msr_intercept(v, msr, VMX_MSR_R);
+ 
+                 vmx_set_msr_intercept(v, MSR_X2APIC_PPR, VMX_MSR_R);
+@@ -3397,7 +3397,7 @@ void vmx_vlapic_msr_changed(struct vcpu *v)
+     if ( !(v->arch.hvm.vmx.secondary_exec_control &
+            SECONDARY_EXEC_VIRTUALIZE_X2APIC_MODE) )
+         for ( msr = MSR_X2APIC_FIRST;
+-              msr <= MSR_X2APIC_FIRST + 0xff; msr++ )
++              msr <= MSR_X2APIC_LAST; msr++ )
+             vmx_set_msr_intercept(v, msr, VMX_MSR_RW);
+ 
+     vmx_update_secondary_exec_control(v);
+diff --git a/xen/include/asm-x86/msr-index.h b/xen/include/asm-x86/msr-index.h
+index d3735e499e..3cb942eeac 100644
+--- a/xen/include/asm-x86/msr-index.h
++++ b/xen/include/asm-x86/msr-index.h
+@@ -135,7 +135,7 @@
+ #define MSR_INTERRUPT_SSP_TABLE             0x000006a8
+ 
+ #define MSR_X2APIC_FIRST                    0x00000800
+-#define MSR_X2APIC_LAST                     0x00000bff
++#define MSR_X2APIC_LAST                     0x000008ff
+ 
+ #define MSR_X2APIC_TPR                      0x00000808
+ #define MSR_X2APIC_PPR                      0x0000080a
+-- 
+2.30.2
+

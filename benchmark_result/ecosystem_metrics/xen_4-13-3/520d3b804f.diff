@@ -1,0 +1,51 @@
+From 520d3b804f52147073f2ca890e6f588f39396990 Mon Sep 17 00:00:00 2001
+From: Dario Faggioli <dfaggioli@suse.com>
+Date: Thu, 18 Mar 2021 15:07:17 +0100
+Subject: [PATCH] xen: fix for_each_cpu when NR_CPUS=1
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+When running an hypervisor build with NR_CPUS=1 for_each_cpu does not
+take into account whether the bit of the CPU is set or not in the
+provided mask.
+
+This means that whatever we have in the bodies of these loops is always
+done once, even if the mask was empty and it should never be done. This
+is clearly a bug and was in fact causing an assert to trigger in credit2
+code.
+
+Removing the special casing of NR_CPUS == 1 makes things work again.
+
+Reported-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Signed-off-by: Dario Faggioli <dfaggioli@suse.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: aa50f45332f17e8d6308b996d890d3e83748a1a5
+master date: 2021-03-12 17:02:47 +0100
+---
+ xen/include/xen/cpumask.h | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/xen/include/xen/cpumask.h b/xen/include/xen/cpumask.h
+index 256b60b106..e69589fc08 100644
+--- a/xen/include/xen/cpumask.h
++++ b/xen/include/xen/cpumask.h
+@@ -368,15 +368,10 @@ static inline void free_cpumask_var(cpumask_var_t mask)
+ #define FREE_CPUMASK_VAR(m) free_cpumask_var(m)
+ #endif
+ 
+-#if NR_CPUS > 1
+ #define for_each_cpu(cpu, mask)			\
+ 	for ((cpu) = cpumask_first(mask);	\
+ 	     (cpu) < nr_cpu_ids;		\
+ 	     (cpu) = cpumask_next(cpu, mask))
+-#else /* NR_CPUS == 1 */
+-#define for_each_cpu(cpu, mask)			\
+-	for ((cpu) = 0; (cpu) < 1; (cpu)++, (void)(mask))
+-#endif /* NR_CPUS */
+ 
+ /*
+  * The following particular system cpumasks and operations manage
+-- 
+2.30.2
+

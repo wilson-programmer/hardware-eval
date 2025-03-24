@@ -1,0 +1,33 @@
+From 9123e60c0b9de1c78e8b807c80f0ea60aba37979 Mon Sep 17 00:00:00 2001
+From: Ross Lagerwall <ross.lagerwall@citrix.com>
+Date: Mon, 15 Aug 2022 15:35:10 +0200
+Subject: [PATCH] x86/amd: only call setup_force_cpu_cap for boot CPU
+
+This should only be called for the boot CPU to avoid calling _init code
+after it has been unloaded.
+
+Fixes: 062868a5a8b4 ("x86/amd: Work around CLFLUSH ordering on older parts")
+Signed-off-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 31b41ce858c8bd5159212d40969f8e0b7124bbf0
+master date: 2022-08-11 17:44:26 +0200
+---
+ xen/arch/x86/cpu/amd.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/cpu/amd.c b/xen/arch/x86/cpu/amd.c
+index 37ac84ddd7..9635eee619 100644
+--- a/xen/arch/x86/cpu/amd.c
++++ b/xen/arch/x86/cpu/amd.c
+@@ -845,7 +845,7 @@ static void init_amd(struct cpuinfo_x86 *c)
+ 	 * everything, including reads and writes to address, and
+ 	 * LFENCE/SFENCE instructions.
+ 	 */
+-	if (!cpu_has_clflushopt)
++	if (c == &boot_cpu_data && !cpu_has_clflushopt)
+ 		setup_force_cpu_cap(X86_BUG_CLFLUSH_MFENCE);
+ 
+ 	switch(c->x86)
+-- 
+2.30.2
+

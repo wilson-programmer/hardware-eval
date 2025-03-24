@@ -1,0 +1,36 @@
+From 7b1b9849e8a0d7791866d6d21c45993dfe27836c Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 7 Feb 2023 17:03:09 +0100
+Subject: [PATCH] x86/S3: Restore Xen's MSR_PAT value on S3 resume
+
+There are two paths in the trampoline, and Xen's PAT needs setting up in both,
+not just the boot path.
+
+Fixes: 4304ff420e51 ("x86/S3: Drop {save,restore}_rest_processor_state() completely")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 4d975798e11579fdf405b348543061129e01b0fb
+master date: 2023-01-10 21:21:30 +0000
+---
+ xen/arch/x86/boot/wakeup.S | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/xen/arch/x86/boot/wakeup.S b/xen/arch/x86/boot/wakeup.S
+index c17d613b61..08447e1934 100644
+--- a/xen/arch/x86/boot/wakeup.S
++++ b/xen/arch/x86/boot/wakeup.S
+@@ -130,6 +130,11 @@ wakeup_32:
+         and     %edi, %edx
+         wrmsr
+ 1:
++        /* Set up PAT before enabling paging. */
++        mov     $XEN_MSR_PAT & 0xffffffff, %eax
++        mov     $XEN_MSR_PAT >> 32, %edx
++        mov     $MSR_IA32_CR_PAT, %ecx
++        wrmsr
+ 
+         /* Set up EFER (Extended Feature Enable Register). */
+         movl    $MSR_EFER,%ecx
+-- 
+2.30.2
+

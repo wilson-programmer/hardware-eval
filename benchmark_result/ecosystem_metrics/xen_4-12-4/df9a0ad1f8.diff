@@ -1,0 +1,45 @@
+From df9a0ad1f8b874160a305bfa7a3145327f5a72b2 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 7 Aug 2020 17:30:35 +0200
+Subject: [PATCH] x86/spec-ctrl: Protect against CALL/JMP straight-line
+ speculation
+
+Some x86 CPUs speculatively execute beyond indirect CALL/JMP instructions.
+
+With CONFIG_INDIRECT_THUNK / Retpolines, indirect CALL/JMP instructions are
+converted to direct CALL/JMP's to __x86_indirect_thunk_REG(), leaving just a
+handful of indirect JMPs implementing those stubs.
+
+There is no architectrual execution beyond an indirect JMP, so use INT3 as
+recommended by vendors to halt speculative execution.  This is shorter than
+LFENCE (which would also work fine), but also shows up in logs if we do
+unexpected execute them.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 3b7dab93f2401b08c673244c9ae0f92e08bd03ba
+master date: 2020-07-01 17:01:24 +0100
+---
+ xen/arch/x86/indirect-thunk.S | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/arch/x86/indirect-thunk.S b/xen/arch/x86/indirect-thunk.S
+index 3c17f75c23..7392aee127 100644
+--- a/xen/arch/x86/indirect-thunk.S
++++ b/xen/arch/x86/indirect-thunk.S
+@@ -24,10 +24,12 @@
+ .macro IND_THUNK_LFENCE reg:req
+         lfence
+         jmp *%\reg
++        int3 /* Halt straight-line speculation */
+ .endm
+ 
+ .macro IND_THUNK_JMP reg:req
+         jmp *%\reg
++        int3 /* Halt straight-line speculation */
+ .endm
+ 
+ /*
+-- 
+2.30.2
+

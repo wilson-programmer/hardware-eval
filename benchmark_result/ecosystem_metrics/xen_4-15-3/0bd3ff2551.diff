@@ -1,0 +1,56 @@
+From 0bd3ff2551325d7ee0d1e957095e1439d39d207d Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 5 Apr 2022 15:00:36 +0200
+Subject: [PATCH] IOMMU/x86: drop TLB flushes from quarantine_init() hooks
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The page tables just created aren't hooked up yet anywhere, so there's
+nothing that could be present in any TLB, and hence nothing to flush.
+Dropping this flush is, at least on the VT-d side, a prereq to per-
+device domain ID use when quarantining devices, as dom_io isn't going
+to be assigned a DID anymore: The warning in get_iommu_did() would
+trigger.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 54c5cef49239e2f27ec3b3fc8804bf57aa4bf46d
+master date: 2022-04-05 14:19:42 +0200
+---
+ xen/drivers/passthrough/amd/iommu_map.c | 2 --
+ xen/drivers/passthrough/vtd/iommu.c     | 3 ---
+ 2 files changed, 5 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_map.c b/xen/drivers/passthrough/amd/iommu_map.c
+index d50510bed0..8746b00e87 100644
+--- a/xen/drivers/passthrough/amd/iommu_map.c
++++ b/xen/drivers/passthrough/amd/iommu_map.c
+@@ -584,8 +584,6 @@ int __init amd_iommu_quarantine_init(struct domain *d)
+  out:
+     spin_unlock(&hd->arch.mapping_lock);
+ 
+-    amd_iommu_flush_all_pages(d);
+-
+     /* Pages leaked in failure case */
+     return level ? -ENOMEM : 0;
+ }
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index e362604726..e7851f61e2 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -2958,9 +2958,6 @@ static int __init intel_iommu_quarantine_init(struct domain *d)
+  out:
+     spin_unlock(&hd->arch.mapping_lock);
+ 
+-    if ( !rc )
+-        rc = iommu_flush_iotlb_all(d);
+-
+     /* Pages may be leaked in failure case */
+     return rc;
+ }
+-- 
+2.30.2
+

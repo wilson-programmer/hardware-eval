@@ -1,0 +1,129 @@
+From c129b5fd1430b50f4e6b275a070908d34dcef0dc Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 20 Apr 2021 11:58:06 +0200
+Subject: [PATCH] Revert "x86/HPET: don't enable legacy replacement mode
+ unconditionally"
+
+This reverts commit e680cc48b7184d3489873d6776f84ba1fc238ced.
+
+It was committed despite multiple objections.  The agreed upon fix is a
+different variation of the same original patch, and the delta between the two
+is far from clear.
+
+By reverting this commit first, the fixes are clear and coherent as individual
+patches, and in the appropriate form for backport to the older trees.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 2b05d427a09e108589dc57f54b517d0ffdf973ef
+master date: 2021-04-15 18:25:40 +0100
+---
+ docs/misc/xen-command-line.pandoc | 17 --------------
+ xen/arch/x86/hpet.c               | 37 +++++--------------------------
+ 2 files changed, 6 insertions(+), 48 deletions(-)
+
+diff --git a/docs/misc/xen-command-line.pandoc b/docs/misc/xen-command-line.pandoc
+index deef6d0b4c..a0601ff838 100644
+--- a/docs/misc/xen-command-line.pandoc
++++ b/docs/misc/xen-command-line.pandoc
+@@ -1274,26 +1274,9 @@ supported. See docs/misc/arm/big.LITTLE.txt for more information.
+ When the hmp-unsafe option is disabled (default), CPUs that are not
+ identical to the boot CPU will be parked and not used by Xen.
+ 
+-### hpet (x86)
+-> `= List of [ <boolean> | broadcast | legacy-replacement ]`
+-
+-> Default : `true`, `no-broadcast`, 'no-legacy-replacement`
+-
+-Controls Xen's use of the system's High Precision Event Timer.  The boolean
+-allows to turn off use altogether.
+-
+-`broadcast` forces Xen to keep using the broadcast for CPUs in deep C-states
+-even when an RTC interrupt got enabled.
+-
+-`legacy-replacement` is intended to be used on platforms where the timer
+-interrupt doesn't get raised by the legacy PIT.  This then also affects
+-raising of the RTC interrupt.
+-
+ ### hpetbroadcast (x86)
+ > `= <boolean>`
+ 
+-Deprecated alternative of `hpet=broadcast`.
+-
+ ### hvm_debug (x86)
+ > `= <integer>`
+ 
+diff --git a/xen/arch/x86/hpet.c b/xen/arch/x86/hpet.c
+index 76d9ef2c02..1ff005fb4a 100644
+--- a/xen/arch/x86/hpet.c
++++ b/xen/arch/x86/hpet.c
+@@ -52,8 +52,6 @@ static unsigned int __read_mostly num_hpets_used;
+ DEFINE_PER_CPU(struct hpet_event_channel *, cpu_bc_channel);
+ 
+ unsigned long __initdata hpet_address;
+-static bool __initdata opt_hpet = true;
+-static bool __initdata opt_legacy_replacement;
+ u8 __initdata hpet_blockid;
+ u8 __initdata hpet_flags;
+ 
+@@ -65,32 +63,6 @@ u8 __initdata hpet_flags;
+ static bool __initdata force_hpet_broadcast;
+ boolean_param("hpetbroadcast", force_hpet_broadcast);
+ 
+-static int __init parse_hpet_param(const char *s)
+-{
+-    const char *ss;
+-    int val, rc = 0;
+-
+-    do {
+-        ss = strchr(s, ',');
+-        if ( !ss )
+-            ss = strchr(s, '\0');
+-
+-        if ( (val = parse_bool(s, ss)) >= 0 )
+-            opt_hpet = val;
+-        else if ( (val = parse_boolean("broadcast", s, ss)) >= 0 )
+-            force_hpet_broadcast = val;
+-        else if ( (val = parse_boolean("legacy-replacement", s, ss)) >= 0 )
+-            opt_legacy_replacement = val;
+-        else
+-            rc = -EINVAL;
+-
+-        s = ss + 1;
+-    } while ( *ss );
+-
+-    return rc;
+-}
+-custom_param("hpet", parse_hpet_param);
+-
+ /*
+  * Calculate a multiplication factor for scaled math, which is used to convert
+  * nanoseconds based values to clock ticks:
+@@ -789,9 +761,12 @@ u64 __init hpet_setup(void)
+     unsigned int hpet_id, hpet_period, hpet_cfg;
+     unsigned int last, rem;
+ 
+-    if ( hpet_rate || !hpet_address || !opt_hpet )
++    if ( hpet_rate )
+         return hpet_rate;
+ 
++    if ( hpet_address == 0 )
++        return 0;
++
+     set_fixmap_nocache(FIX_HPET_BASE, hpet_address);
+ 
+     hpet_id = hpet_read32(HPET_ID);
+@@ -828,9 +803,9 @@ u64 __init hpet_setup(void)
+      * IRQ routing is configured.
+      *
+      * Reconfigure the HPET into legacy mode to re-establish the timer
+-     * interrupt, if available and if so requested.
++     * interrupt.
+      */
+-    if ( opt_legacy_replacement && (hpet_id & HPET_ID_LEGSUP) &&
++    if ( hpet_id & HPET_ID_LEGSUP &&
+          !((hpet_cfg = hpet_read32(HPET_CFG)) & HPET_CFG_LEGACY) )
+     {
+         unsigned int c0_cfg, ticks, count;
+-- 
+2.30.2
+

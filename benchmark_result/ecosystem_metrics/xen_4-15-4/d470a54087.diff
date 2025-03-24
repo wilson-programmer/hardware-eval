@@ -1,0 +1,37 @@
+From d470a54087e0fbd813dae4d773ad0b830eeec4a1 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Tue, 12 Jul 2022 11:26:58 +0200
+Subject: [PATCH] libxl: check return value of libxl__xs_directory in name2bdf
+
+libxl__xs_directory() can potentially return NULL without setting `n`.
+As `n` isn't initialised, we need to check libxl__xs_directory()
+return value before checking `n`. Otherwise, `n` might be non-zero
+with `bdfs` NULL which would lead to a segv.
+
+Fixes: 57bff091f4 ("libxl: add 'name' field to 'libxl_device_pci' in the IDL...")
+Reported-by: "G.R." <firemeteor@users.sourceforge.net>
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Tested-by: "G.R." <firemeteor@users.sourceforge.net>
+master commit: d778089ac70e5b8e3bdea0c85fc8c0b9ed0eaf2f
+master date: 2022-07-12 08:38:51 +0200
+---
+ tools/libs/light/libxl_pci.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libs/light/libxl_pci.c b/tools/libs/light/libxl_pci.c
+index 92bf86b2be..a5f5cdf62b 100644
+--- a/tools/libs/light/libxl_pci.c
++++ b/tools/libs/light/libxl_pci.c
+@@ -859,7 +859,7 @@ static int name2bdf(libxl__gc *gc, libxl_device_pci *pci)
+     int rc = ERROR_NOTFOUND;
+ 
+     bdfs = libxl__xs_directory(gc, XBT_NULL, PCI_INFO_PATH, &n);
+-    if (!n)
++    if (!bdfs || !n)
+         goto out;
+ 
+     for (i = 0; i < n; i++) {
+-- 
+2.30.2
+

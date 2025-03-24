@@ -1,0 +1,36 @@
+From 1cb2d6087f38d1fc561c65bf8032dd84365546e8 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Thu, 31 Oct 2019 15:09:04 +0000
+Subject: [PATCH] docs/misc: xen-command-line: Remove wrong statement from
+ serrors=diverse
+
+When serrors=diverse is selected by the user, we will only synchronize
+the pending SErrors on entry to hypervisor from guest context and exit
+from guest to hypervisor context.
+
+We don't need synchronize SErrors between guest context switch as they
+would be categorized to Hypervisor generated SErrors in any case.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 575186163cab83b73317dd56e6c0f708b904afb8)
+---
+ docs/misc/xen-command-line.pandoc | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/docs/misc/xen-command-line.pandoc b/docs/misc/xen-command-line.pandoc
+index 82272d72ff..c02cf09f0c 100644
+--- a/docs/misc/xen-command-line.pandoc
++++ b/docs/misc/xen-command-line.pandoc
+@@ -1845,7 +1845,6 @@ hypervisors handle SErrors:
+   1. dsb/isb on all EL1 -> EL2 trap entries to categorize SErrors correctly.
+   2. dsb/isb on EL2 -> EL1 return paths to prevent slipping hypervisor
+      SErrors to guests.
+-  3. dsb/isb in context switch to isolate SErrors between 2 vCPUs.
+ 
+ * `forward`:
+   The hypervisor will not distinguish guest SErrors from hypervisor SErrors.
+-- 
+2.30.2
+

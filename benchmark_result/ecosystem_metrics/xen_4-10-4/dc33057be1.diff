@@ -1,0 +1,29 @@
+From dc33057be1fc39b3fee2f67a7f2ac1379d150dab Mon Sep 17 00:00:00 2001
+From: Michael McConville <mmcco@mykolab.com>
+Date: Fri, 1 Dec 2017 11:31:57 -0700
+Subject: [PATCH] mmap(2) returns MAP_FAILED, not NULL, on failure
+
+Signed-off-by: Michael McConville <mmcco@mykolab.com>
+Reviewed-by: John Snow <jsnow@redhat.com>
+Signed-off-by: Michael Tokarev <mjt@tls.msk.ru>
+(cherry picked from commit ab1ce9bd4897b9909836e2d50bca86f2f3f2dddc)
+---
+ hw/i386/xen/xen-mapcache.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/hw/i386/xen/xen-mapcache.c b/hw/i386/xen/xen-mapcache.c
+index 369c3df8a0..3b885bd469 100644
+--- a/hw/i386/xen/xen-mapcache.c
++++ b/hw/i386/xen/xen-mapcache.c
+@@ -198,7 +198,7 @@ static void xen_remap_bucket(MapCacheEntry *entry,
+          */
+         vaddr_base = mmap(vaddr, size, PROT_READ | PROT_WRITE,
+                           MAP_ANON | MAP_SHARED, -1, 0);
+-        if (vaddr_base == NULL) {
++        if (vaddr_base == MAP_FAILED) {
+             perror("mmap");
+             exit(-1);
+         }
+-- 
+2.30.2
+

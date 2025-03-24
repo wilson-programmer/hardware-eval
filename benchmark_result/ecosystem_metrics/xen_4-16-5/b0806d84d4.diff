@@ -1,0 +1,41 @@
+From b0806d84d48d983d40a29534e663652887287a78 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Tue, 23 May 2023 15:03:41 +0200
+Subject: [PATCH] pci: fix pci_get_pdev_by_domain() to always account for the
+ segment
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+When a domain parameter is provided to pci_get_pdev_by_domain() the
+search function would match against bus and devfn, without taking the
+segment into account.
+
+Fix this and also account for the passed segment.
+
+Fixes: 8cf6e0738906 ('PCI: simplify (and thus correct) pci_get_pdev{,_by_domain}()')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: c7908869ac26961a3919491705e521179ad3fc0e
+master date: 2023-05-22 16:11:55 +0200
+---
+ xen/drivers/passthrough/pci.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/drivers/passthrough/pci.c b/xen/drivers/passthrough/pci.c
+index da4ecda814..a9da7367c2 100644
+--- a/xen/drivers/passthrough/pci.c
++++ b/xen/drivers/passthrough/pci.c
+@@ -570,7 +570,7 @@ struct pci_dev *pci_get_pdev_by_domain(const struct domain *d, uint16_t seg,
+     }
+     else
+         list_for_each_entry ( pdev, &d->pdev_list, domain_list )
+-            if ( pdev->bus == bus && pdev->devfn == devfn )
++            if ( pdev->seg == seg && pdev->bus == bus && pdev->devfn == devfn )
+                 return pdev;
+ 
+     return NULL;
+-- 
+2.30.2
+

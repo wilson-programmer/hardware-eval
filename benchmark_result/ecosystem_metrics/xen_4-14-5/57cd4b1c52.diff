@@ -1,0 +1,68 @@
+From 57cd4b1c52881e49901b344ca3da00209c4689f7 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 4 Apr 2022 15:58:04 +0200
+Subject: [PATCH] livepatch: account for patch offset when applying NOP patch
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+While not triggered by the trivial xen_nop in-tree patch on
+staging/master, that patch exposes a problem on the stable trees, where
+all functions have ENDBR inserted. When NOP-ing out a range, we need to
+account for this. Handle this right in livepatch_insn_len().
+
+This requires livepatch_insn_len() to be called _after_ ->patch_offset
+was set.
+
+Fixes: 6974c75180f1 ("xen/x86: Livepatch: support patching CET-enhanced functions")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 8a87b9a0fb0564f9d68f0be0a0d1a17c34117b8b
+master date: 2022-03-31 10:45:46 +0200
+---
+ xen/arch/x86/livepatch.c    | 8 +++++---
+ xen/include/xen/livepatch.h | 2 +-
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/livepatch.c b/xen/arch/x86/livepatch.c
+index e94ac9b228..a3cb63a7ea 100644
+--- a/xen/arch/x86/livepatch.c
++++ b/xen/arch/x86/livepatch.c
+@@ -144,9 +144,6 @@ void noinline arch_livepatch_apply(struct livepatch_func *func)
+ 
+     func->patch_offset = 0;
+     old_ptr = func->old_addr;
+-    len = livepatch_insn_len(func);
+-    if ( !len )
+-        return;
+ 
+     /*
+      * CET hotpatching support: We may have functions starting with an ENDBR64
+@@ -159,6 +156,11 @@ void noinline arch_livepatch_apply(struct livepatch_func *func)
+     if ( is_endbr64(old_ptr) )
+         func->patch_offset += ENDBR64_LEN;
+ 
++    /* This call must be done with ->patch_offset already set. */
++    len = livepatch_insn_len(func);
++    if ( !len )
++        return;
++
+     memcpy(func->opaque, old_ptr + func->patch_offset, len);
+     if ( func->new_addr )
+     {
+diff --git a/xen/include/xen/livepatch.h b/xen/include/xen/livepatch.h
+index f3ae10f007..9fdb29c382 100644
+--- a/xen/include/xen/livepatch.h
++++ b/xen/include/xen/livepatch.h
+@@ -90,7 +90,7 @@ static inline
+ unsigned int livepatch_insn_len(const struct livepatch_func *func)
+ {
+     if ( !func->new_addr )
+-        return func->new_size;
++        return func->new_size - func->patch_offset;
+ 
+     return ARCH_PATCH_INSN_SIZE;
+ }
+-- 
+2.30.2
+

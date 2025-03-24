@@ -1,0 +1,335 @@
+From 717460e062dfe13a69cb01f518dd7b65d39376ef Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 13 Sep 2022 07:35:08 +0200
+Subject: [PATCH] tools/xenstore: simplify and fix per domain node accounting
+
+The accounting of nodes can be simplified now that each connection
+holds the associated domid.
+
+Fix the node accounting to cover nodes created for a domain before it
+has been introduced. This requires to react properly to an allocation
+failure inside domain_entry_inc() by returning an error code.
+
+Especially in error paths the node accounting has to be fixed in some
+cases.
+
+This is part of XSA-326 / CVE-2022-42313.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit dbef1f7482894c572d90cd73d99ed689c891e863)
+---
+ tools/xenstore/xenstored_core.c        |  43 ++++++++--
+ tools/xenstore/xenstored_domain.c      | 105 ++++++++++++++++---------
+ tools/xenstore/xenstored_domain.h      |   4 +-
+ tools/xenstore/xenstored_transaction.c |   8 +-
+ 4 files changed, 109 insertions(+), 51 deletions(-)
+
+diff --git a/tools/xenstore/xenstored_core.c b/tools/xenstore/xenstored_core.c
+index f1fa97b8cf..692d863fce 100644
+--- a/tools/xenstore/xenstored_core.c
++++ b/tools/xenstore/xenstored_core.c
+@@ -638,7 +638,7 @@ struct node *read_node(struct connection *conn, const void *ctx,
+ 
+ 	/* Permissions are struct xs_permissions. */
+ 	node->perms.p = hdr->perms;
+-	if (domain_adjust_node_perms(node)) {
++	if (domain_adjust_node_perms(conn, node)) {
+ 		talloc_free(node);
+ 		return NULL;
+ 	}
+@@ -660,7 +660,7 @@ int write_node_raw(struct connection *conn, TDB_DATA *key, struct node *node,
+ 	void *p;
+ 	struct xs_tdb_record_hdr *hdr;
+ 
+-	if (domain_adjust_node_perms(node))
++	if (domain_adjust_node_perms(conn, node))
+ 		return errno;
+ 
+ 	data.dsize = sizeof(*hdr)
+@@ -1272,13 +1272,17 @@ nomem:
+ 	return NULL;
+ }
+ 
+-static int destroy_node(struct connection *conn, struct node *node)
++static void destroy_node_rm(struct node *node)
+ {
+ 	if (streq(node->name, "/"))
+ 		corrupt(NULL, "Destroying root node!");
+ 
+ 	tdb_delete(tdb_ctx, node->key);
++}
+ 
++static int destroy_node(struct connection *conn, struct node *node)
++{
++	destroy_node_rm(node);
+ 	domain_entry_dec(conn, node);
+ 
+ 	/*
+@@ -1328,8 +1332,12 @@ static struct node *create_node(struct connection *conn, const void *ctx,
+ 			goto err;
+ 
+ 		/* Account for new node */
+-		if (i->parent)
+-			domain_entry_inc(conn, i);
++		if (i->parent) {
++			if (domain_entry_inc(conn, i)) {
++				destroy_node_rm(i);
++				return NULL;
++			}
++		}
+ 	}
+ 
+ 	return node;
+@@ -1614,10 +1622,27 @@ static int do_set_perms(struct connection *conn, struct buffered_data *in)
+ 	old_perms = node->perms;
+ 	domain_entry_dec(conn, node);
+ 	node->perms = perms;
+-	domain_entry_inc(conn, node);
++	if (domain_entry_inc(conn, node)) {
++		node->perms = old_perms;
++		/*
++		 * This should never fail because we had a reference on the
++		 * domain before and Xenstored is single-threaded.
++		 */
++		domain_entry_inc(conn, node);
++		return ENOMEM;
++	}
++
++	if (write_node(conn, node, false)) {
++		int saved_errno = errno;
+ 
+-	if (write_node(conn, node, false))
++		domain_entry_dec(conn, node);
++		node->perms = old_perms;
++		/* No failure possible as above. */
++		domain_entry_inc(conn, node);
++
++		errno = saved_errno;
+ 		return errno;
++	}
+ 
+ 	fire_watches(conn, in, name, node, false, &old_perms);
+ 	send_ack(conn, XS_SET_PERMS);
+@@ -3122,7 +3147,9 @@ void read_state_node(const void *ctx, const void *state)
+ 	set_tdb_key(name, &key);
+ 	if (write_node_raw(NULL, &key, node, true))
+ 		barf("write node error restoring node");
+-	domain_entry_inc(&conn, node);
++
++	if (domain_entry_inc(&conn, node))
++		barf("node accounting error restoring node");
+ 
+ 	talloc_free(node);
+ }
+diff --git a/tools/xenstore/xenstored_domain.c b/tools/xenstore/xenstored_domain.c
+index 850085a92c..260952e090 100644
+--- a/tools/xenstore/xenstored_domain.c
++++ b/tools/xenstore/xenstored_domain.c
+@@ -16,6 +16,7 @@
+     along with this program; If not, see <http://www.gnu.org/licenses/>.
+ */
+ 
++#include <assert.h>
+ #include <stdio.h>
+ #include <sys/mman.h>
+ #include <unistd.h>
+@@ -363,6 +364,18 @@ static struct domain *find_or_alloc_domain(const void *ctx, unsigned int domid)
+ 	return domain ? : alloc_domain(ctx, domid);
+ }
+ 
++static struct domain *find_or_alloc_existing_domain(unsigned int domid)
++{
++	struct domain *domain;
++	xc_dominfo_t dominfo;
++
++	domain = find_domain_struct(domid);
++	if (!domain && get_domain_info(domid, &dominfo))
++		domain = alloc_domain(NULL, domid);
++
++	return domain;
++}
++
+ static int new_domain(struct domain *domain, int port, bool restore)
+ {
+ 	int rc;
+@@ -782,30 +795,28 @@ void domain_deinit(void)
+ 		xenevtchn_unbind(xce_handle, virq_port);
+ }
+ 
+-void domain_entry_inc(struct connection *conn, struct node *node)
++int domain_entry_inc(struct connection *conn, struct node *node)
+ {
+ 	struct domain *d;
++	unsigned int domid;
+ 
+ 	if (!conn)
+-		return;
++		return 0;
+ 
+-	if (node->perms.p && node->perms.p[0].id != conn->id) {
+-		if (conn->transaction) {
+-			transaction_entry_inc(conn->transaction,
+-				node->perms.p[0].id);
+-		} else {
+-			d = find_domain_by_domid(node->perms.p[0].id);
+-			if (d)
+-				d->nbentry++;
+-		}
+-	} else if (conn->domain) {
+-		if (conn->transaction) {
+-			transaction_entry_inc(conn->transaction,
+-				conn->domain->domid);
+- 		} else {
+- 			conn->domain->nbentry++;
+-		}
++	domid = node->perms.p ? node->perms.p[0].id : conn->id;
++
++	if (conn->transaction) {
++		transaction_entry_inc(conn->transaction, domid);
++	} else {
++		d = (domid == conn->id && conn->domain) ? conn->domain
++		    : find_or_alloc_existing_domain(domid);
++		if (d)
++			d->nbentry++;
++		else
++			return ENOMEM;
+ 	}
++
++	return 0;
+ }
+ 
+ /*
+@@ -841,7 +852,7 @@ static int chk_domain_generation(unsigned int domid, uint64_t gen)
+  * Remove permissions for no longer existing domains in order to avoid a new
+  * domain with the same domid inheriting the permissions.
+  */
+-int domain_adjust_node_perms(struct node *node)
++int domain_adjust_node_perms(struct connection *conn, struct node *node)
+ {
+ 	unsigned int i;
+ 	int ret;
+@@ -851,8 +862,14 @@ int domain_adjust_node_perms(struct node *node)
+ 		return errno;
+ 
+ 	/* If the owner doesn't exist any longer give it to priv domain. */
+-	if (!ret)
++	if (!ret) {
++		/*
++		 * In theory we'd need to update the number of dom0 nodes here,
++		 * but we could be called for a read of the node. So better
++		 * avoid the risk to overflow the node count of dom0.
++		 */
+ 		node->perms.p[0].id = priv_domid;
++	}
+ 
+ 	for (i = 1; i < node->perms.num; i++) {
+ 		if (node->perms.p[i].perms & XS_PERM_IGNORE)
+@@ -871,25 +888,25 @@ int domain_adjust_node_perms(struct node *node)
+ void domain_entry_dec(struct connection *conn, struct node *node)
+ {
+ 	struct domain *d;
++	unsigned int domid;
+ 
+ 	if (!conn)
+ 		return;
+ 
+-	if (node->perms.p && node->perms.p[0].id != conn->id) {
+-		if (conn->transaction) {
+-			transaction_entry_dec(conn->transaction,
+-				node->perms.p[0].id);
+-		} else {
+-			d = find_domain_by_domid(node->perms.p[0].id);
+-			if (d && d->nbentry)
+-				d->nbentry--;
+-		}
+-	} else if (conn->domain && conn->domain->nbentry) {
+-		if (conn->transaction) {
+-			transaction_entry_dec(conn->transaction,
+-				conn->domain->domid);
++	domid = node->perms.p ? node->perms.p[0].id : conn->id;
++
++	if (conn->transaction) {
++		transaction_entry_dec(conn->transaction, domid);
++	} else {
++		d = (domid == conn->id && conn->domain) ? conn->domain
++		    : find_domain_struct(domid);
++		if (d) {
++			d->nbentry--;
+ 		} else {
+-			conn->domain->nbentry--;
++			errno = ENOENT;
++			corrupt(conn,
++				"Node \"%s\" owned by non-existing domain %u\n",
++				node->name, domid);
+ 		}
+ 	}
+ }
+@@ -899,13 +916,23 @@ int domain_entry_fix(unsigned int domid, int num, bool update)
+ 	struct domain *d;
+ 	int cnt;
+ 
+-	d = find_domain_by_domid(domid);
+-	if (!d)
+-		return 0;
++	if (update) {
++		d = find_domain_struct(domid);
++		assert(d);
++	} else {
++		/*
++		 * We are called first with update == false in order to catch
++		 * any error. So do a possible allocation and check for error
++		 * only in this case, as in the case of update == true nothing
++		 * can go wrong anymore as the allocation already happened.
++		 */
++		d = find_or_alloc_existing_domain(domid);
++		if (!d)
++			return -1;
++	}
+ 
+ 	cnt = d->nbentry + num;
+-	if (cnt < 0)
+-		cnt = 0;
++	assert(cnt >= 0);
+ 
+ 	if (update)
+ 		d->nbentry = cnt;
+diff --git a/tools/xenstore/xenstored_domain.h b/tools/xenstore/xenstored_domain.h
+index 4f51b00529..d6519904d8 100644
+--- a/tools/xenstore/xenstored_domain.h
++++ b/tools/xenstore/xenstored_domain.h
+@@ -54,10 +54,10 @@ const char *get_implicit_path(const struct connection *conn);
+ bool domain_is_unprivileged(struct connection *conn);
+ 
+ /* Remove node permissions for no longer existing domains. */
+-int domain_adjust_node_perms(struct node *node);
++int domain_adjust_node_perms(struct connection *conn, struct node *node);
+ 
+ /* Quota manipulation */
+-void domain_entry_inc(struct connection *conn, struct node *);
++int domain_entry_inc(struct connection *conn, struct node *);
+ void domain_entry_dec(struct connection *conn, struct node *);
+ int domain_entry_fix(unsigned int domid, int num, bool update);
+ int domain_entry(struct connection *conn);
+diff --git a/tools/xenstore/xenstored_transaction.c b/tools/xenstore/xenstored_transaction.c
+index ee1b09031a..86caf6c398 100644
+--- a/tools/xenstore/xenstored_transaction.c
++++ b/tools/xenstore/xenstored_transaction.c
+@@ -519,8 +519,12 @@ static int transaction_fix_domains(struct transaction *trans, bool update)
+ 
+ 	list_for_each_entry(d, &trans->changed_domains, list) {
+ 		cnt = domain_entry_fix(d->domid, d->nbentry, update);
+-		if (!update && cnt >= quota_nb_entry_per_domain)
+-			return ENOSPC;
++		if (!update) {
++			if (cnt >= quota_nb_entry_per_domain)
++				return ENOSPC;
++			if (cnt < 0)
++				return ENOMEM;
++		}
+ 	}
+ 
+ 	return 0;
+-- 
+2.30.2
+

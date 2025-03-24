@@ -1,0 +1,76 @@
+From 2c9da5f73c3a2378036c982bf0b189b34befc403 Mon Sep 17 00:00:00 2001
+From: Dario Faggioli <dfaggioli@suse.com>
+Date: Thu, 15 Jul 2021 09:39:32 +0200
+Subject: [PATCH] xen: credit2: fix per-entity load tracking when continuing
+ running
+
+If we schedule, and the current vCPU continues to run, its statistical
+load is not properly updated, resulting in something like this, even if
+all the 8 vCPUs are 100% busy:
+
+(XEN) Runqueue 0:
+(XEN) [...]
+(XEN)   aveload            = 2097152 (~800%)
+(XEN) [...]
+(XEN)   Domain: 0 w 256 c 0 v 8
+(XEN)     1: [0.0] flags=2 cpu=4 credit=9996885 [w=256] load=35 (~0%)
+(XEN)     2: [0.1] flags=2 cpu=2 credit=9993725 [w=256] load=796 (~0%)
+(XEN)     3: [0.2] flags=2 cpu=1 credit=9995885 [w=256] load=883 (~0%)
+(XEN)     4: [0.3] flags=2 cpu=5 credit=9998833 [w=256] load=487 (~0%)
+(XEN)     5: [0.4] flags=2 cpu=6 credit=9998942 [w=256] load=1595 (~0%)
+(XEN)     6: [0.5] flags=2 cpu=0 credit=9994669 [w=256] load=22 (~0%)
+(XEN)     7: [0.6] flags=2 cpu=7 credit=9997706 [w=256] load=0 (~0%)
+(XEN)     8: [0.7] flags=2 cpu=3 credit=9992440 [w=256] load=0 (~0%)
+
+As we can see, the average load of the runqueue as a whole is, instead,
+computed properly.
+
+This issue would, in theory, potentially affect Credit2 load balancing
+logic. In practice, however, the problem only manifests (at least with
+these characteristics) when there is only 1 runqueue active in the
+cpupool, which also means there is no need to do any load-balancing.
+
+Hence its real impact is pretty much limited to wrong per-vCPU load
+percentages, when looking at the output of the 'r' debug-key.
+
+With this patch, the load is updated and displayed correctly:
+
+(XEN) Runqueue 0:
+(XEN) [...]
+(XEN)   aveload            = 2097152 (~800%)
+(XEN) [...]
+(XEN) Domain info:
+(XEN)   Domain: 0 w 256 c 0 v 8
+(XEN)     1: [0.0] flags=2 cpu=4 credit=9995584 [w=256] load=262144 (~100%)
+(XEN)     2: [0.1] flags=2 cpu=6 credit=9992992 [w=256] load=262144 (~100%)
+(XEN)     3: [0.2] flags=2 cpu=3 credit=9998918 [w=256] load=262118 (~99%)
+(XEN)     4: [0.3] flags=2 cpu=5 credit=9996867 [w=256] load=262144 (~100%)
+(XEN)     5: [0.4] flags=2 cpu=1 credit=9998912 [w=256] load=262144 (~100%)
+(XEN)     6: [0.5] flags=2 cpu=2 credit=9997842 [w=256] load=262144 (~100%)
+(XEN)     7: [0.6] flags=2 cpu=7 credit=9994623 [w=256] load=262144 (~100%)
+(XEN)     8: [0.7] flags=2 cpu=0 credit=9991815 [w=256] load=262144 (~100%)
+
+Signed-off-by: Dario Faggioli <dfaggioli@suse.com>
+Reviewed-by: George Dunlap <george.dunlap@citrix.com>
+master commit: 89052b9fa24bf976924e40918fc9fa3b1b940e17
+master date: 2021-06-07 13:17:06 +0100
+---
+ xen/common/sched_credit2.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/common/sched_credit2.c b/xen/common/sched_credit2.c
+index fab6ac7aff..8ba741e379 100644
+--- a/xen/common/sched_credit2.c
++++ b/xen/common/sched_credit2.c
+@@ -3554,6 +3554,8 @@ static void csched2_schedule(
+             runq_remove(snext);
+             __set_bit(__CSFLAG_scheduled, &snext->flags);
+         }
++        else
++            update_load(ops, rqd, snext, 0, now);
+ 
+         /* Clear the idle mask if necessary */
+         if ( cpumask_test_cpu(sched_cpu, &rqd->idle) )
+-- 
+2.30.2
+

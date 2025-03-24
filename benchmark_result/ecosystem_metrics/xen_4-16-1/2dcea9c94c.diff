@@ -1,0 +1,31 @@
+From 2dcea9c94c59cf2a9c7ee824a573f7c1b864b5d5 Mon Sep 17 00:00:00 2001
+From: Ian Jackson <iwj@xenproject.org>
+Date: Mon, 6 Dec 2021 15:46:04 +0000
+Subject: [PATCH] REAMDE: trim over-long lines around figlet
+
+Signed-off-by: Ian Jackson <iwj@xenproject.org>
+---
+ README | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/README b/README
+index 189c749bb0..6edcf0d5c0 100644
+--- a/README
++++ b/README
+@@ -1,11 +1,11 @@
+-############################################################
++##################################
+ __  __            _  _    _  __
+ \ \/ /___ _ __   | || |  / |/ /_
+  \  // _ \ '_ \  | || |_ | | '_ \
+  /  \  __/ | | | |__   _|| | (_) |
+ /_/\_\___|_| |_|    |_|(_)_|\___/
+ 
+-############################################################
++##################################
+ 
+ https://www.xen.org/
+ 
+-- 
+2.30.2
+

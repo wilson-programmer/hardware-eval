@@ -1,0 +1,49 @@
+From 58668f12a6e65cd6a384abad001ff5dae69b161f Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 25 Nov 2019 15:50:44 +0100
+Subject: [PATCH] x86/vvmx: Fix the use of RDTSCP when it is intercepted at L0
+
+Linux has started using RDTSCP as of v5.1.  This has highlighted a bug in Xen,
+where virtual vmexit simply gives up.
+
+  (XEN) d1v1 Unhandled nested vmexit: reason 51
+  (XEN) domain_crash called from vvmx.c:2671
+  (XEN) Domain 1 (vcpu#1) crashed on cpu#2:
+
+Handle RDTSCP in the virtual vmexit hander in the same was as RDTSC
+intercepts.
+
+Reported-by: Sarah Newman <srn@prgmr.com>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Tested-by: Chris Brannon <cmb@prgmr.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+master commit: 9257c218e56e9902b78662e5852d69329b9cc204
+master date: 2019-10-23 16:43:48 +0100
+---
+ xen/arch/x86/hvm/vmx/vvmx.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/vmx/vvmx.c b/xen/arch/x86/hvm/vmx/vvmx.c
+index f03660b51e..02c8c0fd50 100644
+--- a/xen/arch/x86/hvm/vmx/vvmx.c
++++ b/xen/arch/x86/hvm/vmx/vvmx.c
+@@ -2487,6 +2487,7 @@ int nvmx_n2_vmexit_handler(struct cpu_user_regs *regs,
+             nvcpu->nv_vmexit_pending = 1;
+         break;
+     case EXIT_REASON_RDTSC:
++    case EXIT_REASON_RDTSCP:
+         ctrl = __n2_exec_control(v);
+         if ( ctrl & CPU_BASED_RDTSC_EXITING )
+             nvcpu->nv_vmexit_pending = 1;
+@@ -2497,6 +2498,8 @@ int nvmx_n2_vmexit_handler(struct cpu_user_regs *regs,
+              * avoiding changing guest_tsc and messing up timekeeping in L1
+              */
+             msr_split(regs, hvm_get_guest_tsc(v) + get_vvmcs(v, TSC_OFFSET));
++            if ( exit_reason == EXIT_REASON_RDTSCP )
++                regs->rcx = v->arch.msrs->tsc_aux;
+             update_guest_eip();
+ 
+             return 1;
+-- 
+2.30.2
+

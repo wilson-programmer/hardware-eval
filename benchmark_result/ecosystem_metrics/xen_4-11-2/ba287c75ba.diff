@@ -1,0 +1,58 @@
+From ba287c75ba5f3b8da9786ba72d1d294f6f53ef27 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 29 Oct 2019 14:34:23 +0100
+Subject: [PATCH] AMD/IOMMU: free more memory when cleaning up after error
+
+The interrupt remapping in-use bitmaps were leaked in all cases. The
+ring buffers and the mapping of the MMIO space were leaked for any IOMMU
+that hadn't been enabled yet.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Brian Woods <brian.woods@amd.com>
+master commit: 6ae22e7aac8fb0d39318eb27eab439dd97521174
+master date: 2019-07-22 11:59:01 +0200
+---
+ xen/drivers/passthrough/amd/iommu_init.c | 11 +++++------
+ xen/drivers/passthrough/amd/iommu_intr.c |  2 ++
+ 2 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_init.c b/xen/drivers/passthrough/amd/iommu_init.c
+index bbcb265bc9..7a089b4c60 100644
+--- a/xen/drivers/passthrough/amd/iommu_init.c
++++ b/xen/drivers/passthrough/amd/iommu_init.c
+@@ -1071,13 +1071,12 @@ static void __init amd_iommu_init_cleanup(void)
+     {
+         list_del(&iommu->list);
+         if ( iommu->enabled )
+-        {
+             disable_iommu(iommu);
+-            deallocate_ring_buffer(&iommu->cmd_buffer);
+-            deallocate_ring_buffer(&iommu->event_log);
+-            deallocate_ring_buffer(&iommu->ppr_log);
+-            unmap_iommu_mmio_region(iommu);
+-        }
++
++        deallocate_ring_buffer(&iommu->cmd_buffer);
++        deallocate_ring_buffer(&iommu->event_log);
++        deallocate_ring_buffer(&iommu->ppr_log);
++        unmap_iommu_mmio_region(iommu);
+         xfree(iommu);
+     }
+ 
+diff --git a/xen/drivers/passthrough/amd/iommu_intr.c b/xen/drivers/passthrough/amd/iommu_intr.c
+index dad2d1e5ab..d4ff8c18f9 100644
+--- a/xen/drivers/passthrough/amd/iommu_intr.c
++++ b/xen/drivers/passthrough/amd/iommu_intr.c
+@@ -610,6 +610,8 @@ int __init amd_iommu_free_intremap_table(
+ {
+     void *tb = ivrs_mapping->intremap_table;
+ 
++    XFREE(ivrs_mapping->intremap_inuse);
++
+     if ( tb )
+     {
+         __free_amd_iommu_tables(tb, INTREMAP_TABLE_ORDER);
+-- 
+2.30.2
+

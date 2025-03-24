@@ -1,0 +1,42 @@
+From 016de62747b26ead5a5c763b640fe8e205cd182b Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 12 Oct 2022 17:36:03 +0200
+Subject: [PATCH] libxl/Arm: correct xc_shadow_control() invocation to fix
+ build
+
+The backport didn't adapt to the earlier function prototype taking more
+(unused here) arguments.
+
+Fixes: c5215044578e ("xen/arm, libxl: Implement XEN_DOMCTL_shadow_op for Arm")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Henry Wang <Henry.Wang@arm.com>
+Acked-by: Anthony PERARD <anthony.perard@citrix.com>
+---
+ tools/libxl/libxl_arm.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/tools/libxl/libxl_arm.c b/tools/libxl/libxl_arm.c
+index 025df1bfd0..79cfb9cd29 100644
+--- a/tools/libxl/libxl_arm.c
++++ b/tools/libxl/libxl_arm.c
+@@ -131,14 +131,14 @@ int libxl__arch_domain_create(libxl__gc *gc, libxl_domain_config *d_config,
+                               uint32_t domid)
+ {
+     libxl_ctx *ctx = libxl__gc_owner(gc);
+-    unsigned int shadow_mb = DIV_ROUNDUP(d_config->b_info.shadow_memkb, 1024);
++    unsigned long shadow_mb = DIV_ROUNDUP(d_config->b_info.shadow_memkb, 1024);
+ 
+     int r = xc_shadow_control(ctx->xch, domid,
+                               XEN_DOMCTL_SHADOW_OP_SET_ALLOCATION,
+-                              &shadow_mb, 0);
++                              NULL, 0, &shadow_mb, 0, NULL);
+     if (r) {
+         LOGED(ERROR, domid,
+-              "Failed to set %u MiB shadow allocation", shadow_mb);
++              "Failed to set %lu MiB shadow allocation", shadow_mb);
+         return ERROR_FAIL;
+     }
+ 
+-- 
+2.30.2
+

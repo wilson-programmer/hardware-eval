@@ -1,0 +1,89 @@
+From d67b849d22e2eca4c6408af1a425332de752f409 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 5 Nov 2018 15:05:07 +0100
+Subject: [PATCH] x86/pv: Fix crash when using `xl set-parameter pcid=...`
+
+"pcid=" is registered as a runtime parameter, which means that parse_pcid()
+must not reside in .init, or the following happens when parse_params() tries
+to call an unmapped function pointer.
+
+  (XEN) ----[ Xen-4.12-unstable  x86_64  debug=y   Not tainted ]----
+  (XEN) CPU:    0
+  (XEN) RIP:    e008:[<ffff82d080407fb3>] ffff82d080407fb3
+  (XEN) RFLAGS: 0000000000010292   CONTEXT: hypervisor (d0v1)
+  (XEN) rax: ffff82d080407fb3   rbx: ffff82d0803cf270   rcx: 0000000000000000
+  (XEN) rdx: ffff8300abe67fff   rsi: 000000000000000a   rdi: ffff8300abe67bfd
+  (XEN) rbp: ffff8300abe67ca8   rsp: ffff8300abe67ba0   r8:  ffff83084d980000
+  (XEN) r9:  0000000000000000   r10: 0000000000000000   r11: 0000000000000000
+  (XEN) r12: ffff8300abe67bfd   r13: ffff82d0803cb628   r14: 0000000000000000
+  (XEN) r15: ffff8300abe67bf8   cr0: 0000000080050033   cr4: 0000000000172660
+  (XEN) cr3: 0000000828efd000   cr2: ffff82d080407fb3
+  (XEN) fsb: 00007fb810d4b780   gsb: ffff88007ce20000   gss: 0000000000000000
+  (XEN) ds: 0000   es: 0000   fs: 0000   gs: 0000   ss: e010   cs: e008
+  (XEN) Xen code around <ffff82d080407fb3> (ffff82d080407fb3) [fault on access]:
+  (XEN)  -- -- -- -- -- -- -- -- <--> -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+  (XEN) Xen stack trace from rsp=ffff8300abe67ba0:
+  (XEN)    ffff82d080217f61 ffff830826db0f09 ffff8300abe67bf8 ffff82d0803cf1e0
+  (XEN)    00007cff54198409 ffff8300abe67bf0 010001d000000000 0000000000000000
+  (XEN)    ffff82d0803cf288 ffff8300abe67c88 ffff82d0805a09c0 616c620064696370
+  (XEN)    00000000aaaa0068 0000000000000296 ffff82d08023d60e aaaaaaaaaaaaaaaa
+  (XEN)    ffff83084d9b4000 ffff8300abe67c68 ffff82d08024940e ffff83083736e000
+  (XEN)    0000000000000080 000000000000007a 000000000000000a ffff82d08045e61c
+  (XEN)    ffff82d080573d80 ffff8300abe67cb8 ffff82d080249805 80000007fce54067
+  (XEN)    fffffffffffffff2 ffff830826db0f00 ffff8300abfa7000 ffff82d08045e61c
+  (XEN)    ffff82d080573d80 ffff8300abe67cb8 ffff82d08021801e ffff8300abe67e48
+  (XEN)    ffff82d08023f60a ffff83083736e000 0000000000000000 ffff8300abe67d58
+  (XEN)    ffff82d080293d90 0000000000000092 ffff82d08023d60e ffff820040006ae0
+  (XEN)    0000000000000000 0000000000000000 00007fb810d5c010 ffff83083736e248
+  (XEN)    0000000000000286 ffff8300abe67d58 0000000000000000 ffff82e010521b00
+  (XEN)    0000000000000206 0000000000000000 0000000000000000 ffff8300abe67e48
+  (XEN)    ffff82d080295270 00000000ffffffff ffff83083736e000 ffff8300abe67e48
+  (XEN)    ffff820040006ae0 ffff8300abe67d98 000000120000001c 00007fb810d5d010
+  (XEN)    0000000000000009 0000000000000002 0000000000000001 00007fb810b53260
+  (XEN)    0000000000000001 0000000000000000 0000000000638bc0 00007fb81066a748
+  (XEN)    00007ffe11087881 0000000000000002 0000000000000001 00007fb810b53260
+  (XEN)    0000000000638b60 0000000000000000 00007fb8100322a0 ffff82d08035d444
+  (XEN) Xen call trace:
+  (XEN)    [<ffff82d080217f61>] kernel.c#parse_params+0x34a/0x3eb
+  (XEN)    [<ffff82d08021801e>] runtime_parse+0x1c/0x1e
+  (XEN)    [<ffff82d08023f60a>] do_sysctl+0x108d/0x1241
+  (XEN)    [<ffff82d0803535cb>] pv_hypercall+0x1ac/0x4c5
+  (XEN)    [<ffff82d08035d4a2>] lstar_enter+0x112/0x120
+  (XEN)
+  (XEN) Pagetable walk from ffff82d080407fb3:
+  (XEN)  L4[0x105] = 00000000abe5c063 ffffffffffffffff
+  (XEN)  L3[0x142] = 00000000abe59063 ffffffffffffffff
+  (XEN)  L2[0x002] = 000000084d9bf063 ffffffffffffffff
+  (XEN)  L1[0x007] = 0000000000000000 ffffffffffffffff
+  (XEN)
+  (XEN) ****************************************
+  (XEN) Panic on CPU 0:
+  (XEN) FATAL PAGE FAULT
+  (XEN) [error_code=0010]
+  (XEN) Faulting linear address: ffff82d080407fb3
+  (XEN) ****************************************
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: f993c3e90728705dacd834b49a6e5608c1360409
+master date: 2018-10-30 13:26:21 +0000
+---
+ xen/arch/x86/pv/domain.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/pv/domain.c b/xen/arch/x86/pv/domain.c
+index 5ef0d26291..b75ff6b968 100644
+--- a/xen/arch/x86/pv/domain.c
++++ b/xen/arch/x86/pv/domain.c
+@@ -22,7 +22,7 @@ static __read_mostly enum {
+     PCID_NOXPTI
+ } opt_pcid = PCID_XPTI;
+ 
+-static __init int parse_pcid(const char *s)
++static int parse_pcid(const char *s)
+ {
+     int rc = 0;
+ 
+-- 
+2.30.2
+

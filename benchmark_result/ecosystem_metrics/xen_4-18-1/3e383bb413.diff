@@ -1,0 +1,67 @@
+From 3e383bb4137c6ca3058cd55cb867ecc2b7414499 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 5 Mar 2024 11:48:39 +0100
+Subject: [PATCH] x86/HVM: hide SVM/VMX when their enabling is prohibited by
+ firmware
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+... or we fail to enable the functionality on the BSP for other reasons.
+The only place where hardware announcing the feature is recorded is the
+raw CPU policy/featureset.
+
+Inspired by https://lore.kernel.org/all/20230921114940.957141-1-pbonzini@redhat.com/.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 0b5f149338e35a795bf609ce584640b0977f9e6c
+master date: 2024-01-09 14:06:34 +0100
+---
+ xen/arch/x86/hvm/svm/svm.c  |  1 +
+ xen/arch/x86/hvm/vmx/vmcs.c | 17 +++++++++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/svm/svm.c b/xen/arch/x86/hvm/svm/svm.c
+index 24c417ca71..ff991c82cf 100644
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -2543,6 +2543,7 @@ const struct hvm_function_table * __init start_svm(void)
+ 
+     if ( _svm_cpu_up(true) )
+     {
++        setup_clear_cpu_cap(X86_FEATURE_SVM);
+         printk("SVM: failed to initialise.\n");
+         return NULL;
+     }
+diff --git a/xen/arch/x86/hvm/vmx/vmcs.c b/xen/arch/x86/hvm/vmx/vmcs.c
+index 13719cc923..e382aa16c5 100644
+--- a/xen/arch/x86/hvm/vmx/vmcs.c
++++ b/xen/arch/x86/hvm/vmx/vmcs.c
+@@ -2165,6 +2165,23 @@ int __init vmx_vmcs_init(void)
+ 
+     if ( !ret )
+         register_keyhandler('v', vmcs_dump, "dump VT-x VMCSs", 1);
++    else
++    {
++        setup_clear_cpu_cap(X86_FEATURE_VMX);
++
++        /*
++         * _vmx_vcpu_up() may have made it past feature identification.
++         * Make sure all dependent features are off as well.
++         */
++        vmx_basic_msr              = 0;
++        vmx_pin_based_exec_control = 0;
++        vmx_cpu_based_exec_control = 0;
++        vmx_secondary_exec_control = 0;
++        vmx_vmexit_control         = 0;
++        vmx_vmentry_control        = 0;
++        vmx_ept_vpid_cap           = 0;
++        vmx_vmfunc                 = 0;
++    }
+ 
+     return ret;
+ }
+-- 
+2.30.2
+

@@ -1,0 +1,34 @@
+From 81e6eabbfeab554db192ae6f0d1de8179daab2f0 Mon Sep 17 00:00:00 2001
+From: Luca Fancellu <luca.fancellu@arm.com>
+Date: Thu, 16 Dec 2021 14:43:19 -0800
+Subject: [PATCH] xen/arm: increase memory banks number define value
+
+Currently the maximum number of memory banks (NR_MEM_BANKS define)
+is fixed to 128, but on some new platforms that have a large amount
+of memory, this value is not enough and prevents Xen from booting.
+
+Increase the value to 256.
+
+Signed-off-by: Luca Fancellu <luca.fancellu@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit f1f38e26c3669f5e4583c3756f213c167d19651a)
+---
+ xen/include/asm-arm/setup.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/asm-arm/setup.h b/xen/include/asm-arm/setup.h
+index 95da0b7ab9..07daf160dc 100644
+--- a/xen/include/asm-arm/setup.h
++++ b/xen/include/asm-arm/setup.h
+@@ -6,7 +6,7 @@
+ #define MIN_FDT_ALIGN 8
+ #define MAX_FDT_SIZE SZ_2M
+ 
+-#define NR_MEM_BANKS 128
++#define NR_MEM_BANKS 256
+ 
+ #define MAX_MODULES 32 /* Current maximum useful modules */
+ 
+-- 
+2.30.2
+

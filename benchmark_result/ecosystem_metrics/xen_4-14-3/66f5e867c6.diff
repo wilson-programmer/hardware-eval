@@ -1,0 +1,47 @@
+From 66f5e867c6e3d400af354ab72e924fa7b3ada733 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 25 Aug 2021 15:08:09 +0200
+Subject: [PATCH] gnttab: fix array capacity check in
+ gnttab_get_status_frames()
+
+The number of grant frames is of no interest here; converting the passed
+in op.nr_frames this way means we allow for 8 times as many GFNs to be
+written as actually fit in the array. We would corrupt xlat areas of
+higher vCPU-s (after having faulted many times while trying to write to
+the guard pages between any two areas) for 32-bit PV guests. For HVM
+guests we'd simply crash as soon as we hit the first guard page, as
+accesses to the xlat area are simply memcpy() there.
+
+This is CVE-2021-28699 / XSA-382.
+
+Fixes: 18b1be5e324b ("gnttab: make resource limits per domain")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+master commit: ec820035b875cdbedce5e73f481ce65963ede9ed
+master date: 2021-08-25 14:19:09 +0200
+---
+ xen/common/grant_table.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/xen/common/grant_table.c b/xen/common/grant_table.c
+index 2d8e00409d..192db15c34 100644
+--- a/xen/common/grant_table.c
++++ b/xen/common/grant_table.c
+@@ -3283,12 +3283,11 @@ gnttab_get_status_frames(XEN_GUEST_HANDLE_PARAM(gnttab_get_status_frames_t) uop,
+         goto unlock;
+     }
+ 
+-    if ( unlikely(limit_max < grant_to_status_frames(op.nr_frames)) )
++    if ( unlikely(limit_max < op.nr_frames) )
+     {
+         gdprintk(XENLOG_WARNING,
+-                 "grant_to_status_frames(%u) for d%d is too large (%u,%u)\n",
+-                 op.nr_frames, d->domain_id,
+-                 grant_to_status_frames(op.nr_frames), limit_max);
++                 "nr_status_frames for %pd is too large (%u,%u)\n",
++                 d, op.nr_frames, limit_max);
+         op.status = GNTST_general_error;
+         goto unlock;
+     }
+-- 
+2.30.2
+

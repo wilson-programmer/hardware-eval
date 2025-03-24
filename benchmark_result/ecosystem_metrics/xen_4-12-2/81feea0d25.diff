@@ -1,0 +1,45 @@
+From 81feea0d2520ad6db00dc3deade823045a1225e0 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Thu, 16 May 2019 23:31:46 +0100
+Subject: [PATCH] xen/arm: vsmc: The function identifier is always 32-bit
+
+On Arm64, the SMCCC function identifier is always stored in the first 32-bit
+of x0 register. The rest of the bits are not defined and should be
+ignored.
+
+This means the variable funcid should be an uint32_t rather than
+register_t.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Volodymyr Babchuk <volodymyr_babchuk@epam.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 7f4217cc60574866cb90d67d9750228c6b86c91e)
+---
+ xen/arch/arm/vsmc.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/vsmc.c b/xen/arch/arm/vsmc.c
+index c72b9a04ff..ecf4faa13d 100644
+--- a/xen/arch/arm/vsmc.c
++++ b/xen/arch/arm/vsmc.c
+@@ -219,7 +219,7 @@ static bool vsmccc_handle_call(struct cpu_user_regs *regs)
+ {
+     bool handled = false;
+     const union hsr hsr = { .bits = regs->hsr };
+-    register_t funcid = get_user_reg(regs, 0);
++    uint32_t funcid = get_user_reg(regs, 0);
+ 
+     /*
+      * Check immediate value for HVC32, HVC64 and SMC64.
+@@ -281,7 +281,7 @@ static bool vsmccc_handle_call(struct cpu_user_regs *regs)
+ 
+     if ( !handled )
+     {
+-        gprintk(XENLOG_INFO, "Unhandled SMC/HVC: %08"PRIregister"\n", funcid);
++        gprintk(XENLOG_INFO, "Unhandled SMC/HVC: %#x\n", funcid);
+ 
+         /* Inform caller that function is not supported. */
+         set_user_reg(regs, 0, ARM_SMCCC_ERR_UNKNOWN_FUNCTION);
+-- 
+2.30.2
+

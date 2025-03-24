@@ -1,0 +1,36 @@
+From ece1cb0a6d9964949e175743e8b2d353c974d886 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 25 Nov 2019 15:59:12 +0100
+Subject: [PATCH] x86/shim: copy back the result of EVTCHNOP_status
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The event channel data was not copied back to guest memory, fix this
+by doing the copy.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+master commit: 0f45bbbc404e2d1257476f9caa6644c209ec2c90
+master date: 2019-11-01 10:48:04 +0000
+---
+ xen/arch/x86/pv/shim.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/arch/x86/pv/shim.c b/xen/arch/x86/pv/shim.c
+index 324ca27f93..b75975b853 100644
+--- a/xen/arch/x86/pv/shim.c
++++ b/xen/arch/x86/pv/shim.c
+@@ -516,6 +516,9 @@ static long pv_shim_event_channel_op(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+         else
+             rc = xen_hypercall_event_channel_op(EVTCHNOP_status, &status);
+ 
++        if ( !rc && __copy_to_guest(arg, &status, 1) )
++            rc = -EFAULT;
++
+         break;
+     }
+ 
+-- 
+2.30.2
+

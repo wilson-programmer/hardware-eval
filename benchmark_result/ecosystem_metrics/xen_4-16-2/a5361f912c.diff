@@ -1,0 +1,44 @@
+From a5361f912c8a9e05bd371df57d6387fde03ab075 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 27 Jul 2022 09:21:59 +0200
+Subject: [PATCH] x86emul: add memory operand low bits checks for ENQCMD{,S}
+
+Already ISE rev 044 added text to this effect; rev 045 further dropped
+leftover earlier text indicating the contrary:
+- ENQCMD requires the low 32 bits of the memory operand to be clear,
+- ENDCMDS requires bits 20...30 of the memory operand to be clear.
+
+Fixes: d27385968741 ("x86emul: support ENQCMD insns")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: d620c66bdbe5510c3bae89be8cc7ca9a2a6cbaba
+master date: 2022-07-20 15:46:48 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index e3667cb1a3..441086ea86 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -10499,6 +10499,7 @@ x86_emulate(
+             goto done;
+         if ( vex.pfx == vex_f2 ) /* enqcmd */
+         {
++            generate_exception_if(mmvalp->data32[0], EXC_GP, 0);
+             fail_if(!ops->read_msr);
+             if ( (rc = ops->read_msr(MSR_PASID, &msr_val,
+                                      ctxt)) != X86EMUL_OKAY )
+@@ -10506,7 +10507,8 @@ x86_emulate(
+             generate_exception_if(!(msr_val & PASID_VALID), EXC_GP, 0);
+             mmvalp->data32[0] = MASK_EXTR(msr_val, PASID_PASID_MASK);
+         }
+-        mmvalp->data32[0] &= ~0x7ff00000;
++        else
++            generate_exception_if(mmvalp->data32[0] & 0x7ff00000, EXC_GP, 0);
+         state->blk = blk_enqcmd;
+         if ( (rc = ops->blk(x86_seg_es, src.val, mmvalp, 64, &_regs.eflags,
+                             state, ctxt)) != X86EMUL_OKAY )
+-- 
+2.30.2
+

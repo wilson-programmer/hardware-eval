@@ -1,0 +1,32 @@
+From 33664f9a05401fac8f2c0be0bb7ee8a1851e4dcf Mon Sep 17 00:00:00 2001
+From: Wei Liu <wei.liu2@citrix.com>
+Date: Mon, 20 Aug 2018 09:38:18 +0100
+Subject: [PATCH] tools/tests: fix an xs-test.c issue
+
+The ret variable can be used uninitialised when iters is 0. Initialise
+ret at the beginning to fix this issue.
+
+Reported-by: Steven Haigh <netwiz@crc.id.au>
+Signed-off-by: Wei Liu <wei.liu2@citrix.com>
+Acked-by: Ian Jackson <ian.jackson@eu.citrix.com>
+(cherry picked from commit 3a2b8525b883baa87fe89b3da58f5c09fa599b99)
+---
+ tools/tests/xenstore/xs-test.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/tests/xenstore/xs-test.c b/tools/tests/xenstore/xs-test.c
+index eb5fe55722..6f902dd601 100644
+--- a/tools/tests/xenstore/xs-test.c
++++ b/tools/tests/xenstore/xs-test.c
+@@ -65,7 +65,7 @@ static int call_test(struct test *tst, int iters, bool no_clock)
+     char *stage = "?";
+     struct timespec tp1, tp2;
+     uint64_t nsec, nsec_min, nsec_max, nsec_sum;
+-    int i, ret;
++    int i, ret = 0;
+ 
+     nsec_min = -1;
+     nsec_max = 0;
+-- 
+2.30.2
+

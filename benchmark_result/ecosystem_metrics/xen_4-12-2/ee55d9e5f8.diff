@@ -1,0 +1,42 @@
+From ee55d9e5f85c9c1fa192d065ad0abee7683d8443 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Tue, 24 Sep 2019 12:48:47 +0100
+Subject: [PATCH] xen/arm: Allow insn.h to be called from assembly
+
+A follow-up patch will require to include insn.h from assembly code. So
+we need to protect any C-specific definition to avoid compilation
+errors when used in assembly code.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 7afbbca21bbacb9011da05055a911bca6aa895c5)
+---
+ xen/include/asm-arm/insn.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/xen/include/asm-arm/insn.h b/xen/include/asm-arm/insn.h
+index 19277212e1..27271e95f9 100644
+--- a/xen/include/asm-arm/insn.h
++++ b/xen/include/asm-arm/insn.h
+@@ -1,6 +1,8 @@
+ #ifndef __ARCH_ARM_INSN
+ #define __ARCH_ARM_INSN
+ 
++#ifndef __ASSEMBLY__
++
+ #include <xen/types.h>
+ 
+ #if defined(CONFIG_ARM_64)
+@@ -11,6 +13,8 @@
+ # error "unknown ARM variant"
+ #endif
+ 
++#endif /* __ASSEMBLY__ */
++
+ /* On ARM32,64 instructions are always 4 bytes long. */
+ #define ARCH_PATCH_INSN_SIZE 4
+ 
+-- 
+2.30.2
+

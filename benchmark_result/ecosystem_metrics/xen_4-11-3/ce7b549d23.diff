@@ -1,0 +1,61 @@
+From ce7b549d231fe0666b384b2e70be6a35358e5281 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Fri, 9 Aug 2019 13:59:15 +0100
+Subject: [PATCH] xen/arm: p2m: Free the p2m entry after flushing the IOMMU
+ TLBs
+
+When freeing a p2m entry, all the sub-tree behind it will also be freed.
+This may include intermediate page-tables or any l3 entry requiring to
+drop a reference (e.g for foreign pages). As soon as pages are freed,
+they may be re-used by Xen or another domain. Therefore it is necessary
+to flush *all* the TLBs beforehand.
+
+While CPU TLBs will be flushed before freeing the pages, this is not
+the case for IOMMU TLBs. This can be solved by moving the IOMMU TLBs
+flush earlier in the code.
+
+This wasn't considered as a security issue as device passthrough on Arm
+is not security supported.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Tested-by: Oleksandr Tyshchenko <oleksandr_tyshchenko@epam.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 671878779741b38c5f2363adceef8de2ce0b3945)
+---
+ xen/arch/arm/p2m.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/arm/p2m.c b/xen/arch/arm/p2m.c
+index d43c3aa896..b29812301d 100644
+--- a/xen/arch/arm/p2m.c
++++ b/xen/arch/arm/p2m.c
+@@ -942,6 +942,12 @@ static int __p2m_set_entry(struct p2m_domain *p2m,
+         p2m->lowest_mapped_gfn = gfn_min(p2m->lowest_mapped_gfn, sgfn);
+     }
+ 
++    if ( need_iommu(p2m->domain) &&
++         (lpae_valid(orig_pte) || lpae_valid(*entry)) )
++        rc = iommu_iotlb_flush(p2m->domain, gfn_x(sgfn), 1UL << page_order);
++    else
++        rc = 0;
++
+     /*
+      * Free the entry only if the original pte was valid and the base
+      * is different (to avoid freeing when permission is changed).
+@@ -949,12 +955,6 @@ static int __p2m_set_entry(struct p2m_domain *p2m,
+     if ( lpae_valid(orig_pte) && entry->p2m.base != orig_pte.p2m.base )
+         p2m_free_entry(p2m, orig_pte, level);
+ 
+-    if ( need_iommu(p2m->domain) &&
+-         (lpae_valid(orig_pte) || lpae_valid(*entry)) )
+-        rc = iommu_iotlb_flush(p2m->domain, gfn_x(sgfn), 1UL << page_order);
+-    else
+-        rc = 0;
+-
+ out:
+     unmap_domain_page(table);
+ 
+-- 
+2.30.2
+

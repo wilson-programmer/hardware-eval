@@ -1,0 +1,44 @@
+From 81ee3d08351be1ef2a14d371993604098d6a4673 Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Tue, 12 Jul 2022 11:12:13 +0200
+Subject: [PATCH] tools/xenstored: Harden corrupt()
+
+At the moment, corrupt() is neither checking for allocation failure
+nor freeing the allocated memory.
+
+Harden the code by printing ENOMEM if the allocation failed and
+free 'str' after the last use.
+
+This is not considered to be a security issue because corrupt() should
+only be called when Xenstored thinks the database is corrupted. Note
+that the trigger (i.e. a guest reliably provoking the call) would be
+a security issue.
+
+Fixes: 06d17943f0cd ("Added a basic integrity checker, and some basic ability to recover from store")
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+master commit: db3382dd4f468c763512d6bf91c96773395058fb
+master date: 2022-06-23 13:44:10 +0100
+---
+ tools/xenstore/xenstored_core.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/tools/xenstore/xenstored_core.c b/tools/xenstore/xenstored_core.c
+index 91d093a12e..0c8ee276f8 100644
+--- a/tools/xenstore/xenstored_core.c
++++ b/tools/xenstore/xenstored_core.c
+@@ -2087,7 +2087,10 @@ void corrupt(struct connection *conn, const char *fmt, ...)
+ 	va_end(arglist);
+ 
+ 	log("corruption detected by connection %i: err %s: %s",
+-	    conn ? (int)conn->id : -1, strerror(saved_errno), str);
++	    conn ? (int)conn->id : -1, strerror(saved_errno),
++	    str ?: "ENOMEM");
++
++	talloc_free(str);
+ 
+ 	check_store();
+ }
+-- 
+2.30.2
+

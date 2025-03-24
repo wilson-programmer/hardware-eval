@@ -1,0 +1,155 @@
+From 07c181c83e03a860d806305369cd677c24df9b78 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 21 Mar 2019 19:36:48 +0000
+Subject: [PATCH] passthrough/vtd: Drop the "workaround_bios_bug" logic
+ entirely
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+It turns out that this code was previously dead.
+
+c/s dcf41790 " x86/mmcfg/drhd: Move acpi_mmcfg_init() call before calling
+acpi_parse_dmar()" resulted in PCI segment 0 now having been initialised
+enough for acpi_parse_one_drhd() to not take the
+
+  /* Skip checking if segment is not accessible yet. */
+
+path unconditionally.  However, some systems have DMAR tables which list
+devices which are disabled by user choice (in particular, Dell PowerEdge R740
+with I/O AT DMA disabled), and turning off all IOMMU functionality in this
+case is entirely unhelpful behaviour.
+
+Leave the warning which identifies the problematic devices, but drop the
+remaining logic.  This leaves the system in better overall state, and working
+in the same way that it did in previous releases.
+
+Reported-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: George Dunlap <george.dunlap@citrix.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 74dadb8556c6a0972fa422b5ae346589ace404b6)
+---
+ docs/misc/xen-command-line.pandoc  |  7 +------
+ xen/drivers/passthrough/iommu.c    |  3 ---
+ xen/drivers/passthrough/vtd/dmar.c | 29 ++---------------------------
+ xen/include/xen/iommu.h            |  3 +--
+ 4 files changed, 4 insertions(+), 38 deletions(-)
+
+diff --git a/docs/misc/xen-command-line.pandoc b/docs/misc/xen-command-line.pandoc
+index a03c0b4bdf..2a3e812ceb 100644
+--- a/docs/misc/xen-command-line.pandoc
++++ b/docs/misc/xen-command-line.pandoc
+@@ -1173,8 +1173,7 @@ detection of systems known to misbehave upon accesses to that port.
+ ### iommu
+     = List of [ <bool>, verbose, debug, force, required,
+                 sharept, intremap, intpost,
+-                snoop, qinval, igfx, workaround_bios_bug,
+-                amd-iommu-perdev-intremap,
++                snoop, qinval, igfx, amd-iommu-perdev-intremap,
+                 dom0-{passthrough,strict} ]
+ 
+     All sub-options are boolean in nature.
+@@ -1259,10 +1258,6 @@ The following options are specific to Intel VT-d hardware:
+     similar to Linux's `intel_iommu=igfx_off` option.  If specifying `no-igfx`
+     fixes anything, please report the problem.
+ 
+-*   The `workaround_bios_bug` boolean is disabled by default.  It can be used
+-    to ignore errors when parsing the ACPI tables, and finding a listed PCI
+-    device which doesn't appear to exist in the system.
+-
+ The following options are specific to AMD-Vi hardware:
+ 
+ *   The `amd-iommu-perdev-intremap` boolean controls whether the interrupt
+diff --git a/xen/drivers/passthrough/iommu.c b/xen/drivers/passthrough/iommu.c
+index 5ecaa10bb4..117b869b0c 100644
+--- a/xen/drivers/passthrough/iommu.c
++++ b/xen/drivers/passthrough/iommu.c
+@@ -30,7 +30,6 @@ bool_t __initdata iommu_enable = 1;
+ bool_t __read_mostly iommu_enabled;
+ bool_t __read_mostly force_iommu;
+ bool_t __read_mostly iommu_verbose;
+-bool_t __read_mostly iommu_workaround_bios_bug;
+ bool_t __read_mostly iommu_igfx = 1;
+ bool_t __read_mostly iommu_snoop = 1;
+ bool_t __read_mostly iommu_qinval = 1;
+@@ -74,8 +73,6 @@ static int __init parse_iommu_param(const char *s)
+         else if ( (val = parse_boolean("force", s, ss)) >= 0 ||
+                   (val = parse_boolean("required", s, ss)) >= 0 )
+             force_iommu = val;
+-        else if ( (val = parse_boolean("workaround_bios_bug", s, ss)) >= 0 )
+-            iommu_workaround_bios_bug = val;
+         else if ( (val = parse_boolean("igfx", s, ss)) >= 0 )
+             iommu_igfx = val;
+         else if ( (val = parse_boolean("verbose", s, ss)) >= 0 )
+diff --git a/xen/drivers/passthrough/vtd/dmar.c b/xen/drivers/passthrough/vtd/dmar.c
+index 81afa5498e..2372cd2c74 100644
+--- a/xen/drivers/passthrough/vtd/dmar.c
++++ b/xen/drivers/passthrough/vtd/dmar.c
+@@ -514,7 +514,7 @@ acpi_parse_one_drhd(struct acpi_dmar_header *header)
+     else
+     {
+         u8 b, d, f;
+-        unsigned int i = 0, invalid_cnt = 0;
++        unsigned int i = 0;
+         union {
+             const void *raw;
+             const struct acpi_dmar_device_scope *scope;
+@@ -536,37 +536,12 @@ acpi_parse_one_drhd(struct acpi_dmar_header *header)
+             f = PCI_FUNC(dmaru->scope.devices[i]);
+ 
+             if ( !pci_device_detect(drhd->segment, b, d, f) )
+-            {
+                 printk(XENLOG_WARNING VTDPREFIX
+                        " Non-existent device (%04x:%02x:%02x.%u) in this DRHD's scope!\n",
+                        drhd->segment, b, d, f);
+-                invalid_cnt++;
+-            }
+         }
+ 
+-        if ( invalid_cnt )
+-        {
+-            if ( iommu_workaround_bios_bug &&
+-                 invalid_cnt == dmaru->scope.devices_cnt )
+-            {
+-                printk(XENLOG_WARNING VTDPREFIX
+-                       "  Workaround BIOS bug: ignoring DRHD (no devices in its scope are PCI discoverable)\n");
+-
+-                scope_devices_free(&dmaru->scope);
+-                iommu_free(dmaru);
+-                xfree(dmaru);
+-            }
+-            else
+-            {
+-                printk(XENLOG_WARNING VTDPREFIX
+-                       "  DRHD is invalid (some devices in its scope are not PCI discoverable)\n");
+-                printk(XENLOG_WARNING VTDPREFIX
+-                       "  Try \"iommu=force\" or \"iommu=workaround_bios_bug\" if you really want VT-d\n");
+-                ret = -EINVAL;
+-            }
+-        }
+-        else
+-            acpi_register_drhd_unit(dmaru);
++        acpi_register_drhd_unit(dmaru);
+     }
+ 
+ out:
+diff --git a/xen/include/xen/iommu.h b/xen/include/xen/iommu.h
+index 64a50783cb..62a24d542a 100644
+--- a/xen/include/xen/iommu.h
++++ b/xen/include/xen/iommu.h
+@@ -53,8 +53,7 @@ static inline bool_t dfn_eq(dfn_t x, dfn_t y)
+ }
+ 
+ extern bool_t iommu_enable, iommu_enabled;
+-extern bool_t force_iommu, iommu_verbose;
+-extern bool_t iommu_workaround_bios_bug, iommu_igfx;
++extern bool_t force_iommu, iommu_verbose, iommu_igfx;
+ extern bool_t iommu_snoop, iommu_qinval, iommu_intremap, iommu_intpost;
+ extern bool_t iommu_hap_pt_share;
+ extern bool_t iommu_debug;
+-- 
+2.30.2
+

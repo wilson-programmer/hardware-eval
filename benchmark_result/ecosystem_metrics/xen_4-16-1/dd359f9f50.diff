@@ -1,0 +1,65 @@
+From dd359f9f505e7df960aad13116bc6f576f5fdd94 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 31 Mar 2022 10:57:23 +0200
+Subject: [PATCH] x86/Kconfig: introduce option to select retpoline usage
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Add a new Kconfig option under the "Speculative hardening" section
+that allows selecting whether to enable retpoline. This depends on the
+underlying compiler having retpoline support.
+
+Requested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 95d9ab46143685f169f636cfdd7997e2fc630e86
+master date: 2022-02-21 18:17:56 +0000
+---
+ xen/arch/x86/Kconfig |  4 ----
+ xen/common/Kconfig   | 14 ++++++++++++++
+ 2 files changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/Kconfig b/xen/arch/x86/Kconfig
+index 34dcb47ecd..3c14096c80 100644
+--- a/xen/arch/x86/Kconfig
++++ b/xen/arch/x86/Kconfig
+@@ -36,10 +36,6 @@ config CC_HAS_INDIRECT_THUNK
+ 	def_bool $(cc-option,-mindirect-branch-register) || \
+ 	         $(cc-option,-mretpoline-external-thunk)
+ 
+-config INDIRECT_THUNK
+-	def_bool y
+-	depends on CC_HAS_INDIRECT_THUNK
+-
+ config HAS_AS_CET_SS
+ 	# binutils >= 2.29 or LLVM >= 6
+ 	def_bool $(as-instr,wrssq %rax$(comma)0;setssbsy)
+diff --git a/xen/common/Kconfig b/xen/common/Kconfig
+index db687b1785..6443943889 100644
+--- a/xen/common/Kconfig
++++ b/xen/common/Kconfig
+@@ -85,6 +85,20 @@ config STATIC_MEMORY
+ 
+ menu "Speculative hardening"
+ 
++config INDIRECT_THUNK
++	bool "Speculative Branch Target Injection Protection"
++	depends on CC_HAS_INDIRECT_THUNK
++	default y
++	help
++	  Contemporary processors may use speculative execution as a
++	  performance optimisation, but this can potentially be abused by an
++	  attacker to leak data via speculative sidechannels.
++
++	  One source of data leakage is via branch target injection.
++
++	  When enabled, indirect branches are implemented using a new construct
++	  called "retpoline" that prevents speculation.
++
+ config SPECULATIVE_HARDEN_ARRAY
+ 	bool "Speculative Array Hardening"
+ 	default y
+-- 
+2.30.2
+

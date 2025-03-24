@@ -1,0 +1,36 @@
+From 71523995b15d1994978170fd442e8b6e8db92aa3 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 25 Nov 2019 16:22:53 +0100
+Subject: [PATCH] x86emul: 16-bit XBEGIN does not truncate rIP
+
+SDM rev 071 points out this fact explicitly.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: a72c508656c0a0fa573890b290064e6035971f86
+master date: 2019-11-15 14:15:31 +0100
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index 9525b4d254..1f0c208fc5 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -3814,10 +3814,12 @@ x86_emulate(
+         {
+             /*
+              * xbegin unconditionally aborts, xabort is unconditionally
+-             * a nop.
++             * a nop. It also does not truncate the destination address to
++             * 16 bits when 16-bit operand size is in effect.
+              */
+             if ( b & 1 )
+             {
++                op_bytes = 4;
+                 jmp_rel((int32_t)src.val);
+                 _regs.r(ax) = 0;
+             }
+-- 
+2.30.2
+

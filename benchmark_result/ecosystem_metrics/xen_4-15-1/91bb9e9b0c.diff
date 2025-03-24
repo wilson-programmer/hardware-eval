@@ -1,0 +1,43 @@
+From 91bb9e9b0c0e2af926ab08958f3d65f07a105cb6 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Tue, 1 Jun 2021 11:28:03 +0100
+Subject: [PATCH] tools/firmware/ovmf: Use OvmfXen platform file is exist
+
+A platform introduced in EDK II named OvmfXen is now the one to use for
+Xen instead of OvmfX64. It comes with PVH support.
+
+Also, the Xen support in OvmfX64 is deprecated,
+    "deprecation notice: *dynamic* multi-VMM (QEMU vs. Xen) support in OvmfPkg"
+    https://edk2.groups.io/g/devel/message/75498
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+(cherry picked from commit aad7b5c11d51d57659978e04702ac970906894e8)
+---
+ tools/firmware/ovmf-makefile | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/tools/firmware/ovmf-makefile b/tools/firmware/ovmf-makefile
+index 55f9992145..637ee509c3 100644
+--- a/tools/firmware/ovmf-makefile
++++ b/tools/firmware/ovmf-makefile
+@@ -17,8 +17,14 @@ all: build
+ .PHONY: build
+ build:
+ 	if test -e .git ; then $(GIT) submodule update --init --recursive ; fi
+-	OvmfPkg/build.sh -a X64 -b $(TARGET) -n 4
+-	cp Build/OvmfX64/$(TARGET)_GCC*/FV/OVMF.fd ovmf.bin
++	set -ex; \
++	if test -e OvmfPkg/OvmfXen.dsc; then \
++	  OvmfPkg/build.sh -a X64 -b $(TARGET) -n 4 -p OvmfPkg/OvmfXen.dsc; \
++	  cp Build/OvmfXen/$(TARGET)_GCC*/FV/OVMF.fd ovmf.bin; \
++	else \
++	  OvmfPkg/build.sh -a X64 -b $(TARGET) -n 4; \
++	  cp Build/OvmfX64/$(TARGET)_GCC*/FV/OVMF.fd ovmf.bin; \
++	fi
+ 
+ .PHONY: clean
+ clean:
+-- 
+2.30.2
+

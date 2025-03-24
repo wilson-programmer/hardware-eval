@@ -1,0 +1,169 @@
+From c481b9f32da5af232edaf0feff0bf213fa23e0ba Mon Sep 17 00:00:00 2001
+From: Sergey Dyasli <sergey.dyasli@citrix.com>
+Date: Fri, 11 Sep 2020 14:56:34 +0200
+Subject: [PATCH] libx86: introduce a helper to deserialise msr_policy objects
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+As with the serialise side, Xen's copy_from_guest API is used, with a
+compatibility wrapper for the userspace build.
+
+Signed-off-by: Sergey Dyasli <sergey.dyasli@citrix.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: afec08b92ffe8b85d2bf2e8c7c221b63ba96743e
+master date: 2019-03-12 14:12:23 +0000
+---
+ xen/include/xen/lib/x86/msr.h | 21 +++++++++++
+ xen/lib/x86/msr.c             | 67 +++++++++++++++++++++++++++++++++++
+ xen/lib/x86/private.h         | 14 ++++++++
+ 3 files changed, 102 insertions(+)
+
+diff --git a/xen/include/xen/lib/x86/msr.h b/xen/include/xen/lib/x86/msr.h
+index e2cfbb1a8d..6236622adf 100644
+--- a/xen/include/xen/lib/x86/msr.h
++++ b/xen/include/xen/lib/x86/msr.h
+@@ -48,6 +48,27 @@ typedef xen_msr_entry_t msr_entry_buffer_t[];
+ int x86_msr_copy_to_buffer(const struct msr_policy *policy,
+                            msr_entry_buffer_t msrs, uint32_t *nr_entries);
+ 
++/**
++ * Unserialise an msr_policy object from an array of msrs.
++ *
++ * @param policy     The msr_policy object to unserialise into.
++ * @param msrs       The array of msrs to unserialise from.
++ * @param nr_entries The number of entries in 'msrs'.
++ * @param err_msr    Optional hint filled on error.
++ * @returns -errno
++ *
++ * Reads at most MSR_MAX_SERIALISED_ENTRIES.  May fail for a number of reasons
++ * based on the content in an individual 'msrs' entry, including the MSR index
++ * not being valid in the policy, the flags field being nonzero, or if the
++ * value provided would truncate when stored in the policy.  In such cases,
++ * the optional err_* pointer is filled in to aid diagnostics.
++ *
++ * No content validation is performed on the data stored in the policy object.
++ */
++int x86_msr_copy_from_buffer(struct msr_policy *policy,
++                             const msr_entry_buffer_t msrs, uint32_t nr_entries,
++                             uint32_t *err_msr);
++
+ #endif /* !XEN_LIB_X86_MSR_H */
+ 
+ /*
+diff --git a/xen/lib/x86/msr.c b/xen/lib/x86/msr.c
+index 60fb567687..7c92f0dd9e 100644
+--- a/xen/lib/x86/msr.c
++++ b/xen/lib/x86/msr.c
+@@ -47,6 +47,73 @@ int x86_msr_copy_to_buffer(const struct msr_policy *p,
+     return 0;
+ }
+ 
++int x86_msr_copy_from_buffer(struct msr_policy *p,
++                             const msr_entry_buffer_t msrs, uint32_t nr_entries,
++                             uint32_t *err_msr)
++{
++    unsigned int i;
++    xen_msr_entry_t data;
++    int rc;
++
++    /*
++     * A well formed caller is expected to pass an array with entries in
++     * order, and without any repetitions.  However, due to per-vendor
++     * differences, and in the case of upgrade or levelled scenarios, we
++     * typically expect fewer than MAX entries to be passed.
++     *
++     * Detecting repeated entries is prohibitively complicated, so we don't
++     * bother.  That said, one way or another if more than MAX entries are
++     * passed, something is wrong.
++     */
++    if ( nr_entries > MSR_MAX_SERIALISED_ENTRIES )
++        return -E2BIG;
++
++    for ( i = 0; i < nr_entries; i++ )
++    {
++        if ( copy_from_buffer_offset(&data, msrs, i, 1) )
++            return -EFAULT;
++
++        if ( data.flags ) /* .flags MBZ */
++        {
++            rc = -EINVAL;
++            goto err;
++        }
++
++        switch ( data.idx )
++        {
++            /*
++             * Assign data.val to p->field, checking for truncation if the
++             * backing storage for field is smaller than uint64_t
++             */
++#define ASSIGN(field)                             \
++({                                                \
++    if ( (typeof(p->field))data.val != data.val ) \
++    {                                             \
++        rc = -EOVERFLOW;                          \
++        goto err;                                 \
++    }                                             \
++    p->field = data.val;                          \
++})
++
++        case MSR_INTEL_PLATFORM_INFO: ASSIGN(plaform_info.raw); break;
++
++#undef ASSIGN
++
++        default:
++            rc = -ERANGE;
++            goto err;
++        }
++    }
++
++    return 0;
++
++ err:
++    if ( err_msr )
++        *err_msr = data.idx;
++
++    return rc;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/xen/lib/x86/private.h b/xen/lib/x86/private.h
+index 3ee99aad62..e0ff2dae23 100644
+--- a/xen/lib/x86/private.h
++++ b/xen/lib/x86/private.h
+@@ -12,6 +12,7 @@
+ #include <asm/msr-index.h>
+ 
+ #define copy_to_buffer_offset copy_to_guest_offset
++#define copy_from_buffer_offset copy_from_guest_offset
+ 
+ #else
+ 
+@@ -44,6 +45,19 @@ static inline bool test_bit(unsigned int bit, const void *vaddr)
+     0;                                                  \
+ })
+ 
++/* memcpy(), but with copy_from_guest_offset()'s API. */
++#define copy_from_buffer_offset(dst, src, index, nr)    \
++({                                                      \
++    const typeof(*(src)) *src_ = (src);                 \
++    typeof(*(dst)) *dst_ = (dst);                       \
++    typeof(index) index_ = (index);                     \
++    typeof(nr) nr_ = (nr), i_;                          \
++                                                        \
++    for ( i_ = 0; i_ < nr_; i_++ )                      \
++        dst_[i_] = src_[index_ + i_];                   \
++    0;                                                  \
++})
++
+ #endif /* __XEN__ */
+ 
+ #endif /* XEN_LIB_X86_PRIVATE_H */
+-- 
+2.30.2
+

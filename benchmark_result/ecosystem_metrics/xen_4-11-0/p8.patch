@@ -1,0 +1,36 @@
+From 1c88cadbe57b5c3a5bfb35507fea1ba6eafee219 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 26 Jun 2018 08:54:14 +0200
+Subject: [PATCH] x86/HVM: attempts to emulate FPU insns need to set
+ fpu_initialised
+
+My original way of thinking here was that this would be set anyway at
+the point state gets reloaded after the adjustments hvmemul_put_fpu()
+does, but the flag should already be set before that - after all the
+guest may never again touch the FPU before e.g. getting migrated/saved.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Paul Durrant <paul.durrant@citrix.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+master commit: 3310e3cd648f3713c824790bd71d8ec405a09d05
+master date: 2018-06-26 08:41:08 +0200
+---
+ xen/arch/x86/hvm/emulate.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/xen/arch/x86/hvm/emulate.c b/xen/arch/x86/hvm/emulate.c
+index 03a4944e88..7ecee12ffc 100644
+--- a/xen/arch/x86/hvm/emulate.c
++++ b/xen/arch/x86/hvm/emulate.c
+@@ -2053,6 +2053,7 @@ static int hvmemul_get_fpu(
+          * masking of all exceptions by FNSTENV.)
+          */
+         save_fpu_enable();
++        curr->fpu_initialised = true;
+         curr->fpu_dirtied = true;
+         if ( (fpu_ctxt->fcw & 0x3f) != 0x3f )
+         {
+-- 
+2.30.2
+

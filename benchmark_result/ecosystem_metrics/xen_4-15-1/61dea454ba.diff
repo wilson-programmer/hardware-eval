@@ -1,0 +1,45 @@
+From 61dea454ba87d4f5c2b900e6dff4f72805d3198c Mon Sep 17 00:00:00 2001
+From: Stefano Stabellini <sstabellini@kernel.org>
+Date: Wed, 9 Jun 2021 10:37:59 -0700
+Subject: [PATCH] xen/arm32: SPSR_hyp/SPSR
+
+SPSR_hyp is not meant to be accessed from Hyp mode (EL2); accesses
+trigger UNPREDICTABLE behaviour. Xen should read/write SPSR instead.
+See: ARM DDI 0487D.b page G8-5993.
+
+This fixes booting Xen/arm32 on QEMU.
+
+Signed-off-by: Stefano Stabellini <stefano.stabellini@xilinx.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Edgar E. Iglesias <edgar.iglesias@xilinx.com>
+Tested-by: Edgar E. Iglesias <edgar.iglesias@xilinx.com>
+(cherry picked from commit dfcffb128be46a3e413eaa941744536fe53c94b6)
+---
+ xen/arch/arm/arm32/entry.S | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/arm32/entry.S b/xen/arch/arm/arm32/entry.S
+index b228d44b19..8d1327ffe4 100644
+--- a/xen/arch/arm/arm32/entry.S
++++ b/xen/arch/arm/arm32/entry.S
+@@ -171,7 +171,7 @@ ENDPROC(prepare_context_from_guest)
+         mrc     CP32(r11, HSR)                 /* Save exception syndrome */
+         str     r11, [sp, #UREGS_hsr]
+ 
+-        mrs     r11, SPSR_hyp
++        mrs     r11, SPSR
+         str     r11, [sp, #UREGS_cpsr]
+ 
+         /*
+@@ -396,7 +396,7 @@ return_to_hypervisor:
+         ldr r11, [sp, #UREGS_pc]
+         msr ELR_hyp, r11
+         ldr r11, [sp, #UREGS_cpsr]
+-        msr SPSR_hyp, r11
++        msr SPSR, r11
+ #ifdef CONFIG_ARM32_HARDEN_BRANCH_PREDICTOR
+         /*
+          * Hardening branch predictor may require to setup a different
+-- 
+2.30.2
+

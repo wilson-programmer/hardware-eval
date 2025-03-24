@@ -1,0 +1,50 @@
+From 24567a631e732d19e8eeee07336c2aa4b2d0c6d1 Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Sun, 7 Jun 2020 16:51:54 +0100
+Subject: [PATCH] xen/arm: mm: Access a PT entry before the table is unmapped
+
+xen_pt_next_level() will retrieve the MFN from the entry right after the
+page-table has been unmapped.
+
+After calling xen_unmap_table(), there is no guarantee the mapping will
+still be valid. Depending on the implementation, this may result to a
+data abort in Xen.
+
+Re-order the code to retrieve the MFN before the table is unmapped.
+
+Fixes: 53abb9a1dcd9 ("xen/arm: mm: Rework Xen page-tables walk during update")
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Paul Durrant <paul@xen.org>
+(cherry picked from commit 63b4c9bfb788ebfd35d0172f7e8e2e41ef948f70)
+---
+ xen/arch/arm/mm.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/mm.c b/xen/arch/arm/mm.c
+index 774cf62272..8958eefd13 100644
+--- a/xen/arch/arm/mm.c
++++ b/xen/arch/arm/mm.c
+@@ -1033,6 +1033,7 @@ static int xen_pt_next_level(bool read_only, unsigned int level,
+ {
+     lpae_t *entry;
+     int ret;
++    mfn_t mfn;
+ 
+     entry = *table + offset;
+ 
+@@ -1050,8 +1051,10 @@ static int xen_pt_next_level(bool read_only, unsigned int level,
+     if ( lpae_is_mapping(*entry, level) )
+         return XEN_TABLE_SUPER_PAGE;
+ 
++    mfn = lpae_get_mfn(*entry);
++
+     xen_unmap_table(*table);
+-    *table = xen_map_table(lpae_get_mfn(*entry));
++    *table = xen_map_table(mfn);
+ 
+     return XEN_TABLE_NORMAL_PAGE;
+ }
+-- 
+2.30.2
+

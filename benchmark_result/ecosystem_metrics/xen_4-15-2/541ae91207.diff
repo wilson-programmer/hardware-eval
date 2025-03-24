@@ -1,0 +1,35 @@
+From 541ae912077e894fb7d8ee73cd03355bae08387f Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 19 Nov 2021 09:31:14 +0100
+Subject: [PATCH] x86/traps: Fix typo in do_entry_CP()
+
+The call to debugger_trap_entry() should pass the correct vector.  The
+break-for-gdbsx logic is in practice unreachable because PV guests can't
+generate #CP, but it will interfere with anyone inserting custom debugging
+into debugger_trap_entry().
+
+Fixes: 5ad05b9c2490 ("x86/traps: Implement #CP handler and extend #PF for shadow stacks")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 512863ed238d7390f74d43f0ba298b1dfa8f4803
+master date: 2021-11-03 19:13:17 +0000
+---
+ xen/arch/x86/traps.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
+index 948e422397..10efcc6585 100644
+--- a/xen/arch/x86/traps.c
++++ b/xen/arch/x86/traps.c
+@@ -2022,7 +2022,7 @@ void do_entry_CP(struct cpu_user_regs *regs)
+     const char *err = "??";
+     unsigned int ec = regs->error_code;
+ 
+-    if ( debugger_trap_entry(TRAP_debug, regs) )
++    if ( debugger_trap_entry(X86_EXC_CP, regs) )
+         return;
+ 
+     /* Decode ec if possible */
+-- 
+2.30.2
+

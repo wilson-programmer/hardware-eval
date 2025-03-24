@@ -1,0 +1,52 @@
+From 606331e6562f7b64ef0be1fd2596423c0ae209da Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 17 Jul 2023 08:34:33 +0200
+Subject: [PATCH] iommu/amd-vi: fix checking for Invalidate All support in
+ amd_iommu_resume()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The iommu local variable does not point to to a valid amd_iommu element
+after the call to for_each_amd_iommu().  Instead check whether any IOMMU
+on the system doesn't support Invalidate All in order to perform the
+per-domain and per-device flushes.
+
+Fixes: 9c46139de889 ('amd iommu: Support INVALIDATE_IOMMU_ALL command.')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 5ecbb779748a56495f2c892f0610d57dd623c7cd
+master date: 2023-06-13 14:41:32 +0200
+---
+ xen/drivers/passthrough/amd/iommu_init.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_init.c b/xen/drivers/passthrough/amd/iommu_init.c
+index 559a734bda..ca791d4e54 100644
+--- a/xen/drivers/passthrough/amd/iommu_init.c
++++ b/xen/drivers/passthrough/amd/iommu_init.c
+@@ -1587,6 +1587,7 @@ void amd_iommu_crash_shutdown(void)
+ void amd_iommu_resume(void)
+ {
+     struct amd_iommu *iommu;
++    bool invalidate_all = true;
+ 
+     for_each_amd_iommu ( iommu )
+     {
+@@ -1596,10 +1597,12 @@ void amd_iommu_resume(void)
+         */
+         disable_iommu(iommu);
+         enable_iommu(iommu);
++        if ( !iommu->features.flds.ia_sup )
++            invalidate_all = false;
+     }
+ 
+     /* flush all cache entries after iommu re-enabled */
+-    if ( !iommu->features.flds.ia_sup )
++    if ( !invalidate_all )
+     {
+         invalidate_all_devices();
+         invalidate_all_domain_pages();
+-- 
+2.30.2
+

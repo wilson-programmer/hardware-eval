@@ -1,0 +1,31 @@
+From 8f5a16cdc9df3f96c9246cf47b1d3b6e0e67b15a Mon Sep 17 00:00:00 2001
+From: Kevin Stefanov <kevin.stefanov@citrix.com>
+Date: Fri, 15 Oct 2021 11:02:27 +0200
+Subject: [PATCH] tools/libacpi: Use 64-byte alignment for FACS
+
+The spec requires 64-byte alignment, not 16.
+
+Signed-off-by: Kevin Stefanov <kevin.stefanov@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: c76cfada1cfad05aaf64ce3ad305c5467650e782
+master date: 2021-09-10 13:27:08 +0100
+---
+ tools/libacpi/build.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libacpi/build.c b/tools/libacpi/build.c
+index a61dd5583a..fe2db66a62 100644
+--- a/tools/libacpi/build.c
++++ b/tools/libacpi/build.c
+@@ -532,7 +532,7 @@ int acpi_build_tables(struct acpi_ctxt *ctxt, struct acpi_config *config)
+      * Fill in high-memory data structures, starting at @buf.
+      */
+ 
+-    facs = ctxt->mem_ops.alloc(ctxt, sizeof(struct acpi_20_facs), 16);
++    facs = ctxt->mem_ops.alloc(ctxt, sizeof(struct acpi_20_facs), 64);
+     if (!facs) goto oom;
+     memcpy(facs, &Facs, sizeof(struct acpi_20_facs));
+ 
+-- 
+2.30.2
+

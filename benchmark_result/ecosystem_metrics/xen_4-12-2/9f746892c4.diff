@@ -1,0 +1,65 @@
+From 9f746892c4a841a489e12d52adb35e667849bb65 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Fri, 9 Aug 2019 13:59:15 +0100
+Subject: [PATCH] xen/arm: p2m: Free the p2m entry after flushing the IOMMU
+ TLBs
+
+When freeing a p2m entry, all the sub-tree behind it will also be freed.
+This may include intermediate page-tables or any l3 entry requiring to
+drop a reference (e.g for foreign pages). As soon as pages are freed,
+they may be re-used by Xen or another domain. Therefore it is necessary
+to flush *all* the TLBs beforehand.
+
+While CPU TLBs will be flushed before freeing the pages, this is not
+the case for IOMMU TLBs. This can be solved by moving the IOMMU TLBs
+flush earlier in the code.
+
+This wasn't considered as a security issue as device passthrough on Arm
+is not security supported.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Tested-by: Oleksandr Tyshchenko <oleksandr_tyshchenko@epam.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 671878779741b38c5f2363adceef8de2ce0b3945)
+---
+ xen/arch/arm/p2m.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/xen/arch/arm/p2m.c b/xen/arch/arm/p2m.c
+index c38bd7e16e..c73ece966a 100644
+--- a/xen/arch/arm/p2m.c
++++ b/xen/arch/arm/p2m.c
+@@ -1063,14 +1063,6 @@ static int __p2m_set_entry(struct p2m_domain *p2m,
+         p2m->lowest_mapped_gfn = gfn_min(p2m->lowest_mapped_gfn, sgfn);
+     }
+ 
+-    /*
+-     * Free the entry only if the original pte was valid and the base
+-     * is different (to avoid freeing when permission is changed).
+-     */
+-    if ( p2m_is_valid(orig_pte) &&
+-         !mfn_eq(lpae_get_mfn(*entry), lpae_get_mfn(orig_pte)) )
+-        p2m_free_entry(p2m, orig_pte, level);
+-
+     if ( has_iommu_pt(p2m->domain) &&
+          (lpae_is_valid(orig_pte) || lpae_is_valid(*entry)) )
+     {
+@@ -1087,6 +1079,14 @@ static int __p2m_set_entry(struct p2m_domain *p2m,
+     else
+         rc = 0;
+ 
++    /*
++     * Free the entry only if the original pte was valid and the base
++     * is different (to avoid freeing when permission is changed).
++     */
++    if ( p2m_is_valid(orig_pte) &&
++         !mfn_eq(lpae_get_mfn(*entry), lpae_get_mfn(orig_pte)) )
++        p2m_free_entry(p2m, orig_pte, level);
++
+ out:
+     unmap_domain_page(table);
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,101 @@
+From 64690393a81c96296dbde5b865460144a86290c3 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 11 Sep 2020 14:51:43 +0200
+Subject: [PATCH] x86/pv: Fix multiple bugs with SEGBASE_GS_USER_SEL
+
+The logic takes the segment selector unmodified from guest context.  This
+allowed the guest to load DPL0 descriptors into %gs.  Fix up the RPL for
+non-NUL selectors to be 3.
+
+Xen's context switch logic skips saving the inactive %gs base, as it cannot be
+modified by the guest behind Xen's back.  This depends on Xen caching updates
+to the inactive base, which is was missing from this path.
+
+The consequence is that, following SEGBASE_GS_USER_SEL, the next context
+switch will restore the stale inactive %gs base, and corrupt vcpu state.
+
+Rework the hypercall to update the cached idea of gs_base_user, and fix the
+behaviour in the case of the AMD NUL selector bug to always zero the segment
+base.
+
+Reported-by: Andy Lutomirski <luto@kernel.org>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: afe018e041ec112d90a8b4e6ed607d22aa06f280
+master date: 2020-08-31 14:21:46 +0100
+---
+ xen/arch/x86/x86_64/mm.c | 57 +++++++++++++++++++++++++++++++++-------
+ 1 file changed, 47 insertions(+), 10 deletions(-)
+
+diff --git a/xen/arch/x86/x86_64/mm.c b/xen/arch/x86/x86_64/mm.c
+index 8ea09ecc30..27fd0d5fbf 100644
+--- a/xen/arch/x86/x86_64/mm.c
++++ b/xen/arch/x86/x86_64/mm.c
+@@ -1056,17 +1056,54 @@ long do_set_segment_base(unsigned int which, unsigned long base)
+         break;
+ 
+     case SEGBASE_GS_USER_SEL:
+-        __asm__ __volatile__ (
+-            "     swapgs              \n"
+-            "1:   movl %k0,%%gs       \n"
+-            "    "safe_swapgs"        \n"
+-            ".section .fixup,\"ax\"   \n"
+-            "2:   xorl %k0,%k0        \n"
+-            "     jmp  1b             \n"
+-            ".previous                \n"
+-            _ASM_EXTABLE(1b, 2b)
+-            : "+r" (base) );
++    {
++        unsigned int sel = (uint16_t)base;
++
++        /*
++         * We wish to update the user %gs from the GDT/LDT.  Currently, the
++         * guest kernel's GS_BASE is in context.
++         */
++        asm volatile ( "swapgs" );
++
++        if ( sel > 3 )
++            /* Fix up RPL for non-NUL selectors. */
++            sel |= 3;
++        else if ( boot_cpu_data.x86_vendor &
++                  (X86_VENDOR_AMD | X86_VENDOR_HYGON) )
++            /* Work around NUL segment behaviour on AMD hardware. */
++            asm volatile ( "mov %[sel], %%gs"
++                           :: [sel] "r" (FLAT_USER_DS32) );
++
++        /*
++         * Load the chosen selector, with fault handling.
++         *
++         * Errors ought to fail the hypercall, but that was never built in
++         * originally, and Linux will BUG() if this call fails.
++         *
++         * NUL the selector in the case of an error.  This too needs to deal
++         * with the AMD NUL segment behaviour, but it is already a slowpath in
++         * #GP context so perform the flat load unconditionally to avoid
++         * complicated logic.
++         *
++         * Anyone wanting to check for errors from this hypercall should
++         * re-read %gs and compare against the input.
++         */
++        asm volatile ( "1: mov %[sel], %%gs\n\t"
++                       ".section .fixup, \"ax\", @progbits\n\t"
++                       "2: mov %k[flat], %%gs\n\t"
++                       "   xor %[sel], %[sel]\n\t"
++                       "   jmp 1b\n\t"
++                       ".previous\n\t"
++                       _ASM_EXTABLE(1b, 2b)
++                       : [sel] "+r" (sel)
++                       : [flat] "r" (FLAT_USER_DS32) );
++
++        /* Update the cache of the inactive base, as read from the GDT/LDT. */
++        v->arch.pv.gs_base_user = rdgsbase();
++
++        asm volatile ( safe_swapgs );
+         break;
++    }
+ 
+     default:
+         ret = -EINVAL;
+-- 
+2.30.2
+

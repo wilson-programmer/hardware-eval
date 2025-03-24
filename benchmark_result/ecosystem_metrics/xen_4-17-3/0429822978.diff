@@ -1,0 +1,38 @@
+From 042982297802e7b746dc2fac95a453cc88d0aa83 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 5 Sep 2023 08:52:15 +0200
+Subject: [PATCH] libxl: slightly correct JSON generation of CPU policy
+
+The "cpuid_empty" label is also (in principle; maybe only for rubbish
+input) reachable in the "cpuid_only" case. Hence the label needs to live
+ahead of the check of the variable.
+
+Fixes: 5b80cecb747b ("libxl: introduce MSR data in libxl_cpuid_policy")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: ebce4e3a146c39e57bb7a890e059e89c32b6d547
+master date: 2023-08-17 16:24:17 +0200
+---
+ tools/libs/light/libxl_cpuid.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/tools/libs/light/libxl_cpuid.c b/tools/libs/light/libxl_cpuid.c
+index 849722541c..5c66d094b2 100644
+--- a/tools/libs/light/libxl_cpuid.c
++++ b/tools/libs/light/libxl_cpuid.c
+@@ -710,10 +710,11 @@ parse_cpuid:
+                     libxl__strdup(NOGC, libxl__json_object_get_string(r));
+         }
+     }
++
++cpuid_empty:
+     if (cpuid_only)
+         return 0;
+ 
+-cpuid_empty:
+     co = libxl__json_map_get("msr", o, JSON_ARRAY);
+     if (!libxl__json_object_is_array(co))
+         return ERROR_FAIL;
+-- 
+2.30.2
+

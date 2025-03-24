@@ -1,0 +1,32 @@
+From 40bfa9dd57f1efdd0f0dc974e80a438d9db90874 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 23 Nov 2023 12:13:31 +0100
+Subject: [PATCH] x86/spec-ctrl: Add SRSO whitepaper URL
+
+... now that it exists in public.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 78a86b26868c12ae1cc3dd2a8bb9aa5eebaa41fd
+master date: 2023-11-07 17:47:34 +0000
+---
+ xen/arch/x86/spec_ctrl.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/arch/x86/spec_ctrl.c b/xen/arch/x86/spec_ctrl.c
+index 6fd7d44ce4..a8d8af22f6 100644
+--- a/xen/arch/x86/spec_ctrl.c
++++ b/xen/arch/x86/spec_ctrl.c
+@@ -903,6 +903,9 @@ static bool __init should_use_eager_fpu(void)
+     }
+ }
+ 
++/*
++ * https://www.amd.com/content/dam/amd/en/documents/corporate/cr/speculative-return-stack-overflow-whitepaper.pdf
++ */
+ static void __init srso_calculations(bool hw_smt_enabled)
+ {
+     if ( !(boot_cpu_data.x86_vendor &
+-- 
+2.30.2
+

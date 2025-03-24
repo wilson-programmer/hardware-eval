@@ -1,0 +1,68 @@
+From dca9cc7db628040a8b673a3e5cf7df237429bd68 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 7 Aug 2020 17:32:42 +0200
+Subject: [PATCH] x86emul: replace UB shifts
+
+Displacement values can be negative, hence we shouldn't left-shift them.
+Or else we get
+
+(XEN) UBSAN: Undefined behaviour in x86_emulate/x86_emulate.c:3482:55
+(XEN) left shift of negative value -2
+
+While auditing shifts, I noticed a pair of missing parentheses, which
+also get added right here.
+
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Tested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+
+x86emul: replace further UB shifts
+
+I have no explanation how I managed to overlook these while putting
+together what is now b6a907f8c83d ("x86emul: replace UB shifts").
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: b6a907f8c83d37886d0523f1aeff61b98e133498
+master date: 2020-07-31 17:41:58 +0200
+master commit: 21de9680eb594a7038d4d4ed78e53ac90a8c5a6e
+master date: 2020-08-05 10:19:29 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index 98f52083f8..09de6ee15d 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -3131,7 +3131,7 @@ x86_decode(
+                     ea.mem.off = insn_fetch_type(int16_t);
+                 break;
+             case 1:
+-                ea.mem.off += insn_fetch_type(int8_t) << disp8scale;
++                ea.mem.off += insn_fetch_type(int8_t) * (1 << disp8scale);
+                 break;
+             case 2:
+                 ea.mem.off += insn_fetch_type(int16_t);
+@@ -3190,7 +3190,7 @@ x86_decode(
+                 pc_rel = mode_64bit();
+                 break;
+             case 1:
+-                ea.mem.off += insn_fetch_type(int8_t) << disp8scale;
++                ea.mem.off += insn_fetch_type(int8_t) * (1 << disp8scale);
+                 break;
+             case 2:
+                 ea.mem.off += insn_fetch_type(int32_t);
+@@ -8521,7 +8521,7 @@ x86_emulate(
+ 
+                 rc = ops->read(ea.mem.seg,
+                                truncate_ea(ea.mem.off +
+-                                           (idx << state->sib_scale)),
++                                           idx * (1 << state->sib_scale)),
+                                (void *)mmvalp + i * op_bytes, op_bytes, ctxt);
+                 if ( rc != X86EMUL_OKAY )
+                 {
+-- 
+2.30.2
+

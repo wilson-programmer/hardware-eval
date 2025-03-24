@@ -1,0 +1,42 @@
+From 621b2d015483275cd40e44d9d0f729bd3c9f9da0 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Wed, 16 Oct 2019 11:53:03 +0100
+Subject: [PATCH] xen/arm: Don't use _end in is_xen_fixed_mfn()
+
+virt_to_maddr() is using the hardware page-table walk instructions to
+translate a virtual address to physical address. The function should
+only be called on virtual address mapped.
+
+_end points past the end of Xen binary and may not be mapped when the
+binary size is page-aligned. This means virt_to_maddr() will not be able
+to do the translation and therefore crash Xen.
+
+Note there is also an off-by-one issue in this code, but the panic will
+trump that.
+
+Both issues can be fixed by using _end - 1 in the check.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 8dba9a81e7c62b8a7dbe023fffecd2e16cc20486)
+---
+ xen/include/asm-arm/mm.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/asm-arm/mm.h b/xen/include/asm-arm/mm.h
+index 940b74be33..89fe10ff15 100644
+--- a/xen/include/asm-arm/mm.h
++++ b/xen/include/asm-arm/mm.h
+@@ -152,7 +152,7 @@ extern vaddr_t xenheap_virt_start;
+ 
+ #define is_xen_fixed_mfn(mfn)                                   \
+     ((pfn_to_paddr(mfn) >= virt_to_maddr(&_start)) &&       \
+-     (pfn_to_paddr(mfn) <= virt_to_maddr(&_end)))
++     (pfn_to_paddr(mfn) <= virt_to_maddr((vaddr_t)_end - 1)))
+ 
+ #define page_get_owner(_p)    (_p)->v.inuse.domain
+ #define page_set_owner(_p,_d) ((_p)->v.inuse.domain = (_d))
+-- 
+2.30.2
+

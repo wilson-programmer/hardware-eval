@@ -1,0 +1,30 @@
+From 5acdd26fdc2fb9801ba94ede643cf469fbae50c1 Mon Sep 17 00:00:00 2001
+From: Stefano Stabellini <sstabellini@kernel.org>
+Date: Tue, 14 Aug 2018 15:13:09 -0700
+Subject: [PATCH] libxl: start pvqemu when 9pfs is requested
+
+PV 9pfs requires the PV backend in QEMU. Make sure that libxl knows it.
+
+Signed-off-by: Stefano Stabellini <stefanos@xilinx.com>
+Acked-by: Wei Liu <wei.liu2@citrix.com>
+(cherry picked from commit 47bc2c29b5a875e5f4abd36f2cb9faa594299f6c)
+---
+ tools/libxl/libxl_dm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libxl/libxl_dm.c b/tools/libxl/libxl_dm.c
+index bad3ef5b67..b00afe1d13 100644
+--- a/tools/libxl/libxl_dm.c
++++ b/tools/libxl/libxl_dm.c
+@@ -2596,7 +2596,7 @@ int libxl__need_xenpv_qemu(libxl__gc *gc, libxl_domain_config *d_config)
+         goto out;
+     }
+ 
+-    if (d_config->num_vfbs > 0) {
++    if (d_config->num_vfbs > 0 || d_config->num_p9s > 0) {
+         ret = 1;
+         goto out;
+     }
+-- 
+2.30.2
+

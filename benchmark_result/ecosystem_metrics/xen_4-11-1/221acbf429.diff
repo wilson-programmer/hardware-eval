@@ -1,0 +1,171 @@
+From 221acbf429089a7390c7a0c250bd4f19450707da Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 5 Nov 2018 15:00:22 +0100
+Subject: [PATCH] x86: split opt_xpti
+
+Use separate tracking variables for the hardware domain and DomU-s.
+
+No functional change intended.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 51e0cb45932d80d4eeb59994ee2c3f3c597b0212
+master date: 2018-10-04 14:48:18 +0200
+---
+ xen/arch/x86/pv/domain.c        |  4 +--
+ xen/arch/x86/spec_ctrl.c        | 52 ++++++++++++++++++++-------------
+ xen/include/asm-x86/spec_ctrl.h |  4 +--
+ 3 files changed, 35 insertions(+), 25 deletions(-)
+
+diff --git a/xen/arch/x86/pv/domain.c b/xen/arch/x86/pv/domain.c
+index 3230ac6a22..5ef0d26291 100644
+--- a/xen/arch/x86/pv/domain.c
++++ b/xen/arch/x86/pv/domain.c
+@@ -259,8 +259,8 @@ int pv_domain_initialise(struct domain *d)
+     /* 64-bit PV guest by default. */
+     d->arch.is_32bit_pv = d->arch.has_32bit_shinfo = 0;
+ 
+-    d->arch.pv_domain.xpti = opt_xpti & (is_hardware_domain(d)
+-                                         ? OPT_XPTI_DOM0 : OPT_XPTI_DOMU);
++    d->arch.pv_domain.xpti = is_hardware_domain(d) ? opt_xpti_hwdom
++                                                   : opt_xpti_domu;
+ 
+     if ( !is_pv_32bit_domain(d) && use_invpcid && cpu_has_pcid )
+         switch ( opt_pcid )
+diff --git a/xen/arch/x86/spec_ctrl.c b/xen/arch/x86/spec_ctrl.c
+index 0ac242c758..03de3c50ba 100644
+--- a/xen/arch/x86/spec_ctrl.c
++++ b/xen/arch/x86/spec_ctrl.c
+@@ -134,8 +134,10 @@ static int __init parse_spec_ctrl(const char *s)
+ 
+             opt_eager_fpu = 0;
+ 
+-            if ( opt_xpti < 0 )
+-                opt_xpti = 0;
++            if ( opt_xpti_hwdom < 0 )
++                opt_xpti_hwdom = 0;
++            if ( opt_xpti_domu < 0 )
++                opt_xpti_domu = 0;
+ 
+             if ( opt_smt < 0 )
+                 opt_smt = 1;
+@@ -343,8 +345,8 @@ static void __init print_details(enum ind_thunk thunk, uint64_t caps)
+            opt_eager_fpu                             ? " EAGER_FPU"     : "");
+ 
+     printk("  XPTI (64-bit PV only): Dom0 %s, DomU %s\n",
+-           opt_xpti & OPT_XPTI_DOM0 ? "enabled" : "disabled",
+-           opt_xpti & OPT_XPTI_DOMU ? "enabled" : "disabled");
++           opt_xpti_hwdom ? "enabled" : "disabled",
++           opt_xpti_domu  ? "enabled" : "disabled");
+ 
+     printk("  PV L1TF shadowing: Dom0 %s, DomU %s\n",
+            opt_pv_l1tf & OPT_PV_L1TF_DOM0  ? "enabled"  : "disabled",
+@@ -657,7 +659,8 @@ static __init void l1tf_calculations(uint64_t caps)
+                                             : (3ul << (paddr_bits - 2))));
+ }
+ 
+-int8_t __read_mostly opt_xpti = -1;
++int8_t __read_mostly opt_xpti_hwdom = -1;
++int8_t __read_mostly opt_xpti_domu = -1;
+ 
+ static __init void xpti_init_default(uint64_t caps)
+ {
+@@ -665,9 +668,19 @@ static __init void xpti_init_default(uint64_t caps)
+         caps = ARCH_CAPABILITIES_RDCL_NO;
+ 
+     if ( caps & ARCH_CAPABILITIES_RDCL_NO )
+-        opt_xpti = 0;
++    {
++        if ( opt_xpti_hwdom < 0 )
++            opt_xpti_hwdom = 0;
++        if ( opt_xpti_domu < 0 )
++            opt_xpti_domu = 0;
++    }
+     else
+-        opt_xpti = OPT_XPTI_DOM0 | OPT_XPTI_DOMU;
++    {
++        if ( opt_xpti_hwdom < 0 )
++            opt_xpti_hwdom = 1;
++        if ( opt_xpti_domu < 0 )
++            opt_xpti_domu = 1;
++    }
+ }
+ 
+ static __init int parse_xpti(const char *s)
+@@ -676,12 +689,14 @@ static __init int parse_xpti(const char *s)
+     int val, rc = 0;
+ 
+     /* Inhibit the defaults as an explicit choice has been given. */
+-    if ( opt_xpti == -1 )
+-        opt_xpti = 0;
++    if ( opt_xpti_hwdom == -1 )
++        opt_xpti_hwdom = 0;
++    if ( opt_xpti_domu == -1 )
++        opt_xpti_domu = 0;
+ 
+     /* Interpret 'xpti' alone in its positive boolean form. */
+     if ( *s == '\0' )
+-        opt_xpti = OPT_XPTI_DOM0 | OPT_XPTI_DOMU;
++        opt_xpti_hwdom = opt_xpti_domu = 1;
+ 
+     do {
+         ss = strchr(s, ',');
+@@ -691,22 +706,20 @@ static __init int parse_xpti(const char *s)
+         switch ( parse_bool(s, ss) )
+         {
+         case 0:
+-            opt_xpti = 0;
++            opt_xpti_hwdom = opt_xpti_domu = 0;
+             break;
+ 
+         case 1:
+-            opt_xpti = OPT_XPTI_DOM0 | OPT_XPTI_DOMU;
++            opt_xpti_hwdom = opt_xpti_domu = 1;
+             break;
+ 
+         default:
+             if ( !strcmp(s, "default") )
+-                opt_xpti = -1;
++                opt_xpti_hwdom = opt_xpti_domu = -1;
+             else if ( (val = parse_boolean("dom0", s, ss)) >= 0 )
+-                opt_xpti = (opt_xpti & ~OPT_XPTI_DOM0) |
+-                           (val ? OPT_XPTI_DOM0 : 0);
++                opt_xpti_hwdom = val;
+             else if ( (val = parse_boolean("domu", s, ss)) >= 0 )
+-                opt_xpti = (opt_xpti & ~OPT_XPTI_DOMU) |
+-                           (val ? OPT_XPTI_DOMU : 0);
++                opt_xpti_domu = val;
+             else if ( *s )
+                 rc = -EINVAL;
+             break;
+@@ -862,10 +875,9 @@ void __init init_speculation_mitigations(void)
+     if ( default_xen_spec_ctrl )
+         setup_force_cpu_cap(X86_FEATURE_SC_MSR_IDLE);
+ 
+-    if ( opt_xpti == -1 )
+-        xpti_init_default(caps);
++    xpti_init_default(caps);
+ 
+-    if ( opt_xpti == 0 )
++    if ( !opt_xpti_hwdom && !opt_xpti_domu )
+         setup_force_cpu_cap(X86_FEATURE_NO_XPTI);
+     else
+         setup_clear_cpu_cap(X86_FEATURE_NO_XPTI);
+diff --git a/xen/include/asm-x86/spec_ctrl.h b/xen/include/asm-x86/spec_ctrl.h
+index 8f8aad40bb..1b29f45b1b 100644
+--- a/xen/include/asm-x86/spec_ctrl.h
++++ b/xen/include/asm-x86/spec_ctrl.h
+@@ -35,9 +35,7 @@ extern bool bsp_delay_spec_ctrl;
+ extern uint8_t default_xen_spec_ctrl;
+ extern uint8_t default_spec_ctrl_flags;
+ 
+-extern int8_t opt_xpti;
+-#define OPT_XPTI_DOM0  0x01
+-#define OPT_XPTI_DOMU  0x02
++extern int8_t opt_xpti_hwdom, opt_xpti_domu;
+ 
+ extern int8_t opt_pv_l1tf;
+ #define OPT_PV_L1TF_DOM0  0x01
+-- 
+2.30.2
+

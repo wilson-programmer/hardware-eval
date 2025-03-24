@@ -1,0 +1,31 @@
+From 0d233924d4b0f676056856096e8761205add3ee8 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Wed, 12 Oct 2022 17:31:44 +0200
+Subject: [PATCH] tools/tests: fix wrong backport of upstream commit
+ 52daa6a8483e4
+
+The backport of upstream commit 52daa6a8483e4 had a bug, correct it.
+
+Fixes: 3ac64b375183 ("xen/gnttab: fix gnttab_acquire_resource()")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+---
+ tools/tests/resource/test-resource.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/tests/resource/test-resource.c b/tools/tests/resource/test-resource.c
+index bf485baff2..51a8f4a000 100644
+--- a/tools/tests/resource/test-resource.c
++++ b/tools/tests/resource/test-resource.c
+@@ -71,7 +71,7 @@ static void test_gnttab(uint32_t domid, unsigned int nr_frames)
+     res = xenforeignmemory_map_resource(
+         fh, domid, XENMEM_resource_grant_table,
+         XENMEM_resource_grant_table_id_status, 0, 1,
+-        (void **)&gnttab, PROT_READ | PROT_WRITE, 0);
++        &addr, PROT_READ | PROT_WRITE, 0);
+ 
+     if ( res )
+     {
+-- 
+2.30.2
+

@@ -1,0 +1,75 @@
+From f2ad77ba78224a9cc21e14f57bb1d2210d561e0b Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Wed, 24 Jun 2020 16:26:11 +0200
+Subject: [PATCH] sched: allow rcu work to happen when syncing cpus in core
+ scheduling
+
+With RCU barriers moved from tasklets to normal RCU processing cpu
+offlining in core scheduling might deadlock due to cpu synchronization
+required by RCU processing and core scheduling concurrently.
+
+Fix that by bailing out from core scheduling synchronization in case
+of pending RCU work. Additionally the RCU softirq is now required to
+be of higher priority than the scheduling softirqs in order to do
+RCU processing before entering the scheduler again, as bailing out from
+the core scheduling synchronization requires to raise another softirq
+SCHED_SLAVE, which would bypass RCU processing again.
+
+Reported-by: Sergey Dyasli <sergey.dyasli@citrix.com>
+Tested-by: Sergey Dyasli <sergey.dyasli@citrix.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 4e9c57c4edbabab1b66f965db0203100097944ff
+master date: 2020-05-15 16:04:00 +0200
+---
+ xen/common/schedule.c     | 13 ++++++++++---
+ xen/include/xen/softirq.h |  2 +-
+ 2 files changed, 11 insertions(+), 4 deletions(-)
+
+diff --git a/xen/common/schedule.c b/xen/common/schedule.c
+index 6d24a3a135..ccc20ce040 100644
+--- a/xen/common/schedule.c
++++ b/xen/common/schedule.c
+@@ -2270,13 +2270,20 @@ static struct sched_unit *sched_wait_rendezvous_in(struct sched_unit *prev,
+             v = unit2vcpu_cpu(prev, cpu);
+         }
+         /*
+-         * Coming from idle might need to do tasklet work.
++         * Check for any work to be done which might need cpu synchronization.
++         * This is either pending RCU work, or tasklet work when coming from
++         * idle. It is mandatory that RCU softirqs are of higher priority
++         * than scheduling ones as otherwise a deadlock might occur.
+          * In order to avoid deadlocks we can't do that here, but have to
+-         * continue the idle loop.
++         * schedule the previous vcpu again, which will lead to the desired
++         * processing to be done.
+          * Undo the rendezvous_in_cnt decrement and schedule another call of
+          * sched_slave().
+          */
+-        if ( is_idle_unit(prev) && sched_tasklet_check_cpu(cpu) )
++        BUILD_BUG_ON(RCU_SOFTIRQ > SCHED_SLAVE_SOFTIRQ ||
++                     RCU_SOFTIRQ > SCHEDULE_SOFTIRQ);
++        if ( rcu_pending(cpu) ||
++             (is_idle_unit(prev) && sched_tasklet_check_cpu(cpu)) )
+         {
+             struct vcpu *vprev = current;
+ 
+diff --git a/xen/include/xen/softirq.h b/xen/include/xen/softirq.h
+index d7273b389b..d21b048b8c 100644
+--- a/xen/include/xen/softirq.h
++++ b/xen/include/xen/softirq.h
+@@ -4,10 +4,10 @@
+ /* Low-latency softirqs come first in the following list. */
+ enum {
+     TIMER_SOFTIRQ = 0,
++    RCU_SOFTIRQ,
+     SCHED_SLAVE_SOFTIRQ,
+     SCHEDULE_SOFTIRQ,
+     NEW_TLBFLUSH_CLOCK_PERIOD_SOFTIRQ,
+-    RCU_SOFTIRQ,
+     TASKLET_SOFTIRQ,
+     NR_COMMON_SOFTIRQS
+ };
+-- 
+2.30.2
+

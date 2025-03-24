@@ -1,0 +1,45 @@
+From d1a06c9f64d0f6d9cbfb9f4c0889fa4aa116accc Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 25 Nov 2019 16:04:34 +0100
+Subject: [PATCH] x86/vlapic: allow setting APIC_SPIV_FOCUS_DISABLED in x2APIC
+ mode
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Current code unconditionally prevents setting APIC_SPIV_FOCUS_DISABLED
+regardless of the processor model, which is not correct according to
+the specification.
+
+This issue was discovered while trying to boot a pvshim with x2APIC
+enabled.
+
+Always allow setting APIC_SPIV_FOCUS_DISABLED: the local APIC
+provided to guests is emulated by Xen, and as such doesn't depend on
+the features found on the hardware processor. Note for example that
+Xen offers x2APIC support to guests even when the underlying hardware
+doesn't have such feature.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: d7cd999faa1edf745a7597db811956cb882a5436
+master date: 2019-11-22 17:52:59 +0100
+---
+ xen/arch/x86/hvm/vlapic.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/xen/arch/x86/hvm/vlapic.c b/xen/arch/x86/hvm/vlapic.c
+index a1a43cd792..d652c5fb20 100644
+--- a/xen/arch/x86/hvm/vlapic.c
++++ b/xen/arch/x86/hvm/vlapic.c
+@@ -982,6 +982,7 @@ int guest_wrmsr_x2apic(struct vcpu *v, uint32_t msr, uint64_t msr_content)
+ 
+     case APIC_SPIV:
+         if ( msr_content & ~(APIC_VECTOR_MASK | APIC_SPIV_APIC_ENABLED |
++                             APIC_SPIV_FOCUS_DISABLED |
+                              (VLAPIC_VERSION & APIC_LVR_DIRECTED_EOI
+                               ? APIC_SPIV_DIRECTED_EOI : 0)) )
+             return X86EMUL_EXCEPTION;
+-- 
+2.30.2
+

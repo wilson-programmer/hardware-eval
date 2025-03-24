@@ -1,0 +1,58 @@
+From 3eee5228247cb5286e9e219fba0b15349b0ae2a1 Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Fri, 5 Mar 2021 15:35:54 +0100
+Subject: [PATCH] xen/sched: Add missing memory barrier in vcpu_block()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The comment in vcpu_block() states that the events should be checked
+/after/ blocking to avoids wakeup waiting race. However, from a generic
+perspective, set_bit() doesn't prevent re-ordering. So the following
+could happen:
+
+CPU0  (blocking vCPU A)         |Â   CPU1 ( unblock vCPU A)
+                                |
+A <- read local events          |
+                                |   set local events
+                                |   test_and_clear_bit(_VPF_blocked)
+                                |       -> Bail out as the bit if not set
+                                |
+set_bit(_VFP_blocked)           |
+                                |
+check A                         |
+
+The variable A will be 0 and therefore the vCPU will be blocked when it
+should continue running.
+
+vcpu_block() is now gaining an smp_mb__after_atomic() to prevent the CPU
+to read any information about local events before the flag _VPF_blocked
+is set.
+
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Ash Wilding <ash.j.wilding@gmail.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+Acked-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 109e8177fd4a225e7025c4c17d2c9537b550b4ed
+master date: 2021-02-26 09:47:23 +0000
+---
+ xen/common/sched/core.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/common/sched/core.c b/xen/common/sched/core.c
+index ab94d2ec3a..1bd63c9de6 100644
+--- a/xen/common/sched/core.c
++++ b/xen/common/sched/core.c
+@@ -1360,6 +1360,8 @@ void vcpu_block(void)
+ 
+     set_bit(_VPF_blocked, &v->pause_flags);
+ 
++    smp_mb__after_atomic();
++
+     arch_vcpu_block(v);
+ 
+     /* Check for events /after/ blocking: avoids wakeup waiting race. */
+-- 
+2.30.2
+

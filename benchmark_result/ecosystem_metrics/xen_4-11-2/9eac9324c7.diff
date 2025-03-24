@@ -1,0 +1,33 @@
+From 9eac9324c7f19d8fd0824a1ba25fd1ba7d60bab8 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Tue, 29 Oct 2019 14:35:45 +0100
+Subject: [PATCH] x86/crash: fix kexec transition breakage
+
+Following 6ff560f7f ("x86/SMP: don't try to stop already stopped CPUs")
+an incorrect condition was placed into kexec transition path
+leaving crashing CPU always online breaking kdump kernel entering.
+Correct it by unifying the condition with smp_send_stop().
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+master commit: f56813f3470c5b4987963c3c41e4fe16b95c5a3f
+master date: 2019-07-22 18:02:24 +0100
+---
+ xen/arch/x86/crash.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/crash.c b/xen/arch/x86/crash.c
+index 4db0758a88..c9469ae2ed 100644
+--- a/xen/arch/x86/crash.c
++++ b/xen/arch/x86/crash.c
+@@ -179,7 +179,7 @@ static void nmi_shootdown_cpus(void)
+      */
+     iommu_crash_shutdown();
+ 
+-    if ( num_online_cpus() > 1 )
++    if ( cpu_online(cpu) )
+     {
+         __stop_this_cpu();
+ 
+-- 
+2.30.2
+

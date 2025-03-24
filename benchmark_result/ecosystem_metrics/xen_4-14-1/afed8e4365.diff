@@ -1,0 +1,106 @@
+From afed8e4365f0dec26a040ea0670b654e00d8c869 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 7 Aug 2020 17:10:34 +0200
+Subject: [PATCH] x86emul: replace UB shifts
+
+Displacement values can be negative, hence we shouldn't left-shift them.
+Or else we get
+
+(XEN) UBSAN: Undefined behaviour in x86_emulate/x86_emulate.c:3482:55
+(XEN) left shift of negative value -2
+
+While auditing shifts, I noticed a pair of missing parentheses, which
+also get added right here.
+
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Tested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+
+x86: comment update after "drop high compat r/o M2P table address range"
+
+Commit 5af040ef8b57 clearly should also have updated the comment, not
+just the #define-s.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: b6a907f8c83d37886d0523f1aeff61b98e133498
+master date: 2020-07-31 17:41:58 +0200
+master commit: 2e98d0b1d09e99e3d1287cb13f42b604ebc3c29a
+master date: 2020-08-05 10:21:22 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index 84bb8e0c9b..ee6341b1b7 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -3368,7 +3368,7 @@ x86_decode(
+         {
+             generate_exception_if(d & vSIB, EXC_UD);
+             modrm_rm |= ((rex_prefix & 1) << 3) |
+-                        (evex_encoded() && !evex.x) << 4;
++                        ((evex_encoded() && !evex.x) << 4);
+             ea.type = OP_REG;
+         }
+         else if ( ad_bytes == 2 )
+@@ -3415,7 +3415,7 @@ x86_decode(
+                     ea.mem.off = insn_fetch_type(int16_t);
+                 break;
+             case 1:
+-                ea.mem.off += insn_fetch_type(int8_t) << disp8scale;
++                ea.mem.off += insn_fetch_type(int8_t) * (1 << disp8scale);
+                 break;
+             case 2:
+                 ea.mem.off += insn_fetch_type(int16_t);
+@@ -3477,7 +3477,7 @@ x86_decode(
+                 pc_rel = mode_64bit();
+                 break;
+             case 1:
+-                ea.mem.off += insn_fetch_type(int8_t) << disp8scale;
++                ea.mem.off += insn_fetch_type(int8_t) * (1 << disp8scale);
+                 break;
+             case 2:
+                 ea.mem.off += insn_fetch_type(int32_t);
+@@ -9727,7 +9727,7 @@ x86_emulate(
+ 
+                 rc = ops->read(ea.mem.seg,
+                                truncate_ea(ea.mem.off +
+-                                           (idx << state->sib_scale)),
++                                           idx * (1 << state->sib_scale)),
+                                (void *)mmvalp + i * op_bytes, op_bytes, ctxt);
+                 if ( rc != X86EMUL_OKAY )
+                 {
+@@ -9849,7 +9849,8 @@ x86_emulate(
+                 continue;
+ 
+             rc = ops->read(ea.mem.seg,
+-                           truncate_ea(ea.mem.off + (idx << state->sib_scale)),
++                           truncate_ea(ea.mem.off +
++                                       idx * (1 << state->sib_scale)),
+                            (void *)mmvalp + i * op_bytes, op_bytes, ctxt);
+             if ( rc != X86EMUL_OKAY )
+             {
+@@ -10020,7 +10021,8 @@ x86_emulate(
+                 continue;
+ 
+             rc = ops->write(ea.mem.seg,
+-                            truncate_ea(ea.mem.off + (idx << state->sib_scale)),
++                            truncate_ea(ea.mem.off +
++                                        idx * (1 << state->sib_scale)),
+                             (void *)mmvalp + i * op_bytes, op_bytes, ctxt);
+             if ( rc != X86EMUL_OKAY )
+             {
+@@ -10138,7 +10140,7 @@ x86_emulate(
+                   ? ops->write
+                   : ops->read)(ea.mem.seg,
+                                truncate_ea(ea.mem.off +
+-                                           (idx << state->sib_scale)),
++                                           idx * (1 << state->sib_scale)),
+                                NULL, 0, ctxt);
+             if ( rc == X86EMUL_EXCEPTION )
+             {
+-- 
+2.30.2
+

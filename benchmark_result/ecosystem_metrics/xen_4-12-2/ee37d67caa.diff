@@ -1,0 +1,62 @@
+From ee37d67caa4bcbc89ff80fecdbb3ae2d9709adc2 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 25 Nov 2019 16:00:26 +0100
+Subject: [PATCH] x86/ioapic: fix clear_IO_APIC_pin write of raw entries
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+clear_IO_APIC_pin can be called after the iommu has been enabled, and
+using raw reads and writes to modify IO-APIC entries that have been
+setup to use interrupt remapping can lead to issues as some of the
+fields have different meaning when the IO-APIC entry is setup to point
+to an interrupt remapping table entry.
+
+The following ASSERT in AMD IOMMU code triggers afterwards as a result
+of the raw changes to IO-APIC entries performed by clear_IO_APIC_pin.
+
+(XEN) [   10.082154] ENABLING IO-APIC IRQs
+(XEN) [   10.087789]  -> Using new ACK method
+(XEN) [   10.093738] Assertion 'get_rte_index(rte) == offset' failed at iommu_intr.c:328
+
+Fix this by making sure that modifications to entries are performed in
+non raw mode when fields are affected which may either have changed
+meaning with interrupt remapping, or which may need mirroring into
+IRTEs.
+
+Reported-by: Sergey Dyasli <sergey.dyasli@citrix.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: dedcb1087dfeae0bbd9eea465a57f25b13e40585
+master date: 2019-11-12 11:07:40 +0100
+---
+ xen/arch/x86/io_apic.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/io_apic.c b/xen/arch/x86/io_apic.c
+index daa5e9e5ff..f12c4ffdeb 100644
+--- a/xen/arch/x86/io_apic.c
++++ b/xen/arch/x86/io_apic.c
+@@ -517,8 +517,9 @@ static void clear_IO_APIC_pin(unsigned int apic, unsigned int pin)
+     if (entry.irr) {
+         /* Make sure the trigger mode is set to level. */
+         if (!entry.trigger) {
++            entry = __ioapic_read_entry(apic, pin, false);
+             entry.trigger = 1;
+-            __ioapic_write_entry(apic, pin, TRUE, entry);
++            __ioapic_write_entry(apic, pin, false, entry);
+         }
+         __io_apic_eoi(apic, entry.vector, pin);
+     }
+@@ -528,7 +529,7 @@ static void clear_IO_APIC_pin(unsigned int apic, unsigned int pin)
+      */
+     memset(&entry, 0, sizeof(entry));
+     entry.mask = 1;
+-    __ioapic_write_entry(apic, pin, TRUE, entry);
++    __ioapic_write_entry(apic, pin, false, entry);
+ 
+     entry = __ioapic_read_entry(apic, pin, TRUE);
+     if (entry.irr)
+-- 
+2.30.2
+

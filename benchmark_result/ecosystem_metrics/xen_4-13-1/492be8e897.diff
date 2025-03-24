@@ -1,0 +1,33 @@
+From 492be8e897e439a10031767b351642b44b6c2ef8 Mon Sep 17 00:00:00 2001
+From: Ian Jackson <ian.jackson@eu.citrix.com>
+Date: Mon, 23 Dec 2019 10:58:23 +0000
+Subject: [PATCH] MAINTAINERS: Add stable branch maintainer info
+
+Signed-off-by: Ian Jackson <ian.jackson@eu.citrix.com>
+---
+ MAINTAINERS | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 9c827ad759..806e02b4f8 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -54,6 +54,15 @@ list. Remember to copy the appropriate stable branch maintainer who
+ will be listed in this section of the MAINTAINERS file in the
+ appropriate branch.
+ 
++The maintainer for this branch is:
++
++	Jan Beulich <jbeulich@suse.com>
++
++Tools backport requests should also be copied to:
++
++	Ian Jackson <Ian.Jackson@eu.citrix.com>
++
++
+ 	Unstable Subsystem Maintainers
+ 	==============================
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,39 @@
+From b26c30a408255454f8ceb4e49e3c4385aa32fbc3 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 1 Feb 2024 17:58:59 +0100
+Subject: [PATCH] CirrusCI: drop FreeBSD 12
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Went EOL by the end of December 2023, and the pkg repos have been shut down.
+
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: c2ce3466472e9c9eda79f5dc98eb701bc6fdba20
+master date: 2024-01-15 12:20:11 +0100
+---
+ .cirrus.yml | 6 ------
+ 1 file changed, 6 deletions(-)
+
+diff --git a/.cirrus.yml b/.cirrus.yml
+index 7e0beb200d..63f3afb104 100644
+--- a/.cirrus.yml
++++ b/.cirrus.yml
+@@ -14,12 +14,6 @@ freebsd_template: &FREEBSD_TEMPLATE
+     - ./configure --with-system-seabios=/usr/local/share/seabios/bios.bin
+     - gmake -j`sysctl -n hw.ncpu` clang=y
+ 
+-task:
+-  name: 'FreeBSD 12'
+-  freebsd_instance:
+-    image_family: freebsd-12-4
+-  << : *FREEBSD_TEMPLATE
+-
+ task:
+   name: 'FreeBSD 13'
+   freebsd_instance:
+-- 
+2.30.2
+

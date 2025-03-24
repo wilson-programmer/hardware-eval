@@ -1,0 +1,50 @@
+From 1a69ef0435602c33b4a31b17663c119bc1acd16a Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien@xen.org>
+Date: Mon, 25 Nov 2019 16:04:02 +0100
+Subject: [PATCH] xen: Add missing va_end() in hypercall_create_continuation()
+
+The documentation requires va_start() to always be matched with a
+corresponding va_end(). However, this is not the case in the path used
+for bad format.
+
+This was introduced by XSA-296.
+
+Coverity-ID: 1488727
+Fixes: 0bf9f8d3e3 ("xen/hypercall: Don't use BUG() for parameter checking in hypercall_create_continuation()")
+Signed-off-by: Julien Grall <julien@xen.org>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: df7a19338a892b5cf585fd2bee8584cb15e0cace
+master date: 2019-11-21 15:50:01 +0000
+---
+ xen/arch/arm/domain.c    | 1 +
+ xen/arch/x86/hypercall.c | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/xen/arch/arm/domain.c b/xen/arch/arm/domain.c
+index f6ea51979b..2df64eabf3 100644
+--- a/xen/arch/arm/domain.c
++++ b/xen/arch/arm/domain.c
+@@ -477,6 +477,7 @@ unsigned long hypercall_create_continuation(
+     return rc;
+ 
+  bad_fmt:
++    va_end(args);
+     gprintk(XENLOG_ERR, "Bad hypercall continuation format '%c'\n", *p);
+     ASSERT_UNREACHABLE();
+     domain_crash(current->domain);
+diff --git a/xen/arch/x86/hypercall.c b/xen/arch/x86/hypercall.c
+index e85d19a2d3..076b0cf32b 100644
+--- a/xen/arch/x86/hypercall.c
++++ b/xen/arch/x86/hypercall.c
+@@ -156,6 +156,7 @@ unsigned long hypercall_create_continuation(
+     return op;
+ 
+  bad_fmt:
++    va_end(args);
+     gprintk(XENLOG_ERR, "Bad hypercall continuation format '%c'\n", *p);
+     ASSERT_UNREACHABLE();
+     domain_crash(curr->domain);
+-- 
+2.30.2
+

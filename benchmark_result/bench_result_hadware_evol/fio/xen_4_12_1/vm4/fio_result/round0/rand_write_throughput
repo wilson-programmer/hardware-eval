@@ -1,0 +1,36 @@
+rand_write_throughput: (g=0): rw=randwrite, bs=(R) 1024KiB-1024KiB, (W) 1024KiB-1024KiB, (T) 1024KiB-1024KiB, ioengine=libaio, iodepth=64
+...
+fio-3.1
+Starting 4 processes
+rand_write_throughput: Laying out IO file (1 file / 100MiB)
+rand_write_throughput: Laying out IO file (1 file / 100MiB)
+rand_write_throughput: Laying out IO file (1 file / 100MiB)
+rand_write_throughput: Laying out IO file (1 file / 100MiB)
+
+rand_write_throughput: (groupid=0, jobs=4): err= 0: pid=16380: Fri Jun 21 08:50:21 2024
+  write: IOPS=355, BW=359MiB/s (377MB/s)(21.1GiB/60015msec)
+    slat (usec): min=427, max=3785.1k, avg=11156.70, stdev=145553.31
+    clat (msec): min=5, max=4269, avg=702.41, stdev=1153.24
+     lat (msec): min=6, max=4272, avg=713.49, stdev=1160.92
+    clat percentiles (msec):
+     |  1.00th=[  130],  5.00th=[  167], 10.00th=[  184], 20.00th=[  209],
+     | 30.00th=[  224], 40.00th=[  236], 50.00th=[  249], 60.00th=[  264],
+     | 70.00th=[  284], 80.00th=[  330], 90.00th=[ 3171], 95.00th=[ 3842],
+     | 99.00th=[ 4111], 99.50th=[ 4212], 99.90th=[ 4245], 99.95th=[ 4245],
+     | 99.99th=[ 4279]
+   bw (  KiB/s): min= 2048, max=380928, per=48.17%, avg=177282.95, stdev=102076.48, samples=247
+   iops        : min=    2, max=  372, avg=172.85, stdev=99.66, samples=247
+  lat (msec)   : 10=0.05%, 20=0.08%, 50=0.23%, 100=0.39%, 250=50.59%
+  lat (msec)   : 500=35.28%, 750=0.26%, 1000=0.04%, 2000=0.12%, >=2000=14.14%
+  cpu          : usr=1.81%, sys=6.13%, ctx=34586, majf=0, minf=12
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.2%, 16=0.3%, 32=0.6%, >=64=113.9%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.1%, >=64=0.0%
+     issued rwt: total=0,21312,0, short=0,0,0, dropped=0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=64
+
+Run status group 0 (all jobs):
+  WRITE: bw=359MiB/s (377MB/s), 359MiB/s-359MiB/s (377MB/s-377MB/s), io=21.1GiB (22.6GB), run=60015-60015msec
+
+Disk stats (read/write):
+  xvda: ios=0/196162, merge=0/30, ticks=0/3869920, in_queue=1546980, util=41.93%

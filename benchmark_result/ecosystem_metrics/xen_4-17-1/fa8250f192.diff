@@ -1,0 +1,55 @@
+From fa8250f1920413f02b63551a6a4d8ef0b47891a8 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edwin.torok@cloud.com>
+Date: Fri, 3 Mar 2023 08:03:19 +0100
+Subject: [PATCH] libs/guest: Fix leak on realloc failure in backup_ptes()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+From `man 2 realloc`:
+
+  If realloc() fails, the original block is left untouched; it is not freed or moved.
+
+Found using GCC -fanalyzer:
+
+  |  184 |         backup->entries = realloc(backup->entries,
+  |      |         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  |      |         |               | |
+  |      |         |               | (91) when âreallocâ fails
+  |      |         |               (92) âold_ptes.entriesâ leaks here; was allocated at (44)
+  |      |         (90) ...to here
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edwin.torok@cloud.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 275d13184cfa52ebe4336ed66526ce93716adbe0
+master date: 2023-02-27 15:51:23 +0000
+---
+ tools/libs/guest/xg_offline_page.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/tools/libs/guest/xg_offline_page.c b/tools/libs/guest/xg_offline_page.c
+index c594fdba41..ccd0299f0f 100644
+--- a/tools/libs/guest/xg_offline_page.c
++++ b/tools/libs/guest/xg_offline_page.c
+@@ -181,10 +181,16 @@ static int backup_ptes(xen_pfn_t table_mfn, int offset,
+ 
+     if (backup->max == backup->cur)
+     {
+-        backup->entries = realloc(backup->entries,
+-                            backup->max * 2 * sizeof(struct pte_backup_entry));
++        void *orig = backup->entries;
++
++        backup->entries = realloc(
++            orig, backup->max * 2 * sizeof(struct pte_backup_entry));
++
+         if (backup->entries == NULL)
++        {
++            free(orig);
+             return -1;
++        }
+         else
+             backup->max *= 2;
+     }
+-- 
+2.30.2
+

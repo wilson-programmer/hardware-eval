@@ -1,0 +1,59 @@
+From 963ab606b1228788eac54c1c7ff70d04bb325733 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 19 Nov 2021 15:16:17 +0100
+Subject: [PATCH] VT-d: fix reduced page table levels support when sharing
+ tables
+
+domain_pgd_maddr() contains logic to adjust the root address to be put
+in the context entry in case 4-level page tables aren't supported by an
+IOMMU. This logic may not be bypassed when sharing page tables.
+
+This is CVE-2021-28710 / XSA-390.
+
+Fixes: 25ccd093425c ("iommu: remove the share_p2m operation")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 02b46377b69feb6dd3649f037e17684af9fb7853
+master date: 2021-11-19 15:14:08 +0100
+---
+ xen/drivers/passthrough/vtd/iommu.c | 20 +++++++++++---------
+ 1 file changed, 11 insertions(+), 9 deletions(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index fbc749436b..abe7ea5ac9 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -337,19 +337,21 @@ static uint64_t domain_pgd_maddr(struct domain *d, unsigned int nr_pt_levels)
+     {
+         pagetable_t pgt = p2m_get_pagetable(p2m_get_hostp2m(d));
+ 
+-        return pagetable_get_paddr(pgt);
++        pgd_maddr = pagetable_get_paddr(pgt);
+     }
+-
+-    if ( !hd->arch.vtd.pgd_maddr )
++    else
+     {
+-        /* Ensure we have pagetables allocated down to leaf PTE. */
+-        addr_to_dma_page_maddr(d, 0, 1);
+-
+         if ( !hd->arch.vtd.pgd_maddr )
+-            return 0;
+-    }
++        {
++            /* Ensure we have pagetables allocated down to leaf PTE. */
++            addr_to_dma_page_maddr(d, 0, 1);
+ 
+-    pgd_maddr = hd->arch.vtd.pgd_maddr;
++            if ( !hd->arch.vtd.pgd_maddr )
++                return 0;
++        }
++
++        pgd_maddr = hd->arch.vtd.pgd_maddr;
++    }
+ 
+     /* Skip top levels of page tables for 2- and 3-level DRHDs. */
+     for ( agaw = level_to_agaw(4);
+-- 
+2.30.2
+

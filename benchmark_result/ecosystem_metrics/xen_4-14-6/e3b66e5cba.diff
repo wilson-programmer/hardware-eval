@@ -1,0 +1,146 @@
+From e3b66e5cba89fc0b59c9a116e7414388d45e04a0 Mon Sep 17 00:00:00 2001
+From: Henry Wang <Henry.Wang@arm.com>
+Date: Tue, 11 Oct 2022 15:39:00 +0200
+Subject: [PATCH] libxl, docs: Use arch-specific default paging memory
+
+The default paging memory (descibed in `shadow_memory` entry in xl
+config) in libxl is used to determine the memory pool size for xl
+guests. Currently this size is only used for x86, and contains a part
+of RAM to shadow the resident processes. Since on Arm there is no
+shadow mode guests, so the part of RAM to shadow the resident processes
+is not necessary. Therefore, this commit splits the function
+`libxl_get_required_shadow_memory()` to arch specific helpers and
+renamed the helper to `libxl__arch_get_required_paging_memory()`.
+
+On x86, this helper calls the original value from
+`libxl_get_required_shadow_memory()` so no functional change intended.
+
+On Arm, this helper returns 1MB per vcpu plus 4KB per MiB of RAM
+for the P2M map and additional 512KB.
+
+Also update the xl.cfg documentation to add Arm documentation
+according to code changes and correct the comment style following Xen
+coding style.
+
+This is part of CVE-2022-33747 / XSA-409.
+
+Suggested-by: Julien Grall <jgrall@amazon.com>
+Signed-off-by: Henry Wang <Henry.Wang@arm.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: 156a239ea288972425f967ac807b3cb5b5e14874
+master date: 2022-10-11 14:28:37 +0200
+---
+ docs/man/xl.cfg.5.pod.in  |  5 +++++
+ tools/libxl/libxl_arch.h  |  4 ++++
+ tools/libxl/libxl_arm.c   | 12 ++++++++++++
+ tools/libxl/libxl_utils.c |  9 ++-------
+ tools/libxl/libxl_x86.c   | 12 ++++++++++++
+ 5 files changed, 35 insertions(+), 7 deletions(-)
+
+diff --git a/docs/man/xl.cfg.5.pod.in b/docs/man/xl.cfg.5.pod.in
+index 0532739c1f..2224080b30 100644
+--- a/docs/man/xl.cfg.5.pod.in
++++ b/docs/man/xl.cfg.5.pod.in
+@@ -1803,6 +1803,11 @@ are not using hardware assisted paging (i.e. you are using shadow
+ mode) and your guest workload consists of a very large number of
+ similar processes then increasing this value may improve performance.
+ 
++On Arm, this field is used to determine the size of the guest P2M pages
++pool, and the default value is 1MB per vCPU plus 4KB per MB of RAM for
++the P2M map. Users should adjust this value if bigger P2M pool size is
++needed.
++
+ =back
+ 
+ =head3 Processor and Platform Features
+diff --git a/tools/libxl/libxl_arch.h b/tools/libxl/libxl_arch.h
+index 6a91775b9e..b09f868490 100644
+--- a/tools/libxl/libxl_arch.h
++++ b/tools/libxl/libxl_arch.h
+@@ -83,6 +83,10 @@ int libxl__arch_extra_memory(libxl__gc *gc,
+                              const libxl_domain_build_info *info,
+                              uint64_t *out);
+ 
++_hidden
++unsigned long libxl__arch_get_required_paging_memory(unsigned long maxmem_kb,
++                                                     unsigned int smp_cpus);
++
+ #if defined(__i386__) || defined(__x86_64__)
+ 
+ #define LAPIC_BASE_ADDRESS  0xfee00000
+diff --git a/tools/libxl/libxl_arm.c b/tools/libxl/libxl_arm.c
+index 34f8a29056..f4b3dc8e71 100644
+--- a/tools/libxl/libxl_arm.c
++++ b/tools/libxl/libxl_arm.c
+@@ -153,6 +153,18 @@ out:
+     return rc;
+ }
+ 
++unsigned long libxl__arch_get_required_paging_memory(unsigned long maxmem_kb,
++                                                     unsigned int smp_cpus)
++{
++    /*
++     * 256 pages (1MB) per vcpu,
++     * plus 1 page per MiB of RAM for the P2M map,
++     * This is higher than the minimum that Xen would allocate if no value
++     * were given (but the Xen minimum is for safety, not performance).
++     */
++    return 4 * (256 * smp_cpus + maxmem_kb / 1024);
++}
++
+ static struct arch_info {
+     const char *guest_type;
+     const char *timer_compat;
+diff --git a/tools/libxl/libxl_utils.c b/tools/libxl/libxl_utils.c
+index b039143b8a..e18b1524ef 100644
+--- a/tools/libxl/libxl_utils.c
++++ b/tools/libxl/libxl_utils.c
+@@ -18,6 +18,7 @@
+ #include <ctype.h>
+ 
+ #include "libxl_internal.h"
++#include "libxl_arch.h"
+ #include "_paths.h"
+ 
+ #ifndef LIBXL_HAVE_NONCONST_LIBXL_BASENAME_RETURN_VALUE
+@@ -39,13 +40,7 @@ char *libxl_basename(const char *name)
+ 
+ unsigned long libxl_get_required_shadow_memory(unsigned long maxmem_kb, unsigned int smp_cpus)
+ {
+-    /* 256 pages (1MB) per vcpu,
+-       plus 1 page per MiB of RAM for the P2M map,
+-       plus 1 page per MiB of RAM to shadow the resident processes.
+-       This is higher than the minimum that Xen would allocate if no value
+-       were given (but the Xen minimum is for safety, not performance).
+-     */
+-    return 4 * (256 * smp_cpus + 2 * (maxmem_kb / 1024));
++    return libxl__arch_get_required_paging_memory(maxmem_kb, smp_cpus);
+ }
+ 
+ char *libxl_domid_to_name(libxl_ctx *ctx, uint32_t domid)
+diff --git a/tools/libxl/libxl_x86.c b/tools/libxl/libxl_x86.c
+index 07c7b05e0d..0ad455301d 100644
+--- a/tools/libxl/libxl_x86.c
++++ b/tools/libxl/libxl_x86.c
+@@ -852,6 +852,18 @@ int libxl__arch_passthrough_mode_setdefault(libxl__gc *gc,
+     return rc;
+ }
+ 
++unsigned long libxl__arch_get_required_paging_memory(unsigned long maxmem_kb,
++                                                     unsigned int smp_cpus)
++{
++    /*
++     * 256 pages (1MB) per vcpu,
++     * plus 1 page per MiB of RAM for the P2M map,
++     * plus 1 page per MiB of RAM to shadow the resident processes.
++     * This is higher than the minimum that Xen would allocate if no value
++     * were given (but the Xen minimum is for safety, not performance).
++     */
++    return 4 * (256 * smp_cpus + 2 * (maxmem_kb / 1024));
++}
+ 
+ /*
+  * Local variables:
+-- 
+2.30.2
+

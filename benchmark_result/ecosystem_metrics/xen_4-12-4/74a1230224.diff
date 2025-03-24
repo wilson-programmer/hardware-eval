@@ -1,0 +1,124 @@
+From 74a12302245dd7febbc8bb214cf965377fda055d Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 24 Jun 2020 17:13:29 +0200
+Subject: [PATCH] x86emul: rework CMP and TEST emulation
+
+Unlike similarly encoded insns these don't write their memory operands,
+and hence x86_is_mem_write() should return false for them. However,
+rather than adding special logic there, rework how their emulation gets
+done, by making decoding attributes properly describe the r/o nature of
+their memory operands:
+-  change the table entries for opcodes 0x38 and 0x39, with no other
+   adjustments to the attributes later on,
+-  for the other opcodes, leave the table entries as they are, and
+   override the attributes for the specific sub-cases (identified by
+   ModRM.reg).
+
+For opcodes 0x38 and 0x39 the change of the table entries implies
+changing the order of operands as passed to emulate_2op_SrcV(), hence
+the splitting of the cases in the main switch().
+
+Note how this also allows dropping custom LOCK prefix checks.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 20bc1b9cc99b70b17757e1903f629c7a26584790
+master date: 2020-05-29 17:28:45 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 37 ++++++++++++++++----------
+ 1 file changed, 23 insertions(+), 14 deletions(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index 0c0a51e13c..98f52083f8 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -84,7 +84,7 @@ static const opcode_desc_t opcode_table[256] = {
+     ByteOp|DstReg|SrcMem|ModRM, DstReg|SrcMem|ModRM,
+     ByteOp|DstEax|SrcImm, DstEax|SrcImm, 0, ImplicitOps,
+     /* 0x38 - 0x3F */
+-    ByteOp|DstMem|SrcReg|ModRM, DstMem|SrcReg|ModRM,
++    ByteOp|DstReg|SrcMem|ModRM, DstReg|SrcMem|ModRM,
+     ByteOp|DstReg|SrcMem|ModRM, DstReg|SrcMem|ModRM,
+     ByteOp|DstEax|SrcImm, DstEax|SrcImm, 0, ImplicitOps,
+     /* 0x40 - 0x4F */
+@@ -2405,7 +2405,6 @@ x86_decode_onebyte(
+     case 0x60: /* pusha */
+     case 0x61: /* popa */
+     case 0x62: /* bound */
+-    case 0x82: /* Grp1 (x86/32 only) */
+     case 0xc4: /* les */
+     case 0xc5: /* lds */
+     case 0xce: /* into */
+@@ -2415,6 +2414,14 @@ x86_decode_onebyte(
+         state->not_64bit = true;
+         break;
+ 
++    case 0x82: /* Grp1 (x86/32 only) */
++        state->not_64bit = true;
++        /* fall through */
++    case 0x80: case 0x81: case 0x83: /* Grp1 */
++        if ( (modrm_reg & 7) == 7 ) /* cmp */
++            state->desc = (state->desc & ByteOp) | DstNone | SrcMem;
++        break;
++
+     case 0x90: /* nop / pause */
+         if ( repe_prefix() )
+             ctxt->opcode |= X86EMUL_OPC_F3(0, 0);
+@@ -2445,6 +2452,11 @@ x86_decode_onebyte(
+         imm2 = insn_fetch_type(uint8_t);
+         break;
+ 
++    case 0xf6: case 0xf7: /* Grp3 */
++        if ( !(modrm_reg & 6) ) /* test */
++            state->desc = (state->desc & ByteOp) | DstNone | SrcMem;
++        break;
++
+     case 0xff: /* Grp5 */
+         switch ( modrm_reg & 7 )
+         {
+@@ -3725,13 +3737,11 @@ x86_emulate(
+         break;
+ 
+     case 0x38: case 0x39: cmp: /* cmp reg,mem */
+-        if ( ops->rmw && dst.type == OP_MEM &&
+-             (rc = read_ulong(dst.mem.seg, dst.mem.off, &dst.val,
+-                              dst.bytes, ctxt, ops)) != X86EMUL_OKAY )
+-            goto done;
+-        /* fall through */
++        emulate_2op_SrcV("cmp", dst, src, _regs.eflags);
++        dst.type = OP_NONE;
++        break;
++
+     case 0x3a ... 0x3d: /* cmp */
+-        generate_exception_if(lock_prefix, EXC_UD);
+         emulate_2op_SrcV("cmp", src, dst, _regs.eflags);
+         dst.type = OP_NONE;
+         break;
+@@ -4033,7 +4043,9 @@ x86_emulate(
+         case 4: goto and;
+         case 5: goto sub;
+         case 6: goto xor;
+-        case 7: goto cmp;
++        case 7:
++            dst.val = imm1;
++            goto cmp;
+         }
+         break;
+ 
+@@ -5026,11 +5038,8 @@ x86_emulate(
+             unsigned long u[2], v;
+ 
+         case 0 ... 1: /* test */
+-            generate_exception_if(lock_prefix, EXC_UD);
+-            if ( ops->rmw && dst.type == OP_MEM &&
+-                 (rc = read_ulong(dst.mem.seg, dst.mem.off, &dst.val,
+-                                  dst.bytes, ctxt, ops)) != X86EMUL_OKAY )
+-                goto done;
++            dst.val = imm1;
++            dst.bytes = src.bytes;
+             goto test;
+         case 2: /* not */
+             if ( ops->rmw && dst.type == OP_MEM )
+-- 
+2.30.2
+

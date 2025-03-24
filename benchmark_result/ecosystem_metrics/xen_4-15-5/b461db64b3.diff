@@ -1,0 +1,94 @@
+From b461db64b37f9a04ba5a726b0e474e870226f2ac Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Thu, 9 Sep 2021 15:33:06 +0100
+Subject: [PATCH] build: add --full to version.sh to guess $(XEN_FULLVERSION)
+
+Running $(MAKE) like that in a $(shell ) while parsing the Makefile
+doesn't work reliably. In some case, make will complain with
+"jobserver unavailable: using -j1.  Add '+' to parent make rule.".
+Also, it isn't possible to distinguish between the output produced by
+the target "xenversion" and `make`'s own output.
+
+Instead of running make, this patch "improve" `version.sh` to try to
+guess the output of `make xenversion`.
+
+In order to have version.sh works in more scenario, it will use
+XEN_EXTRAVERSION and XEN_VENDORVERSION from the environment when
+present. As for the cases were those two variables are overridden by a
+make command line arguments, we export them when invoking version.sh
+via a new $(XEN_FULLVERSION) macro.
+
+That should hopefully get us to having ./version.sh returning the same
+value that `make xenversion` would.
+
+This fix GitLab CI's build job "debian-unstable-gcc-arm64".
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Daniel P. Smith <dpsmith@apertussolutions.com>
+Reviewed-by: Ian Jackson <iwj@xenproject.org>
+(cherry picked from commit ab4a83023eda9f04ad864877c1956b087ec6fc4f)
+---
+ tools/Rules.mk                     |  5 +++++
+ tools/flask/policy/Makefile.common |  2 +-
+ version.sh                         | 18 +++++++++++++++++-
+ 3 files changed, 23 insertions(+), 2 deletions(-)
+
+diff --git a/tools/Rules.mk b/tools/Rules.mk
+index 444e5bacdd..051a5d3555 100644
+--- a/tools/Rules.mk
++++ b/tools/Rules.mk
+@@ -6,6 +6,11 @@ all:
+ -include $(XEN_ROOT)/config/Tools.mk
+ include $(XEN_ROOT)/Config.mk
+ 
++XEN_FULLVERSION=$(shell env \
++    XEN_EXTRAVERSION=$(XEN_EXTRAVERSION) \
++    XEN_VENDORVERSION=$(XEN_VENDORVERSION) \
++    $(SHELL) $(XEN_ROOT)/version.sh --full $(XEN_ROOT)/xen/Makefile)
++
+ export _INSTALL := $(INSTALL)
+ INSTALL = $(XEN_ROOT)/tools/cross-install
+ 
+diff --git a/tools/flask/policy/Makefile.common b/tools/flask/policy/Makefile.common
+index bea5ba4b6a..e5ed58200e 100644
+--- a/tools/flask/policy/Makefile.common
++++ b/tools/flask/policy/Makefile.common
+@@ -35,7 +35,7 @@ OUTPUT_POLICY ?= $(BEST_POLICY_VER)
+ #
+ ########################################
+ 
+-POLICY_FILENAME = $(FLASK_BUILD_DIR)/xenpolicy-$(shell $(MAKE) -C $(XEN_ROOT)/xen xenversion --no-print-directory)
++POLICY_FILENAME = $(FLASK_BUILD_DIR)/xenpolicy-$(XEN_FULLVERSION)
+ POLICY_LOADPATH = /boot
+ 
+ # List of policy versions supported by the hypervisor
+diff --git a/version.sh b/version.sh
+index e894ee7e04..c6a5692c19 100755
+--- a/version.sh
++++ b/version.sh
+@@ -1,5 +1,21 @@
+ #!/bin/sh
+ 
++opt_full=false
++while [ $# -gt 1 ]; do
++    case "$1" in
++        --full) opt_full=true ;;
++        *) break ;;
++    esac
++    shift
++done
++
+ MAJOR=`grep "export XEN_VERSION" $1 | sed 's/.*=//g' | tr -s " "`
+ MINOR=`grep "export XEN_SUBVERSION" $1 | sed 's/.*=//g' | tr -s " "`
+-printf "%d.%d" $MAJOR $MINOR
++
++if $opt_full; then
++    extraversion=$(grep "export XEN_EXTRAVERSION" $1 | sed 's/^.* ?=\s\+//; s/\$([^)]*)//g; s/ //g')
++    : ${XEN_EXTRAVERSION:=${extraversion}${XEN_VENDORVERSION}}
++else
++    unset XEN_EXTRAVERSION
++fi
++printf "%d.%d%s" $MAJOR $MINOR $XEN_EXTRAVERSION
+-- 
+2.30.2
+

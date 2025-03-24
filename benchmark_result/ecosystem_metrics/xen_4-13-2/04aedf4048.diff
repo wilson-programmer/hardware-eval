@@ -1,0 +1,34 @@
+From 04aedf4048c12a9f0dba3b693df7f2c5df614901 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 24 Jun 2020 16:27:16 +0200
+Subject: [PATCH] x86/hvm: Fix shifting in stdvga_mem_read()
+
+stdvga_mem_read() has a return type of uint8_t, which promotes to int rather
+than unsigned int.  Shifting by 24 may hit the sign bit.
+
+Spotted by Coverity.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 97fb0253e6c2f2221bfd0895b7ffe3a99330d847
+master date: 2020-05-18 15:22:53 +0100
+---
+ xen/arch/x86/hvm/stdvga.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/stdvga.c b/xen/arch/x86/hvm/stdvga.c
+index bd398dbb1b..e2675139e7 100644
+--- a/xen/arch/x86/hvm/stdvga.c
++++ b/xen/arch/x86/hvm/stdvga.c
+@@ -322,7 +322,7 @@ static int stdvga_mem_read(const struct hvm_io_handler *handler,
+         data = stdvga_mem_readb(addr);
+         data |= stdvga_mem_readb(addr + 1) << 8;
+         data |= stdvga_mem_readb(addr + 2) << 16;
+-        data |= stdvga_mem_readb(addr + 3) << 24;
++        data |= (uint32_t)stdvga_mem_readb(addr + 3) << 24;
+         break;
+ 
+     case 8:
+-- 
+2.30.2
+

@@ -1,0 +1,82 @@
+From b10cf1561a638c835481ae923b571cb8f7350a89 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 3 Mar 2023 08:01:21 +0100
+Subject: [PATCH] xen: Fix Clang -Wunicode diagnostic when building asm-macros
+
+While trying to work around a different Clang-IAS bug (parent changeset), I
+stumbled onto:
+
+  In file included from arch/x86/asm-macros.c:3:
+  ./arch/x86/include/asm/spec_ctrl_asm.h:144:19: error: \u used with
+  no following hex digits; treating as '\' followed by identifier [-Werror,-Wunicode]
+  .L\@_fill_rsb_loop\uniq:
+                    ^
+
+It turns out that Clang -E is sensitive to the file extension of the source
+file it is processing.  Furthermore, C explicitly permits the use of \u
+escapes in identifier names, so the diagnostic would be reasonable in
+principle if we trying to compile the result.
+
+asm-macros should really have been .S from the outset, as it is ultimately
+generating assembly, not C.  Rename it, which causes Clang not to complain.
+
+We need to introduce rules for generating a .i file from .S, and substituting
+c_flags for a_flags lets us drop the now-redundant -D__ASSEMBLY__.
+
+No functional change.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 53f0d02040b1df08f0589f162790ca376e1c2040
+master date: 2023-02-24 17:44:29 +0000
+---
+ xen/Rules.mk                                | 6 ++++++
+ xen/arch/x86/Makefile                       | 2 +-
+ xen/arch/x86/{asm-macros.c => asm-macros.S} | 0
+ 3 files changed, 7 insertions(+), 1 deletion(-)
+ rename xen/arch/x86/{asm-macros.c => asm-macros.S} (100%)
+
+diff --git a/xen/Rules.mk b/xen/Rules.mk
+index d6b7cec0a8..59072ae8df 100644
+--- a/xen/Rules.mk
++++ b/xen/Rules.mk
+@@ -273,6 +273,9 @@ $(filter %.init.o,$(obj-y) $(obj-bin-y) $(extra-y)): $(obj)/%.init.o: $(obj)/%.o
+ quiet_cmd_cpp_i_c = CPP     $@
+ cmd_cpp_i_c = $(CPP) $(call cpp_flags,$(c_flags)) -MQ $@ -o $@ $<
+ 
++quiet_cmd_cpp_i_S = CPP     $@
++cmd_cpp_i_S = $(CPP) $(call cpp_flags,$(a_flags)) -MQ $@ -o $@ $<
++
+ quiet_cmd_cc_s_c = CC      $@
+ cmd_cc_s_c = $(CC) $(filter-out -Wa$(comma)%,$(c_flags)) -S $< -o $@
+ 
+@@ -282,6 +285,9 @@ cmd_cpp_s_S = $(CPP) $(call cpp_flags,$(a_flags)) -MQ $@ -o $@ $<
+ $(obj)/%.i: $(src)/%.c FORCE
+ 	$(call if_changed_dep,cpp_i_c)
+ 
++$(obj)/%.i: $(src)/%.S FORCE
++	$(call if_changed_dep,cpp_i_S)
++
+ $(obj)/%.s: $(src)/%.c FORCE
+ 	$(call if_changed_dep,cc_s_c)
+ 
+diff --git a/xen/arch/x86/Makefile b/xen/arch/x86/Makefile
+index 177a2ff742..5accbe4c67 100644
+--- a/xen/arch/x86/Makefile
++++ b/xen/arch/x86/Makefile
+@@ -240,7 +240,7 @@ $(obj)/efi/buildid.o $(obj)/efi/relocs-dummy.o: ;
+ .PHONY: include
+ include: $(objtree)/arch/x86/include/asm/asm-macros.h
+ 
+-$(obj)/asm-macros.i: CFLAGS-y += -D__ASSEMBLY__ -P
++$(obj)/asm-macros.i: CFLAGS-y += -P
+ 
+ $(objtree)/arch/x86/include/asm/asm-macros.h: $(obj)/asm-macros.i $(src)/Makefile
+ 	$(call filechk,asm-macros.h)
+diff --git a/xen/arch/x86/asm-macros.c b/xen/arch/x86/asm-macros.S
+similarity index 100%
+rename from xen/arch/x86/asm-macros.c
+rename to xen/arch/x86/asm-macros.S
+-- 
+2.30.2
+

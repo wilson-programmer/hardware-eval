@@ -1,0 +1,97 @@
+From edf5b8627fc8568d14bffef400a9753bf7ce5766 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 11 Sep 2020 14:07:34 +0200
+Subject: [PATCH] x86/tsc: Fix diagnostics for TSC frequency
+
+A Gemini Lake platform prints:
+
+  (XEN) CPU0: TSC: 19200000MHz * 279 / 3 = 1785600000MHz
+  (XEN) CPU0: 800..1800 MHz
+
+during boot.  The units on the first line are Hz, not MHz, so correct that and
+add a space for clarity.
+
+Also, for the min/max line, use three dots instead of two and add more spaces
+so that the line can't be mistaken for being a double decimal point typo.
+
+Boot now reads:
+
+  (XEN) CPU0: TSC: 19200000 Hz * 279 / 3 = 1785600000 Hz
+  (XEN) CPU0: 800 ... 1800 MHz
+
+Extend these changes to the other TSC diagnostics.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: b2bc1e714462c6cc222e3bbc38d87b039b4fa405
+master date: 2020-08-05 17:35:11 +0100
+---
+ xen/arch/x86/cpu/amd.c   |  4 ++--
+ xen/arch/x86/cpu/intel.c | 12 ++++++------
+ 2 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/xen/arch/x86/cpu/amd.c b/xen/arch/x86/cpu/amd.c
+index 0cc6853c42..8bc51bec10 100644
+--- a/xen/arch/x86/cpu/amd.c
++++ b/xen/arch/x86/cpu/amd.c
+@@ -624,10 +624,10 @@ void amd_log_freq(const struct cpuinfo_x86 *c)
+ 	if (idx && idx < h &&
+ 	    !rdmsr_safe(0xC0010064 + idx, val) && (val >> 63) &&
+ 	    !rdmsr_safe(0xC0010064, hi) && (hi >> 63))
+-		printk("CPU%u: %lu (%lu..%lu) MHz\n",
++		printk("CPU%u: %lu (%lu ... %lu) MHz\n",
+ 		       smp_processor_id(), FREQ(val), FREQ(lo), FREQ(hi));
+ 	else if (h && !rdmsr_safe(0xC0010064, hi) && (hi >> 63))
+-		printk("CPU%u: %lu..%lu MHz\n",
++		printk("CPU%u: %lu ... %lu MHz\n",
+ 		       smp_processor_id(), FREQ(lo), FREQ(hi));
+ 	else
+ 		printk("CPU%u: %lu MHz\n", smp_processor_id(), FREQ(lo));
+diff --git a/xen/arch/x86/cpu/intel.c b/xen/arch/x86/cpu/intel.c
+index 69e99bb358..37439071d9 100644
+--- a/xen/arch/x86/cpu/intel.c
++++ b/xen/arch/x86/cpu/intel.c
+@@ -396,14 +396,14 @@ static void intel_log_freq(const struct cpuinfo_x86 *c)
+ 
+             val *= ebx;
+             do_div(val, eax);
+-            printk("CPU%u: TSC: %uMHz * %u / %u = %LuMHz\n",
++            printk("CPU%u: TSC: %u Hz * %u / %u = %Lu Hz\n",
+                    smp_processor_id(), ecx, ebx, eax, val);
+         }
+         else if ( ecx | eax | ebx )
+         {
+             printk("CPU%u: TSC:", smp_processor_id());
+             if ( ecx )
+-                printk(" core: %uMHz", ecx);
++                printk(" core: %u Hz", ecx);
+             if ( ebx && eax )
+                 printk(" ratio: %u / %u", ebx, eax);
+             printk("\n");
+@@ -417,11 +417,11 @@ static void intel_log_freq(const struct cpuinfo_x86 *c)
+         {
+             printk("CPU%u:", smp_processor_id());
+             if ( ecx )
+-                printk(" bus: %uMHz", ecx);
++                printk(" bus: %u MHz", ecx);
+             if ( eax )
+-                printk(" base: %uMHz", eax);
++                printk(" base: %u MHz", eax);
+             if ( ebx )
+-                printk(" max: %uMHz", ebx);
++                printk(" max: %u MHz", ebx);
+             printk("\n");
+         }
+     }
+@@ -446,7 +446,7 @@ static void intel_log_freq(const struct cpuinfo_x86 *c)
+ 
+         printk("CPU%u: ", smp_processor_id());
+         if ( min_ratio )
+-            printk("%u..", (factor * min_ratio + 50) / 100);
++            printk("%u ... ", (factor * min_ratio + 50) / 100);
+         printk("%u MHz\n", (factor * max_ratio + 50) / 100);
+     }
+ }
+-- 
+2.30.2
+

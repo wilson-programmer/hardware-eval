@@ -1,0 +1,118 @@
+From d9e73f6320b311d739546d6325e530f07392c100 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Fri, 8 Apr 2022 15:03:46 +0200
+Subject: [PATCH] livepatch: avoid relocations referencing ignored section
+ symbols
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Track whether symbols belong to ignored sections in order to avoid
+applying relocations referencing those symbols. The address of such
+symbols won't be resolved and thus the relocation will likely fail or
+write garbage to the destination.
+
+Return an error in that case, as leaving unresolved relocations would
+lead to malfunctioning payload code.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Tested-by: Bjoern Doebel <doebel@amazon.de>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+master commit: 9120b5737f517fe9d2a3936c38d3a2211630323b
+master date: 2022-04-08 10:27:11 +0200
+---
+ xen/arch/arm/arm32/livepatch.c  | 7 +++++++
+ xen/arch/arm/arm64/livepatch.c  | 7 +++++++
+ xen/arch/x86/livepatch.c        | 7 +++++++
+ xen/common/livepatch_elf.c      | 6 ++++++
+ xen/include/xen/livepatch_elf.h | 1 +
+ 5 files changed, 28 insertions(+)
+
+diff --git a/xen/arch/arm/arm32/livepatch.c b/xen/arch/arm/arm32/livepatch.c
+index 5a06467008..3c50283b2a 100644
+--- a/xen/arch/arm/arm32/livepatch.c
++++ b/xen/arch/arm/arm32/livepatch.c
+@@ -272,6 +272,13 @@ int arch_livepatch_perform(struct livepatch_elf *elf,
+                    elf->name, symndx);
+             return -EINVAL;
+         }
++        else if ( elf->sym[symndx].ignored )
++        {
++            printk(XENLOG_ERR LIVEPATCH
++                   "%s: Relocation against ignored symbol %s cannot be resolved\n",
++                   elf->name, elf->sym[symndx].name);
++            return -EINVAL;
++        }
+ 
+         val = elf->sym[symndx].sym->st_value; /* S */
+ 
+diff --git a/xen/arch/arm/arm64/livepatch.c b/xen/arch/arm/arm64/livepatch.c
+index 6ec8dc60f0..62d2ef373a 100644
+--- a/xen/arch/arm/arm64/livepatch.c
++++ b/xen/arch/arm/arm64/livepatch.c
+@@ -270,6 +270,13 @@ int arch_livepatch_perform_rela(struct livepatch_elf *elf,
+                    elf->name, symndx);
+             return -EINVAL;
+         }
++        else if ( elf->sym[symndx].ignored )
++        {
++            printk(XENLOG_ERR LIVEPATCH
++                   "%s: Relocation against ignored symbol %s cannot be resolved\n",
++                   elf->name, elf->sym[symndx].name);
++            return -EINVAL;
++        }
+ 
+         val = elf->sym[symndx].sym->st_value +  r->r_addend; /* S+A */
+ 
+diff --git a/xen/arch/x86/livepatch.c b/xen/arch/x86/livepatch.c
+index a3cb63a7ea..0172610ebf 100644
+--- a/xen/arch/x86/livepatch.c
++++ b/xen/arch/x86/livepatch.c
+@@ -290,6 +290,13 @@ int arch_livepatch_perform_rela(struct livepatch_elf *elf,
+                    elf->name, symndx);
+             return -EINVAL;
+         }
++        else if ( elf->sym[symndx].ignored )
++        {
++            printk(XENLOG_ERR LIVEPATCH
++                   "%s: Relocation against ignored symbol %s cannot be resolved\n",
++                   elf->name, elf->sym[symndx].name);
++            return -EINVAL;
++        }
+ 
+         val = r->r_addend + elf->sym[symndx].sym->st_value;
+ 
+diff --git a/xen/common/livepatch_elf.c b/xen/common/livepatch_elf.c
+index b089cacb1c..45d73912a3 100644
+--- a/xen/common/livepatch_elf.c
++++ b/xen/common/livepatch_elf.c
+@@ -334,7 +334,13 @@ int livepatch_elf_resolve_symbols(struct livepatch_elf *elf)
+             }
+ 
+             if ( livepatch_elf_ignore_section(elf->sec[idx].sec) )
++            {
++                dprintk(XENLOG_DEBUG, LIVEPATCH
++                        "%s: Symbol %s from section %s ignored\n",
++                        elf->name, elf->sym[i].name, elf->sec[idx].name);
++                elf->sym[i].ignored = true;
+                 break;
++            }
+ 
+             st_value += (unsigned long)elf->sec[idx].load_addr;
+             if ( elf->sym[i].name )
+diff --git a/xen/include/xen/livepatch_elf.h b/xen/include/xen/livepatch_elf.h
+index 5b1ec469da..7116deaddc 100644
+--- a/xen/include/xen/livepatch_elf.h
++++ b/xen/include/xen/livepatch_elf.h
+@@ -22,6 +22,7 @@ struct livepatch_elf_sec {
+ struct livepatch_elf_sym {
+     const Elf_Sym *sym;
+     const char *name;
++    bool ignored;
+ };
+ 
+ struct livepatch_elf {
+-- 
+2.30.2
+

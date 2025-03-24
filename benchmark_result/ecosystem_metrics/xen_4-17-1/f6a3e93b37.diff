@@ -1,0 +1,51 @@
+From f6a3e93b3788aa009e9b86d9cb14c243b958daa9 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 31 Mar 2023 08:32:57 +0200
+Subject: [PATCH] x86/vmx: Don't spuriously crash the domain when INIT is
+ received
+
+In VMX operation, the handling of INIT IPIs is changed.  Instead of the CPU
+resetting, the next VMEntry fails with EXIT_REASON_INIT.  From the TXT spec,
+the intent of this behaviour is so that an entity which cares can scrub
+secrets from RAM before participating in an orderly shutdown.
+
+Right now, Xen's behaviour is that when an INIT arrives, the HVM VM which
+schedules next is killed (citing an unknown VMExit), *and* we ignore the INIT
+and continue blindly onwards anyway.
+
+This patch addresses only the first of these two problems by ignoring the INIT
+and continuing without crashing the VM in question.
+
+The second wants addressing too, just as soon as we've figured out something
+better to do...
+
+Discovered as collateral damage from when an AP triple faults on S3 resume on
+Intel TigerLake platforms.
+
+Link: https://github.com/QubesOS/qubes-issues/issues/7283
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: b1f11273d5a774cc88a3685c96c2e7cf6385e3b6
+master date: 2023-03-24 22:49:58 +0000
+---
+ xen/arch/x86/hvm/vmx/vmx.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index a8fb4365ad..64dbd50197 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -4038,6 +4038,10 @@ void vmx_vmexit_handler(struct cpu_user_regs *regs)
+     case EXIT_REASON_MCE_DURING_VMENTRY:
+         do_machine_check(regs);
+         break;
++
++    case EXIT_REASON_INIT:
++        printk(XENLOG_ERR "Error: INIT received - ignoring\n");
++        return; /* Renter the guest without further processing */
+     }
+ 
+     /* Now enable interrupts so it's safe to take locks. */
+-- 
+2.30.2
+

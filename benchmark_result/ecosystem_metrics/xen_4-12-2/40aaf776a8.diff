@@ -1,0 +1,106 @@
+From 40aaf776a897e459876bd4766a194d30b2ae864a Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 6 Dec 2019 12:43:43 +0100
+Subject: [PATCH] x86/vtx: Fix fault semantics for early task switch failures
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The VT-x task switch handler adds inst_len to %rip before calling
+hvm_task_switch(), which is problematic in two ways:
+
+ 1) Early faults (i.e. ones delivered in the context of the old task) get
+    delivered with trap semantics, and break restartibility.
+
+ 2) The addition isn't truncated to 32 bits.  In the corner case of a task
+    switch instruction crossing the 4G->0 boundary taking an early fault (with
+    trap semantics), a VMEntry failure will occur due to %rip being out of
+    range.
+
+Instead, pass the instruction length into hvm_task_switch() and write it into
+the outgoing TSS only, leaving %rip in its original location.
+
+For now, pass 0 on the SVM side.  This highlights a separate preexisting bug
+which will be addressed in the following patch.
+
+While adjusting call sites, drop the unnecessary uint16_t cast.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 943c74bc0ee5044a826e428a3b2ffbdf9a43628d
+master date: 2019-11-28 17:14:38 +0000
+---
+ xen/arch/x86/hvm/hvm.c        | 4 ++--
+ xen/arch/x86/hvm/svm/svm.c    | 2 +-
+ xen/arch/x86/hvm/vmx/vmx.c    | 4 ++--
+ xen/include/asm-x86/hvm/hvm.h | 2 +-
+ 4 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/hvm.c b/xen/arch/x86/hvm/hvm.c
+index 2128f62243..c87dfe6155 100644
+--- a/xen/arch/x86/hvm/hvm.c
++++ b/xen/arch/x86/hvm/hvm.c
+@@ -2897,7 +2897,7 @@ void hvm_prepare_vm86_tss(struct vcpu *v, uint32_t base, uint32_t limit)
+ 
+ void hvm_task_switch(
+     uint16_t tss_sel, enum hvm_task_switch_reason taskswitch_reason,
+-    int32_t errcode)
++    int32_t errcode, unsigned int insn_len)
+ {
+     struct vcpu *v = current;
+     struct cpu_user_regs *regs = guest_cpu_user_regs();
+@@ -2971,7 +2971,7 @@ void hvm_task_switch(
+     if ( taskswitch_reason == TSW_iret )
+         eflags &= ~X86_EFLAGS_NT;
+ 
+-    tss.eip    = regs->eip;
++    tss.eip    = regs->eip + insn_len;
+     tss.eflags = eflags;
+     tss.eax    = regs->eax;
+     tss.ecx    = regs->ecx;
+diff --git a/xen/arch/x86/hvm/svm/svm.c b/xen/arch/x86/hvm/svm/svm.c
+index bce2857f31..1ebf3cd7f9 100644
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -2890,7 +2890,7 @@ void svm_vmexit_handler(struct cpu_user_regs *regs)
+          */
+         vmcb->eventinj.bytes = 0;
+ 
+-        hvm_task_switch((uint16_t)vmcb->exitinfo1, reason, errcode);
++        hvm_task_switch(vmcb->exitinfo1, reason, errcode, 0);
+         break;
+     }
+ 
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index bae7a6a62b..ad379fb26e 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -4062,8 +4062,8 @@ void vmx_vmexit_handler(struct cpu_user_regs *regs)
+             __vmread(IDT_VECTORING_ERROR_CODE, &ecode);
+         else
+              ecode = -1;
+-        regs->rip += inst_len;
+-        hvm_task_switch((uint16_t)exit_qualification, reasons[source], ecode);
++
++        hvm_task_switch(exit_qualification, reasons[source], ecode, inst_len);
+         break;
+     }
+     case EXIT_REASON_CPUID:
+diff --git a/xen/include/asm-x86/hvm/hvm.h b/xen/include/asm-x86/hvm/hvm.h
+index 53ffebb2c5..ad9fd45014 100644
+--- a/xen/include/asm-x86/hvm/hvm.h
++++ b/xen/include/asm-x86/hvm/hvm.h
+@@ -302,7 +302,7 @@ void hvm_set_rdtsc_exiting(struct domain *d, bool_t enable);
+ enum hvm_task_switch_reason { TSW_jmp, TSW_iret, TSW_call_or_int };
+ void hvm_task_switch(
+     uint16_t tss_sel, enum hvm_task_switch_reason taskswitch_reason,
+-    int32_t errcode);
++    int32_t errcode, unsigned int insn_len);
+ 
+ enum hvm_access_type {
+     hvm_access_insn_fetch,
+-- 
+2.30.2
+

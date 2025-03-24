@@ -1,0 +1,43 @@
+From 1d1d1f5391976456a79daac0dcfe7157da1e54f7 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roge.rpau@citrix.com>
+Date: Tue, 1 Dec 2020 15:34:55 +0100
+Subject: [PATCH] x86/vioapic: fix usage of index in place of GSI in
+ vioapic_write_redirent
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The usage of idx instead of the GSI in vioapic_write_redirent when
+accessing gsi_assert_count can cause a PVH dom0 with multiple
+vIO-APICs to lose interrupts in case a pin of a IO-APIC different than
+the first one is unmasked with pending interrupts.
+
+Switch to use gsi instead to fix the issue.
+
+Fixes: 9f44b08f7d0e4 ('x86/vioapic: introduce support for multiple vIO APICS')
+Reported-by: Manuel Bouyer <bouyer@antioche.eu.org>
+Signed-off-by: Roger Pau MonnÃ© <roge.rpau@citrix.com>
+Tested-by: Manuel Bouyer <bouyer@antioche.eu.org>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 3ae469af8e680df31eecd0a2ac6a83b58ad7ce53
+master date: 2020-11-30 14:06:38 +0100
+---
+ xen/arch/x86/hvm/vioapic.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/vioapic.c b/xen/arch/x86/hvm/vioapic.c
+index b87facb0e0..52c5c636e3 100644
+--- a/xen/arch/x86/hvm/vioapic.c
++++ b/xen/arch/x86/hvm/vioapic.c
+@@ -260,7 +260,7 @@ static void vioapic_write_redirent(
+         pent->fields.remote_irr = 0;
+     else if ( !ent.fields.mask &&
+               !ent.fields.remote_irr &&
+-              hvm_irq->gsi_assert_count[idx] )
++              hvm_irq->gsi_assert_count[gsi] )
+     {
+         pent->fields.remote_irr = 1;
+         vioapic_deliver(vioapic, idx);
+-- 
+2.30.2
+

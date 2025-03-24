@@ -1,0 +1,95 @@
+From e6854fe54707517549e8abec1d0f19f1284415ac Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 5 Mar 2020 11:02:02 +0100
+Subject: [PATCH] xen/pvh: Fix segment selector ABI
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The written ABI states that %es will be set up, but libxc doesn't do so.  In
+practice, it breaks `rep movs` inside guests before they reload %es.
+
+The written ABI doesn't mention %ss, but libxc does set it up.  Having %ds
+different to %ss is obnoxous to work with, as different registers have
+different implicit segments.
+
+Modify the spec to state that %ss is set up as a flat read/write segment.
+This a) matches the Multiboot 1 spec, b) matches what is set up in practice,
+and c) is the more sane behaviour for guests to use.
+
+Fixes: 68e1183411b ('libxc: introduce a xc_dom_arch for hvm-3.0-x86_32 guests')
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+
+x86/pvh: Adjust dom0's starting state
+
+Fixes: b25fb1a04e "xen/pvh: Fix segment selector ABI"
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: b25fb1a04e99cc03359eade1affb56ef0eee766f
+master date: 2020-02-10 15:26:09 +0000
+master commit: 6ee10313623c1f41fc72fe12372e176e744463c1
+master date: 2020-02-11 11:04:26 +0000
+---
+ docs/misc/pvh.pandoc          | 2 +-
+ tools/libxc/xc_dom_x86.c      | 3 +++
+ xen/arch/x86/hvm/dom0_build.c | 2 ++
+ 3 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/docs/misc/pvh.pandoc b/docs/misc/pvh.pandoc
+index f892e6e641..ccf1c8fe69 100644
+--- a/docs/misc/pvh.pandoc
++++ b/docs/misc/pvh.pandoc
+@@ -23,7 +23,7 @@ following machine state:
+  * `cs`: must be a 32-bit read/execute code segment with a base of â0â
+    and a limit of â0xFFFFFFFFâ. The selector value is unspecified.
+ 
+- * `ds`, `es`: must be a 32-bit read/write data segment with a base of
++ * `ds`, `es`, `ss`: must be a 32-bit read/write data segment with a base of
+    â0â and a limit of â0xFFFFFFFFâ. The selector values are all unspecified.
+ 
+  * `tr`: must be a 32-bit TSS (active) with a base of '0' and a limit of '0x67'.
+diff --git a/tools/libxc/xc_dom_x86.c b/tools/libxc/xc_dom_x86.c
+index 9e279d6768..89947fe459 100644
+--- a/tools/libxc/xc_dom_x86.c
++++ b/tools/libxc/xc_dom_x86.c
+@@ -1022,14 +1022,17 @@ static int vcpu_hvm(struct xc_dom_image *dom)
+     /* Set the cached part of the relevant segment registers. */
+     bsp_ctx.cpu.cs_base = 0;
+     bsp_ctx.cpu.ds_base = 0;
++    bsp_ctx.cpu.es_base = 0;
+     bsp_ctx.cpu.ss_base = 0;
+     bsp_ctx.cpu.tr_base = 0;
+     bsp_ctx.cpu.cs_limit = ~0u;
+     bsp_ctx.cpu.ds_limit = ~0u;
++    bsp_ctx.cpu.es_limit = ~0u;
+     bsp_ctx.cpu.ss_limit = ~0u;
+     bsp_ctx.cpu.tr_limit = 0x67;
+     bsp_ctx.cpu.cs_arbytes = 0xc9b;
+     bsp_ctx.cpu.ds_arbytes = 0xc93;
++    bsp_ctx.cpu.es_arbytes = 0xc93;
+     bsp_ctx.cpu.ss_arbytes = 0xc93;
+     bsp_ctx.cpu.tr_arbytes = 0x8b;
+ 
+diff --git a/xen/arch/x86/hvm/dom0_build.c b/xen/arch/x86/hvm/dom0_build.c
+index 831325150b..380412151b 100644
+--- a/xen/arch/x86/hvm/dom0_build.c
++++ b/xen/arch/x86/hvm/dom0_build.c
+@@ -626,10 +626,12 @@ static int __init pvh_setup_cpus(struct domain *d, paddr_t entry,
+         .cpu_regs.x86_32.cr0 = X86_CR0_PE | X86_CR0_ET,
+         .cpu_regs.x86_32.cs_limit = ~0u,
+         .cpu_regs.x86_32.ds_limit = ~0u,
++        .cpu_regs.x86_32.es_limit = ~0u,
+         .cpu_regs.x86_32.ss_limit = ~0u,
+         .cpu_regs.x86_32.tr_limit = 0x67,
+         .cpu_regs.x86_32.cs_ar = 0xc9b,
+         .cpu_regs.x86_32.ds_ar = 0xc93,
++        .cpu_regs.x86_32.es_ar = 0xc93,
+         .cpu_regs.x86_32.ss_ar = 0xc93,
+         .cpu_regs.x86_32.tr_ar = 0x8b,
+     };
+-- 
+2.30.2
+

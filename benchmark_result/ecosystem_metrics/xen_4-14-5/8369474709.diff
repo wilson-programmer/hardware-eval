@@ -1,0 +1,67 @@
+From 83694747099ee34fe38bc1ac761dacc41026d3ee Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Thu, 7 Apr 2022 09:05:23 +0200
+Subject: [PATCH] build: fix exported variable name CFLAGS_stack_boundary
+
+Exporting a variable with a dash doesn't work reliably, they may be
+striped from the environment when calling a sub-make or sub-shell.
+
+CFLAGS-stack-boundary start to be removed from env in patch "build:
+set ALL_OBJS in main Makefile; move prelink.o to main Makefile" when
+running `make "ALL_OBJS=.."` due to the addition of the quote. At
+least in my empirical tests.
+
+Fixes: 2740d96efd ("xen/build: have the root Makefile generates the CFLAGS")
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: aa390d513a67a6ec0a069eea7478e5ecd54a7ea6
+master date: 2022-01-28 11:44:33 +0100
+---
+ xen/arch/x86/Rules.mk     | 4 ++--
+ xen/arch/x86/arch.mk      | 4 ++--
+ xen/arch/x86/efi/Makefile | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/x86/Rules.mk b/xen/arch/x86/Rules.mk
+index 56fe22c979..7aef93f5f3 100644
+--- a/xen/arch/x86/Rules.mk
++++ b/xen/arch/x86/Rules.mk
+@@ -6,5 +6,5 @@ object_label_flags = '-D__OBJECT_LABEL__=$(subst $(BASEDIR)/,,$(CURDIR))/$@'
+ else
+ object_label_flags = '-D__OBJECT_LABEL__=$(subst /,$$,$(subst -,_,$(subst $(BASEDIR)/,,$(CURDIR))/$@))'
+ endif
+-c_flags += $(object_label_flags) $(CFLAGS-stack-boundary)
+-a_flags += $(object_label_flags) $(CFLAGS-stack-boundary)
++c_flags += $(object_label_flags) $(CFLAGS_stack_boundary)
++a_flags += $(object_label_flags) $(CFLAGS_stack_boundary)
+diff --git a/xen/arch/x86/arch.mk b/xen/arch/x86/arch.mk
+index 7a7ff7dd7d..329ff8e541 100644
+--- a/xen/arch/x86/arch.mk
++++ b/xen/arch/x86/arch.mk
+@@ -56,8 +56,8 @@ endif
+ 
+ # If supported by the compiler, reduce stack alignment to 8 bytes. But allow
+ # this to be overridden elsewhere.
+-$(call cc-option-add,CFLAGS-stack-boundary,CC,-mpreferred-stack-boundary=3)
+-export CFLAGS-stack-boundary
++$(call cc-option-add,CFLAGS_stack_boundary,CC,-mpreferred-stack-boundary=3)
++export CFLAGS_stack_boundary
+ 
+ ifeq ($(CONFIG_UBSAN),y)
+ # Don't enable alignment sanitisation.  x86 has efficient unaligned accesses,
+diff --git a/xen/arch/x86/efi/Makefile b/xen/arch/x86/efi/Makefile
+index 3e4c395b75..a26fc2d1a5 100644
+--- a/xen/arch/x86/efi/Makefile
++++ b/xen/arch/x86/efi/Makefile
+@@ -11,7 +11,7 @@ boot.init.o: buildid.o
+ EFIOBJ := boot.init.o compat.o runtime.o
+ 
+ $(call cc-option-add,cflags-stack-boundary,CC,-mpreferred-stack-boundary=4)
+-$(EFIOBJ): CFLAGS-stack-boundary := $(cflags-stack-boundary)
++$(EFIOBJ): CFLAGS_stack_boundary := $(cflags-stack-boundary)
+ 
+ obj-y := stub.o
+ obj-$(XEN_BUILD_EFI) := $(EFIOBJ) relocs-dummy.o
+-- 
+2.30.2
+

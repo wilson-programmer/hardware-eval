@@ -1,0 +1,58 @@
+From 6e542a835de8554eae716e17cc565a2f7e217b39 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Wed, 27 Jul 2022 09:19:41 +0200
+Subject: [PATCH] tools/init-xenstore-domain: fix memory map for PVH stubdom
+
+In case of maxmem != memsize the E820 map of the PVH stubdom is wrong,
+as it is missing the RAM above memsize.
+
+Additionally the memory map should only specify the Xen special pages
+as reserved.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: 134d53f577076d4f26091e25762f27cc3c73bf58
+master date: 2022-07-12 15:25:20 +0200
+---
+ tools/helpers/init-xenstore-domain.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/tools/helpers/init-xenstore-domain.c b/tools/helpers/init-xenstore-domain.c
+index b205a79ee6..11ebf79e6d 100644
+--- a/tools/helpers/init-xenstore-domain.c
++++ b/tools/helpers/init-xenstore-domain.c
+@@ -72,8 +72,9 @@ static int build(xc_interface *xch)
+     char cmdline[512];
+     int rv, xs_fd;
+     struct xc_dom_image *dom = NULL;
+-    int limit_kb = (maxmem ? : (memory + 1)) * 1024;
++    int limit_kb = (maxmem ? : memory) * 1024 + X86_HVM_NR_SPECIAL_PAGES * 4;
+     uint64_t mem_size = MB(memory);
++    uint64_t max_size = MB(maxmem ? : memory);
+     struct e820entry e820[3];
+     struct xen_domctl_createdomain config = {
+         .ssidref = SECINITSID_DOMU,
+@@ -166,13 +167,16 @@ static int build(xc_interface *xch)
+         dom->mmio_start = LAPIC_BASE_ADDRESS;
+         dom->max_vcpus = 1;
+         e820[0].addr = 0;
+-        e820[0].size = dom->lowmem_end;
++        e820[0].size = (max_size > LAPIC_BASE_ADDRESS) ?
++                       LAPIC_BASE_ADDRESS : max_size;
+         e820[0].type = E820_RAM;
+-        e820[1].addr = LAPIC_BASE_ADDRESS;
+-        e820[1].size = dom->mmio_size;
++        e820[1].addr = (X86_HVM_END_SPECIAL_REGION -
++                        X86_HVM_NR_SPECIAL_PAGES) << XC_PAGE_SHIFT;
++        e820[1].size = X86_HVM_NR_SPECIAL_PAGES << XC_PAGE_SHIFT;
+         e820[1].type = E820_RESERVED;
+         e820[2].addr = GB(4);
+-        e820[2].size = dom->highmem_end - GB(4);
++        e820[2].size = (max_size > LAPIC_BASE_ADDRESS) ?
++                       max_size - LAPIC_BASE_ADDRESS : 0;
+         e820[2].type = E820_RAM;
+     }
+ 
+-- 
+2.30.2
+

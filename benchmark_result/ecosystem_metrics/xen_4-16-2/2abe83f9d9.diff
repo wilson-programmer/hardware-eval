@@ -1,0 +1,152 @@
+From 2abe83f9d91e6411b5b42a3d5d01593e83c2bf9f Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 15 Aug 2022 15:36:56 +0200
+Subject: [PATCH] PCI: simplify (and thus correct) pci_get_pdev{,_by_domain}()
+
+The last "wildcard" use of either function went away with f591755823a7
+("IOMMU/PCI: don't let domain cleanup continue when device de-assignment
+failed"). Don't allow them to be called this way anymore. Besides
+simplifying the code this also fixes two bugs:
+
+1) When seg != -1, the outer loops should have been terminated after the
+   first iteration, or else a device with the same BDF but on another
+   segment could be found / returned.
+
+Reported-by: Rahul Singh <rahul.singh@arm.com>
+
+2) When seg == -1 calling get_pseg() is bogus. The function (taking a
+   u16) would look for segment 0xffff, which might exist. If it exists,
+   we might then find / return a wrong device.
+
+In pci_get_pdev_by_domain() also switch from using the per-segment list
+to using the per-domain one, with the exception of the hardware domain
+(see the code comment there).
+
+While there also constify "pseg" and drop "pdev"'s already previously
+unnecessary initializer.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Rahul Singh <rahul.singh@arm.com>
+Tested-by: Rahul Singh <rahul.singh@arm.com>
+master commit: 8cf6e0738906fc269af40135ed82a07815dd3b9c
+master date: 2022-08-12 08:34:33 +0200
+---
+ xen/drivers/passthrough/pci.c | 61 +++++++++++++++--------------------
+ xen/include/xen/pci.h         |  6 ++--
+ 2 files changed, 29 insertions(+), 38 deletions(-)
+
+diff --git a/xen/drivers/passthrough/pci.c b/xen/drivers/passthrough/pci.c
+index e0491c908f..da4ecda814 100644
+--- a/xen/drivers/passthrough/pci.c
++++ b/xen/drivers/passthrough/pci.c
+@@ -507,30 +507,19 @@ int __init pci_ro_device(int seg, int bus, int devfn)
+     return 0;
+ }
+ 
+-struct pci_dev *pci_get_pdev(int seg, int bus, int devfn)
++struct pci_dev *pci_get_pdev(uint16_t seg, uint8_t bus, uint8_t devfn)
+ {
+-    struct pci_seg *pseg = get_pseg(seg);
+-    struct pci_dev *pdev = NULL;
++    const struct pci_seg *pseg = get_pseg(seg);
++    struct pci_dev *pdev;
+ 
+     ASSERT(pcidevs_locked());
+-    ASSERT(seg != -1 || bus == -1);
+-    ASSERT(bus != -1 || devfn == -1);
+ 
+     if ( !pseg )
+-    {
+-        if ( seg == -1 )
+-            radix_tree_gang_lookup(&pci_segments, (void **)&pseg, 0, 1);
+-        if ( !pseg )
+-            return NULL;
+-    }
++        return NULL;
+ 
+-    do {
+-        list_for_each_entry ( pdev, &pseg->alldevs_list, alldevs_list )
+-            if ( (pdev->bus == bus || bus == -1) &&
+-                 (pdev->devfn == devfn || devfn == -1) )
+-                return pdev;
+-    } while ( radix_tree_gang_lookup(&pci_segments, (void **)&pseg,
+-                                     pseg->nr + 1, 1) );
++    list_for_each_entry ( pdev, &pseg->alldevs_list, alldevs_list )
++        if ( pdev->bus == bus && pdev->devfn == devfn )
++            return pdev;
+ 
+     return NULL;
+ }
+@@ -556,31 +545,33 @@ struct pci_dev *pci_get_real_pdev(int seg, int bus, int devfn)
+     return pdev;
+ }
+ 
+-struct pci_dev *pci_get_pdev_by_domain(const struct domain *d, int seg,
+-                                       int bus, int devfn)
++struct pci_dev *pci_get_pdev_by_domain(const struct domain *d, uint16_t seg,
++                                       uint8_t bus, uint8_t devfn)
+ {
+-    struct pci_seg *pseg = get_pseg(seg);
+-    struct pci_dev *pdev = NULL;
+-
+-    ASSERT(seg != -1 || bus == -1);
+-    ASSERT(bus != -1 || devfn == -1);
++    struct pci_dev *pdev;
+ 
+-    if ( !pseg )
++    /*
++     * The hardware domain owns the majority of the devices in the system.
++     * When there are multiple segments, traversing the per-segment list is
++     * likely going to be faster, whereas for a single segment the difference
++     * shouldn't be that large.
++     */
++    if ( is_hardware_domain(d) )
+     {
+-        if ( seg == -1 )
+-            radix_tree_gang_lookup(&pci_segments, (void **)&pseg, 0, 1);
++        const struct pci_seg *pseg = get_pseg(seg);
++
+         if ( !pseg )
+             return NULL;
+-    }
+ 
+-    do {
+         list_for_each_entry ( pdev, &pseg->alldevs_list, alldevs_list )
+-            if ( (pdev->bus == bus || bus == -1) &&
+-                 (pdev->devfn == devfn || devfn == -1) &&
+-                 (pdev->domain == d) )
++            if ( pdev->bus == bus && pdev->devfn == devfn &&
++                 pdev->domain == d )
++                return pdev;
++    }
++    else
++        list_for_each_entry ( pdev, &d->pdev_list, domain_list )
++            if ( pdev->bus == bus && pdev->devfn == devfn )
+                 return pdev;
+-    } while ( radix_tree_gang_lookup(&pci_segments, (void **)&pseg,
+-                                     pseg->nr + 1, 1) );
+ 
+     return NULL;
+ }
+diff --git a/xen/include/xen/pci.h b/xen/include/xen/pci.h
+index b6d7e454f8..ac3880e686 100644
+--- a/xen/include/xen/pci.h
++++ b/xen/include/xen/pci.h
+@@ -169,10 +169,10 @@ int pci_add_device(u16 seg, u8 bus, u8 devfn,
+ int pci_remove_device(u16 seg, u8 bus, u8 devfn);
+ int pci_ro_device(int seg, int bus, int devfn);
+ int pci_hide_device(unsigned int seg, unsigned int bus, unsigned int devfn);
+-struct pci_dev *pci_get_pdev(int seg, int bus, int devfn);
++struct pci_dev *pci_get_pdev(uint16_t seg, uint8_t bus, uint8_t devfn);
+ struct pci_dev *pci_get_real_pdev(int seg, int bus, int devfn);
+-struct pci_dev *pci_get_pdev_by_domain(const struct domain *, int seg,
+-                                       int bus, int devfn);
++struct pci_dev *pci_get_pdev_by_domain(const struct domain *, uint16_t seg,
++                                       uint8_t bus, uint8_t devfn);
+ void pci_check_disable_device(u16 seg, u8 bus, u8 devfn);
+ 
+ uint8_t pci_conf_read8(pci_sbdf_t sbdf, unsigned int reg);
+-- 
+2.30.2
+

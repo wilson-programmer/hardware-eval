@@ -1,0 +1,29 @@
+From 4bb8c34ba4241c2bf7845cd8b80c17530dbfb085 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 7 Jun 2022 14:00:09 +0200
+Subject: [PATCH] xen/build: Fix dependency for the MAP rule
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: e1e72198213b80b7a82bdc90f96ed05ae4f53e20
+master date: 2022-04-20 19:10:59 +0100
+---
+ xen/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/Makefile b/xen/Makefile
+index 90a29782db..ce4eca3ee4 100644
+--- a/xen/Makefile
++++ b/xen/Makefile
+@@ -507,7 +507,7 @@ cscope:
+ 	cscope -k -b -q
+ 
+ .PHONY: _MAP
+-_MAP:
++_MAP: $(TARGET)
+ 	$(NM) -n $(TARGET)-syms | grep -v '\(compiled\)\|\(\.o$$\)\|\( [aUw] \)\|\(\.\.ng$$\)\|\(LASH[RL]DI\)' > System.map
+ 
+ %.o %.i %.s: %.c FORCE
+-- 
+2.30.2
+

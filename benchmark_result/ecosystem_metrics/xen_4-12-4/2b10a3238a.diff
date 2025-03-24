@@ -1,0 +1,73 @@
+From 2b10a3238ad1e339b8238e4ee7fe7fad210f4588 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 24 Jun 2020 16:59:21 +0200
+Subject: [PATCH] x86/build: move -fno-asynchronous-unwind-tables into
+ EMBEDDED_EXTRA_CFLAGS
+
+Users of EMBEDDED_EXTRA_CFLAGS already use -fno-asynchronous-unwind-tables, or
+ought to.  This shrinks the size of the rombios 32bit stubs in guest memory.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+---
+ Config.mk                            | 2 +-
+ tools/tests/x86_emulator/testcase.mk | 2 +-
+ xen/arch/x86/Rules.mk                | 2 +-
+ xen/arch/x86/boot/build32.mk         | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/Config.mk b/Config.mk
+index 0298482ca6..952b398174 100644
+--- a/Config.mk
++++ b/Config.mk
+@@ -235,7 +235,7 @@ APPEND_LDFLAGS += $(foreach i, $(APPEND_LIB), -L$(i))
+ APPEND_CFLAGS += $(foreach i, $(APPEND_INCLUDES), -I$(i))
+ 
+ EMBEDDED_EXTRA_CFLAGS := -nopie -fno-stack-protector -fno-stack-protector-all
+-EMBEDDED_EXTRA_CFLAGS += -fno-exceptions
++EMBEDDED_EXTRA_CFLAGS += -fno-exceptions -fno-asynchronous-unwind-tables
+ 
+ XEN_EXTFILES_URL ?= http://xenbits.xen.org/xen-extfiles
+ # All the files at that location were downloaded from elsewhere on
+diff --git a/tools/tests/x86_emulator/testcase.mk b/tools/tests/x86_emulator/testcase.mk
+index a565d15524..dafeb6caf7 100644
+--- a/tools/tests/x86_emulator/testcase.mk
++++ b/tools/tests/x86_emulator/testcase.mk
+@@ -4,7 +4,7 @@ include $(XEN_ROOT)/tools/Rules.mk
+ 
+ $(call cc-options-add,CFLAGS,CC,$(EMBEDDED_EXTRA_CFLAGS))
+ 
+-CFLAGS += -fno-builtin -fno-asynchronous-unwind-tables -g0 $($(TESTCASE)-cflags)
++CFLAGS += -fno-builtin -g0 $($(TESTCASE)-cflags)
+ 
+ .PHONY: all
+ all: $(TESTCASE).bin
+diff --git a/xen/arch/x86/Rules.mk b/xen/arch/x86/Rules.mk
+index 3f2687bbe4..1455ac904c 100644
+--- a/xen/arch/x86/Rules.mk
++++ b/xen/arch/x86/Rules.mk
+@@ -33,7 +33,7 @@ $(call as-option-add,CFLAGS,CC,\
+ $(call as-option-add,CFLAGS,CC,\
+     ".L1: .L2: .nops (.L2 - .L1)$$(comma)9",-DHAVE_AS_NOPS_DIRECTIVE)
+ 
+-CFLAGS += -mno-red-zone -fpic -fno-asynchronous-unwind-tables
++CFLAGS += -mno-red-zone -fpic
+ 
+ # Xen doesn't use SSE interally.  If the compiler supports it, also skip the
+ # SSE setup for variadic function calls.
+diff --git a/xen/arch/x86/boot/build32.mk b/xen/arch/x86/boot/build32.mk
+index 48c7407c00..5851ebff5f 100644
+--- a/xen/arch/x86/boot/build32.mk
++++ b/xen/arch/x86/boot/build32.mk
+@@ -4,7 +4,7 @@ include $(XEN_ROOT)/Config.mk
+ 
+ $(call cc-options-add,CFLAGS,CC,$(EMBEDDED_EXTRA_CFLAGS))
+ 
+-CFLAGS += -Werror -fno-asynchronous-unwind-tables -fno-builtin -g0 -msoft-float
++CFLAGS += -Werror -fno-builtin -g0 -msoft-float
+ CFLAGS += -I$(XEN_ROOT)/xen/include
+ CFLAGS := $(filter-out -flto,$(CFLAGS)) 
+ 
+-- 
+2.30.2
+

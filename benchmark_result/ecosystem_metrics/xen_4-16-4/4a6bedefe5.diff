@@ -1,0 +1,95 @@
+From 4a6bedefe589dab12182d6b974de8ea3b2fcc681 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 21 Mar 2023 13:50:18 +0100
+Subject: [PATCH] core-parking: fix build with gcc12 and NR_CPUS=1
+
+Gcc12 takes issue with core_parking_remove()'s
+
+    for ( ; i < cur_idle_nums; ++i )
+        core_parking_cpunum[i] = core_parking_cpunum[i + 1];
+
+complaining that the right hand side array access is past the bounds of
+1. Clearly the compiler can't know that cur_idle_nums can only ever be
+zero in this case (as the sole CPU cannot be parked).
+
+Arrange for core_parking.c's contents to not be needed altogether, and
+then disable its building when NR_CPUS == 1.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 4b0422f70feb4b1cd04598ffde805fc224f3812e
+master date: 2023-03-13 15:15:42 +0100
+---
+ xen/arch/x86/Kconfig              |  2 +-
+ xen/arch/x86/platform_hypercall.c | 11 ++++++++---
+ xen/arch/x86/sysctl.c             |  3 +++
+ xen/common/Kconfig                |  1 +
+ 4 files changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/Kconfig b/xen/arch/x86/Kconfig
+index 3c14096c80..8e2b504923 100644
+--- a/xen/arch/x86/Kconfig
++++ b/xen/arch/x86/Kconfig
+@@ -8,7 +8,7 @@ config X86
+ 	select ACPI_LEGACY_TABLES_LOOKUP
+ 	select ALTERNATIVE_CALL
+ 	select ARCH_SUPPORTS_INT128
+-	select CORE_PARKING
++	imply CORE_PARKING
+ 	select HAS_ALTERNATIVE
+ 	select HAS_COMPAT
+ 	select HAS_CPUFREQ
+diff --git a/xen/arch/x86/platform_hypercall.c b/xen/arch/x86/platform_hypercall.c
+index bf4090c942..c35e5669a4 100644
+--- a/xen/arch/x86/platform_hypercall.c
++++ b/xen/arch/x86/platform_hypercall.c
+@@ -725,12 +725,17 @@ ret_t do_platform_op(XEN_GUEST_HANDLE_PARAM(xen_platform_op_t) u_xenpf_op)
+         case XEN_CORE_PARKING_SET:
+             idle_nums = min_t(uint32_t,
+                     op->u.core_parking.idle_nums, num_present_cpus() - 1);
+-            ret = continue_hypercall_on_cpu(
+-                    0, core_parking_helper, (void *)(unsigned long)idle_nums);
++            if ( CONFIG_NR_CPUS > 1 )
++                ret = continue_hypercall_on_cpu(
++                        0, core_parking_helper,
++                        (void *)(unsigned long)idle_nums);
++            else if ( idle_nums )
++                ret = -EINVAL;
+             break;
+ 
+         case XEN_CORE_PARKING_GET:
+-            op->u.core_parking.idle_nums = get_cur_idle_nums();
++            op->u.core_parking.idle_nums = CONFIG_NR_CPUS > 1
++                                           ? get_cur_idle_nums() : 0;
+             ret = __copy_field_to_guest(u_xenpf_op, op, u.core_parking) ?
+                   -EFAULT : 0;
+             break;
+diff --git a/xen/arch/x86/sysctl.c b/xen/arch/x86/sysctl.c
+index aff52a13f3..ff843eaee2 100644
+--- a/xen/arch/x86/sysctl.c
++++ b/xen/arch/x86/sysctl.c
+@@ -179,6 +179,9 @@ long arch_do_sysctl(
+                 ret = -EBUSY;
+                 break;
+             }
++            if ( CONFIG_NR_CPUS <= 1 )
++                /* Mimic behavior of smt_up_down_helper(). */
++                return 0;
+             plug = op == XEN_SYSCTL_CPU_HOTPLUG_SMT_ENABLE;
+             fn = smt_up_down_helper;
+             hcpu = _p(plug);
+diff --git a/xen/common/Kconfig b/xen/common/Kconfig
+index 6443943889..c9f4b7f492 100644
+--- a/xen/common/Kconfig
++++ b/xen/common/Kconfig
+@@ -10,6 +10,7 @@ config COMPAT
+ 
+ config CORE_PARKING
+ 	bool
++	depends on NR_CPUS > 1
+ 
+ config GRANT_TABLE
+ 	bool "Grant table support" if EXPERT
+-- 
+2.30.2
+

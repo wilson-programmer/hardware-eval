@@ -1,0 +1,36 @@
+From 0ff7f9c5aa02cd2469a8fc03f1ed262f18933721 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 20 May 2021 01:21:39 +0100
+Subject: [PATCH] x86/spec-ctrl: Mitigate TAA after S3 resume
+
+The user chosen setting for MSR_TSX_CTRL needs restoring after S3.
+
+All APs get the correct setting via start_secondary(), but the BSP was missed
+out.
+
+This is XSA-377 / CVE-2021-28690.
+
+Fixes: 8c4330818f6 ("x86/spec-ctrl: Mitigate the TSX Asynchronous Abort sidechannel")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 8cf276cb2e0b99b96333865873f56b0b31555ff1)
+---
+ xen/arch/x86/acpi/power.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/arch/x86/acpi/power.c b/xen/arch/x86/acpi/power.c
+index 7f162a4df9..604cb7e222 100644
+--- a/xen/arch/x86/acpi/power.c
++++ b/xen/arch/x86/acpi/power.c
+@@ -286,6 +286,8 @@ static int enter_state(u32 state)
+ 
+     microcode_update_one();
+ 
++    tsx_init(); /* Needs microcode.  May change HLE/RTM feature bits. */
++
+     if ( !recheck_cpu_features(0) )
+         panic("Missing previously available feature(s)\n");
+ 
+-- 
+2.30.2
+

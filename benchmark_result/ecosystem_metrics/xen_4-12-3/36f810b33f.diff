@@ -1,0 +1,36 @@
+From 36f810b33f46c41331eb13402de5e224cc5aa291 Mon Sep 17 00:00:00 2001
+From: Jeff Kubascik <jeff.kubascik@dornerworks.com>
+Date: Mon, 25 Nov 2019 15:58:00 -0500
+Subject: [PATCH] xen/arm: initialize vpl011 flag register
+
+The tx/rx fifo flags were not set when the vpl011 is initialized. This
+is a problem for certain guests that are operating in polled mode, as a
+guest will generally check the rx fifo empty flag to determine if there
+is data before doing a read. The result is a continuous spam of the
+message "vpl011: Unexpected IN ring buffer empty" before the first valid
+character is received. This initializes the flag status register to the
+default specified in the PL011 technical reference manual.
+
+Signed-off-by: Jeff Kubascik <jeff.kubascik@dornerworks.com>
+Acked-by: Julien Grall <julien@xen.org>
+(cherry picked from commit b4637ed6cd5375f04ac51d6b900a9ccad6c6c03a)
+---
+ xen/arch/arm/vpl011.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/arch/arm/vpl011.c b/xen/arch/arm/vpl011.c
+index 7bc5eeb207..895f436cc4 100644
+--- a/xen/arch/arm/vpl011.c
++++ b/xen/arch/arm/vpl011.c
+@@ -668,6 +668,8 @@ int domain_vpl011_init(struct domain *d, struct vpl011_init_info *info)
+         goto out2;
+     }
+ 
++    vpl011->uartfr = TXFE | RXFE;
++
+     spin_lock_init(&vpl011->lock);
+ 
+     register_mmio_handler(d, &vpl011_mmio_handler,
+-- 
+2.30.2
+

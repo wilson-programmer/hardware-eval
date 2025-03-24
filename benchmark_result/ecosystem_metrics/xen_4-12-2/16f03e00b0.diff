@@ -1,0 +1,53 @@
+From 16f03e00b0855975a2184a3dd8bc41e9e6f4e830 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 25 Nov 2019 15:52:19 +0100
+Subject: [PATCH] x86/tsc: update vcpu time info on guest TSC adjustments
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+If a HVM/PVH guest writes to MSR_IA32_TSC{_ADJUST} and thus changes
+the value of the time stamp counter the vcpu time info must also be
+updated, or the time calculated by the guest using the Xen PV clock
+interface will be skewed.
+
+Update the vcpu time info when the guest writes to either MSR_IA32_TSC
+or MSR_IA32_TSC_ADJUST. This fixes lockups seen when running the
+pv-shim on AMD hardware, since the shim will aggressively try to keep
+TSCs in sync by periodically writing to MSR_IA32_TSC if the TSC is not
+reliable.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 7eee9c16d6405a1a1f2e8c6472923db842c90cfb
+master date: 2019-10-23 17:01:56 +0100
+---
+ xen/arch/x86/hvm/hvm.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/hvm.c b/xen/arch/x86/hvm/hvm.c
+index 84191d4e4b..2128f62243 100644
+--- a/xen/arch/x86/hvm/hvm.c
++++ b/xen/arch/x86/hvm/hvm.c
+@@ -429,6 +429,8 @@ static void hvm_set_guest_tsc_msr(struct vcpu *v, u64 guest_tsc)
+ 
+     hvm_set_guest_tsc(v, guest_tsc);
+     v->arch.hvm.msr_tsc_adjust += v->arch.hvm.cache_tsc_offset - tsc_offset;
++    if ( v == current )
++        update_vcpu_system_time(v);
+ }
+ 
+ static void hvm_set_guest_tsc_adjust(struct vcpu *v, u64 tsc_adjust)
+@@ -436,6 +438,8 @@ static void hvm_set_guest_tsc_adjust(struct vcpu *v, u64 tsc_adjust)
+     v->arch.hvm.cache_tsc_offset += tsc_adjust - v->arch.hvm.msr_tsc_adjust;
+     hvm_set_tsc_offset(v, v->arch.hvm.cache_tsc_offset, 0);
+     v->arch.hvm.msr_tsc_adjust = tsc_adjust;
++    if ( v == current )
++        update_vcpu_system_time(v);
+ }
+ 
+ u64 hvm_get_guest_tsc_fixed(struct vcpu *v, uint64_t at_tsc)
+-- 
+2.30.2
+

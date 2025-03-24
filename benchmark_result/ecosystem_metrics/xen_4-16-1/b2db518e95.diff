@@ -1,0 +1,36 @@
+From b2db518e952c3a8fe5b9ec6a2d007cda73fd05a4 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 10 Mar 2022 09:43:50 +0100
+Subject: [PATCH] VT-d: drop undue address-of from check_cleanup_domid_map()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+For an unknown reason I added back the operator while backporting,
+despite 4.16 having c06e3d810314 ("VT-d: per-domain IOMMU bitmap needs
+to have dynamic size"). I can only assume that I mistakenly took the
+4.15 backport as basis and/or reference.
+
+Fixes: fa45f6b5560e ("VT-d: split domid map cleanup check into a function")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+---
+ xen/drivers/passthrough/vtd/iommu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index 3b37bad25e..ead12db6a4 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -197,7 +197,7 @@ static void check_cleanup_domid_map(struct domain *d,
+ 
+     if ( !found )
+     {
+-        clear_bit(iommu->index, &dom_iommu(d)->arch.vtd.iommu_bitmap);
++        clear_bit(iommu->index, dom_iommu(d)->arch.vtd.iommu_bitmap);
+         cleanup_domid_map(d, iommu);
+     }
+ }
+-- 
+2.30.2
+

@@ -1,0 +1,42 @@
+From a82a0a89003e85c93f8f5179ea190e1771b4a77f Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 15 Oct 2021 11:04:22 +0200
+Subject: [PATCH] VT-d: PCI segment numbers are up to 16 bits wide
+
+We shouldn't silently truncate respective values.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: a3dd33e63c2c8c51102f223e6efe2e3d3bdcbec1
+master date: 2021-09-20 10:25:03 +0200
+---
+ xen/drivers/passthrough/vtd/iommu.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index be4eced660..fbc749436b 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -1471,7 +1471,8 @@ static int domain_context_mapping(struct domain *domain, u8 devfn,
+ {
+     struct acpi_drhd_unit *drhd;
+     int ret = 0;
+-    u8 seg = pdev->seg, bus = pdev->bus, secbus;
++    uint16_t seg = pdev->seg;
++    uint8_t bus = pdev->bus, secbus;
+ 
+     drhd = acpi_find_matched_drhd_unit(pdev);
+     if ( !drhd )
+@@ -1681,7 +1682,8 @@ static int domain_context_unmap(struct domain *domain, u8 devfn,
+     struct acpi_drhd_unit *drhd;
+     struct vtd_iommu *iommu;
+     int ret = 0;
+-    u8 seg = pdev->seg, bus = pdev->bus, tmp_bus, tmp_devfn, secbus;
++    uint16_t seg = pdev->seg;
++    uint8_t bus = pdev->bus, tmp_bus, tmp_devfn, secbus;
+     bool found;
+ 
+     drhd = acpi_find_matched_drhd_unit(pdev);
+-- 
+2.30.2
+

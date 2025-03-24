@@ -1,0 +1,97 @@
+From 1bce7fb1f702da4f7a749c6f1457ecb20bf74fca Mon Sep 17 00:00:00 2001
+From: Tamas K Lengyel <tamas.lengyel@intel.com>
+Date: Tue, 11 Oct 2022 15:01:48 +0200
+Subject: [PATCH] x86/vpmu: Fix race-condition in vpmu_load
+
+The vPMU code-bases attempts to perform an optimization on saving/reloading the
+PMU context by keeping track of what vCPU ran on each pCPU. When a pCPU is
+getting scheduled, checks if the previous vCPU isn't the current one. If so,
+attempts a call to vpmu_save_force. Unfortunately if the previous vCPU is
+already getting scheduled to run on another pCPU its state will be already
+runnable, which results in an ASSERT failure.
+
+Fix this by always performing a pmu context save in vpmu_save when called from
+vpmu_switch_from, and do a vpmu_load when called from vpmu_switch_to.
+
+While this presents a minimal overhead in case the same vCPU is getting
+rescheduled on the same pCPU, the ASSERT failure is avoided and the code is a
+lot easier to reason about.
+
+Signed-off-by: Tamas K Lengyel <tamas.lengyel@intel.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: defa4e51d20a143bdd4395a075bf0933bb38a9a4
+master date: 2022-09-30 09:53:49 +0200
+---
+ xen/arch/x86/cpu/vpmu.c | 42 ++++-------------------------------------
+ 1 file changed, 4 insertions(+), 38 deletions(-)
+
+diff --git a/xen/arch/x86/cpu/vpmu.c b/xen/arch/x86/cpu/vpmu.c
+index 16e91a3694..b6c2ec3cd0 100644
+--- a/xen/arch/x86/cpu/vpmu.c
++++ b/xen/arch/x86/cpu/vpmu.c
+@@ -368,58 +368,24 @@ void vpmu_save(struct vcpu *v)
+     vpmu->last_pcpu = pcpu;
+     per_cpu(last_vcpu, pcpu) = v;
+ 
++    vpmu_set(vpmu, VPMU_CONTEXT_SAVE);
++
+     if ( vpmu->arch_vpmu_ops )
+         if ( vpmu->arch_vpmu_ops->arch_vpmu_save(v, 0) )
+             vpmu_reset(vpmu, VPMU_CONTEXT_LOADED);
+ 
++    vpmu_reset(vpmu, VPMU_CONTEXT_SAVE);
++
+     apic_write(APIC_LVTPC, PMU_APIC_VECTOR | APIC_LVT_MASKED);
+ }
+ 
+ int vpmu_load(struct vcpu *v, bool_t from_guest)
+ {
+     struct vpmu_struct *vpmu = vcpu_vpmu(v);
+-    int pcpu = smp_processor_id();
+-    struct vcpu *prev = NULL;
+ 
+     if ( !vpmu_is_set(vpmu, VPMU_CONTEXT_ALLOCATED) )
+         return 0;
+ 
+-    /* First time this VCPU is running here */
+-    if ( vpmu->last_pcpu != pcpu )
+-    {
+-        /*
+-         * Get the context from last pcpu that we ran on. Note that if another
+-         * VCPU is running there it must have saved this VPCU's context before
+-         * startig to run (see below).
+-         * There should be no race since remote pcpu will disable interrupts
+-         * before saving the context.
+-         */
+-        if ( vpmu_is_set(vpmu, VPMU_CONTEXT_LOADED) )
+-        {
+-            on_selected_cpus(cpumask_of(vpmu->last_pcpu),
+-                             vpmu_save_force, (void *)v, 1);
+-            vpmu_reset(vpmu, VPMU_CONTEXT_LOADED);
+-        }
+-    } 
+-
+-    /* Prevent forced context save from remote CPU */
+-    local_irq_disable();
+-
+-    prev = per_cpu(last_vcpu, pcpu);
+-
+-    if ( prev != v && prev )
+-    {
+-        vpmu = vcpu_vpmu(prev);
+-
+-        /* Someone ran here before us */
+-        vpmu_save_force(prev);
+-        vpmu_reset(vpmu, VPMU_CONTEXT_LOADED);
+-
+-        vpmu = vcpu_vpmu(v);
+-    }
+-
+-    local_irq_enable();
+-
+     /* Only when PMU is counting, we load PMU context immediately. */
+     if ( !vpmu_is_set(vpmu, VPMU_RUNNING) ||
+          (!has_vlapic(vpmu_vcpu(vpmu)->domain) &&
+-- 
+2.30.2
+

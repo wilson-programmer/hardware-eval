@@ -1,0 +1,33 @@
+From 37ea2893e978ab311107f3e8cfdb8aaf8523f9fd Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 15 Oct 2021 11:19:11 +0200
+Subject: [PATCH] x86/HVM: fix xsm_op for 32-bit guests
+
+Like for PV, 32-bit guests need to invoke the compat handler, not the
+native one.
+
+Fixes: db984809d61b ("hvm: wire up domctl and xsm hypercalls")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: b6b672e8a925ff4b71a1a67bc7d213ef445af74f
+master date: 2021-10-11 10:58:44 +0200
+---
+ xen/arch/x86/hvm/hypercall.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/hypercall.c b/xen/arch/x86/hvm/hypercall.c
+index b6ccaf4457..f75285de51 100644
+--- a/xen/arch/x86/hvm/hypercall.c
++++ b/xen/arch/x86/hvm/hypercall.c
+@@ -137,7 +137,7 @@ static const hypercall_table_t hvm_hypercall_table[] = {
+     HYPERCALL(event_channel_op),
+     COMPAT_CALL(sched_op),
+     COMPAT_CALL(set_timer_op),
+-    HYPERCALL(xsm_op),
++    COMPAT_CALL(xsm_op),
+     HYPERCALL(hvm_op),
+     HYPERCALL(sysctl),
+     HYPERCALL(domctl),
+-- 
+2.30.2
+

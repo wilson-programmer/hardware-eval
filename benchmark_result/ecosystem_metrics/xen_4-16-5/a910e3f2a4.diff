@@ -1,0 +1,38 @@
+From a910e3f2a4d128bc045ac6be374459e73ddf9fde Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 28 Jul 2023 18:42:12 +0100
+Subject: [PATCH] x86/amd: Fix DE_CFG truncation in amd_check_zenbleed()
+
+This line:
+
+	val &= ~chickenbit;
+
+ends up truncating val to 32 bits, and turning off various errata workarounds
+in Zen2 systems.
+
+Fixes: f91c5ea97067 ("x86/amd: Mitigations for Zenbleed")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit c0dd53b8cbd1e47e9c89873a9265a7170bdc6b4c)
+---
+ xen/arch/x86/cpu/amd.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/cpu/amd.c b/xen/arch/x86/cpu/amd.c
+index 4ed08df4a8..81008a2d94 100644
+--- a/xen/arch/x86/cpu/amd.c
++++ b/xen/arch/x86/cpu/amd.c
+@@ -773,8 +773,8 @@ void __init detect_zen2_null_seg_behaviour(void)
+ void amd_check_zenbleed(void)
+ {
+ 	const struct cpu_signature *sig = &this_cpu(cpu_sig);
+-	unsigned int good_rev, chickenbit = (1 << 9);
+-	uint64_t val, old_val;
++	unsigned int good_rev;
++	uint64_t val, old_val, chickenbit = (1 << 9);
+ 
+ 	/*
+ 	 * If we're virtualised, we can't do family/model checks safely, and
+-- 
+2.30.2
+

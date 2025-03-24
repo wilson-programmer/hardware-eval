@@ -1,0 +1,55 @@
+From b4632c9cf57e79d4d9e0f8befd6a79d1d61b1cab Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 10 Mar 2022 09:50:26 +0100
+Subject: [PATCH] x86/console: process softirqs between warning prints
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Process softirqs while printing end of boot warnings. Each warning can
+be several lines long, and on slow consoles printing multiple ones
+without processing softirqs can result in the watchdog triggering:
+
+(XEN) [   22.277806] ***************************************************
+(XEN) [   22.417802] WARNING: CONSOLE OUTPUT IS SYNCHRONOUS
+(XEN) [   22.556029] This option is intended to aid debugging of Xen by ensuring
+(XEN) [   22.696802] that all output is synchronously delivered on the serial line.
+(XEN) [   22.838024] However it can introduce SIGNIFICANT latencies and affect
+(XEN) [   22.978710] timekeeping. It is NOT recommended for production use!
+(XEN) [   23.119066] ***************************************************
+(XEN) [   23.258865] Booted on L1TF-vulnerable hardware with SMT/Hyperthreading
+(XEN) [   23.399560] enabled.  Please assess your configuration and choose an
+(XEN) [   23.539925] explicit 'smt=<bool>' setting.  See XSA-273.
+(XEN) [   23.678860] ***************************************************
+(XEN) [   23.818492] Booted on MLPDS/MFBDS-vulnerable hardware with SMT/Hyperthreading
+(XEN) [   23.959811] enabled.  Mitigations will not be fully effective.  Please
+(XEN) [   24.100396] choose an explicit smt=<bool> setting.  See XSA-297.
+(XEN) [   24.240254] *************************************************(XEN) [   24.247302] Watchdog timer detects that CPU0 is stuck!
+(XEN) [   24.386785] ----[ Xen-4.17-unstable  x86_64  debug=y  Tainted:   C    ]----
+(XEN) [   24.527874] CPU:    0
+(XEN) [   24.662422] RIP:    e008:[<ffff82d04025b84a>] drivers/char/ns16550.c#ns16550_tx_ready+0x3a/0x90
+
+Fixes: ee3fd57acd ('xen: add warning infrastructure')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 6bd1b4d35c05c21a78bf00f610587ce8a75cb5c2
+master date: 2022-02-18 09:02:16 +0100
+---
+ xen/common/warning.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/xen/common/warning.c b/xen/common/warning.c
+index 0269c6715c..e6e1404baf 100644
+--- a/xen/common/warning.c
++++ b/xen/common/warning.c
+@@ -30,6 +30,7 @@ void __init warning_print(void)
+     {
+         printk("%s", warnings[i]);
+         printk("***************************************************\n");
++        process_pending_softirqs();
+     }
+ 
+     for ( i = 0; i < 3; i++ )
+-- 
+2.30.2
+

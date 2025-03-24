@@ -1,0 +1,96 @@
+From bce985745cde48a339954759677b77d3eeec41f3 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 13 Sep 2022 07:35:10 +0200
+Subject: [PATCH] tools/xenstore: add memory accounting for watches
+
+Add the memory accounting for registered watches.
+
+When a socket connection is destroyed, the associated watches are
+removed, too. In order to keep memory accounting correct the watches
+must be removed explicitly via a call of conn_delete_all_watches() from
+destroy_conn().
+
+This is part of XSA-326 / CVE-2022-42315.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 7f9978a2cc37aaffab2fb09593bc598c0712a69b)
+---
+ tools/xenstore/xenstored_core.c  |  1 +
+ tools/xenstore/xenstored_watch.c | 13 ++++++++++---
+ 2 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/tools/xenstore/xenstored_core.c b/tools/xenstore/xenstored_core.c
+index ecab6cfbbe..d86942f5aa 100644
+--- a/tools/xenstore/xenstored_core.c
++++ b/tools/xenstore/xenstored_core.c
+@@ -463,6 +463,7 @@ static int destroy_conn(void *_conn)
+ 	}
+ 
+ 	conn_free_buffered_data(conn);
++	conn_delete_all_watches(conn);
+ 	list_for_each_entry(req, &conn->ref_list, list)
+ 		req->on_ref_list = false;
+ 
+diff --git a/tools/xenstore/xenstored_watch.c b/tools/xenstore/xenstored_watch.c
+index 0755ffa375..fdf9b2d653 100644
+--- a/tools/xenstore/xenstored_watch.c
++++ b/tools/xenstore/xenstored_watch.c
+@@ -211,7 +211,7 @@ static int check_watch_path(struct connection *conn, const void *ctx,
+ }
+ 
+ static struct watch *add_watch(struct connection *conn, char *path, char *token,
+-			       bool relative)
++			       bool relative, bool no_quota_check)
+ {
+ 	struct watch *watch;
+ 
+@@ -222,6 +222,9 @@ static struct watch *add_watch(struct connection *conn, char *path, char *token,
+ 	watch->token = talloc_strdup(watch, token);
+ 	if (!watch->node || !watch->token)
+ 		goto nomem;
++	if (domain_memory_add(conn->id, strlen(path) + strlen(token),
++			      no_quota_check))
++		goto nomem;
+ 
+ 	if (relative)
+ 		watch->relative_path = get_implicit_path(conn);
+@@ -265,7 +268,7 @@ int do_watch(struct connection *conn, struct buffered_data *in)
+ 	if (domain_watch(conn) > quota_nb_watch_per_domain)
+ 		return E2BIG;
+ 
+-	watch = add_watch(conn, vec[0], vec[1], relative);
++	watch = add_watch(conn, vec[0], vec[1], relative, false);
+ 	if (!watch)
+ 		return errno;
+ 
+@@ -296,6 +299,8 @@ int do_unwatch(struct connection *conn, struct buffered_data *in)
+ 	list_for_each_entry(watch, &conn->watches, list) {
+ 		if (streq(watch->node, node) && streq(watch->token, vec[1])) {
+ 			list_del(&watch->list);
++			domain_memory_add_nochk(conn->id, -strlen(watch->node) -
++							  strlen(watch->token));
+ 			talloc_free(watch);
+ 			domain_watch_dec(conn);
+ 			send_ack(conn, XS_UNWATCH);
+@@ -311,6 +316,8 @@ void conn_delete_all_watches(struct connection *conn)
+ 
+ 	while ((watch = list_top(&conn->watches, struct watch, list))) {
+ 		list_del(&watch->list);
++		domain_memory_add_nochk(conn->id, -strlen(watch->node) -
++						  strlen(watch->token));
+ 		talloc_free(watch);
+ 		domain_watch_dec(conn);
+ 	}
+@@ -373,7 +380,7 @@ void read_state_watch(const void *ctx, const void *state)
+ 	if (!path)
+ 		barf("allocation error for read watch");
+ 
+-	if (!add_watch(conn, path, token, relative))
++	if (!add_watch(conn, path, token, relative, true))
+ 		barf("error adding watch");
+ }
+ 
+-- 
+2.30.2
+

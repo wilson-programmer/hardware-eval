@@ -1,0 +1,28 @@
+From 065fff7af08f7eaf300c9bef86ae3cec8150d3aa Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 8 Sep 2021 17:39:42 +0200
+Subject: [PATCH] x86/PVH: Fix debug build following XSA-378 bugfix
+
+Fixes: 8d8b4bde3e1c ("x86/PVH: de-duplicate mappings for first Mb of Dom0 memory")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+---
+ xen/arch/x86/hvm/dom0_build.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/dom0_build.c b/xen/arch/x86/hvm/dom0_build.c
+index 62958bf82c..c6eb86bfb7 100644
+--- a/xen/arch/x86/hvm/dom0_build.c
++++ b/xen/arch/x86/hvm/dom0_build.c
+@@ -467,7 +467,7 @@ static int __init pvh_populate_p2m(struct domain *d)
+         p2m_type_t p2mt;
+ 
+         if ( mfn_eq(get_gfn_query(d, i, &p2mt), INVALID_MFN) )
+-            rc = set_mmio_p2m_entry(d, _gfn(i), _mfn(i), PAGE_ORDER_4K,
++            rc = set_mmio_p2m_entry(d, i, _mfn(i), PAGE_ORDER_4K,
+                                     p2m_get_hostp2m(d)->default_access);
+         else
+             ASSERT(p2mt == p2m_ram_rw);
+-- 
+2.30.2
+

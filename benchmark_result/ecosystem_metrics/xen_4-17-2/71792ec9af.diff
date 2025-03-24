@@ -1,0 +1,70 @@
+From 71792ec9af49f94dd3fcb581310106aa5156150f Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 17 Jul 2023 08:29:18 +0200
+Subject: [PATCH] iommu/vtd: fix address translation for leaf entries
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Fix two issues related to leaf address lookups in VT-d:
+
+* When translating an address that falls inside of a superpage in the
+  IOMMU page tables the fetching of the PTE value wasn't masking of the
+  contiguous related data, which caused the returned data to be
+  corrupt as it would contain bits that the caller would interpret as
+  part of the address.
+
+* When the requested leaf address wasn't mapped by a superpage the
+  returned value wouldn't have any of the low 12 bits set, thus missing
+  the permission bits expected by the caller.
+
+Take the opportunity to also adjust the function comment to note that
+when returning the full PTE the bits above PADDR_BITS are removed.
+
+Fixes: c71e55501a61 ('VT-d: have callers specify the target level for page table walks')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 82b28deb25f37e8422b14493a2efa2852638206d
+master date: 2023-06-19 15:46:03 +0200
+---
+ xen/drivers/passthrough/vtd/iommu.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index 62e143125d..cde67b9574 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -313,7 +313,7 @@ static u64 bus_to_context_maddr(struct vtd_iommu *iommu, u8 bus)
+  *   failure,
+  * - for target > 0 the physical address of the page table holding the leaf
+  *   PTE for the requested address,
+- * - for target == 0 the full PTE.
++ * - for target == 0 the full PTE contents below PADDR_BITS limit.
+  */
+ static uint64_t addr_to_dma_page_maddr(struct domain *domain, daddr_t addr,
+                                        unsigned int target,
+@@ -371,7 +371,7 @@ static uint64_t addr_to_dma_page_maddr(struct domain *domain, daddr_t addr,
+                  * with the address adjusted to account for the residual of
+                  * the walk.
+                  */
+-                pte_maddr = pte->val +
++                pte_maddr = (pte->val & PADDR_MASK) +
+                     (addr & ((1UL << level_to_offset_bits(level)) - 1) &
+                      PAGE_MASK);
+                 if ( !target )
+@@ -416,7 +416,11 @@ static uint64_t addr_to_dma_page_maddr(struct domain *domain, daddr_t addr,
+         }
+ 
+         if ( --level == target )
++        {
++            if ( !target )
++                pte_maddr = pte->val & PADDR_MASK;
+             break;
++        }
+ 
+         unmap_vtd_domain_page(parent);
+         parent = map_vtd_domain_page(pte_maddr);
+-- 
+2.30.2
+

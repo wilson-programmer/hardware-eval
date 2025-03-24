@@ -1,0 +1,163 @@
+From 33be2c385823e67c773527366a5d5e8ffe78d046 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Mon, 18 Jun 2018 09:18:54 +0200
+Subject: [PATCH] tools/libxencall: use hypercall buffer device if available
+
+Instead of using anonymous memory for hypercall buffers which is then
+locked into memory, use the hypercall buffer device of the Linux
+privcmd driver if available.
+
+This has the advantage of needing just a single mmap() for allocating
+the buffer and page migration or compaction can't make the buffer
+unaccessible for the hypervisor.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Ian Jackson <ian.jackson@eu.citrix.com>
+---
+ tools/libs/call/core.c    | 12 +++++++-
+ tools/libs/call/linux.c   | 58 ++++++++++++++++++++++++++++++++++-----
+ tools/libs/call/private.h |  7 ++++-
+ 3 files changed, 68 insertions(+), 9 deletions(-)
+
+diff --git a/tools/libs/call/core.c b/tools/libs/call/core.c
+index f3a34009da..46ca61529e 100644
+--- a/tools/libs/call/core.c
++++ b/tools/libs/call/core.c
+@@ -19,7 +19,16 @@
+ 
+ static int all_restrict_cb(Xentoolcore__Active_Handle *ah, domid_t domid) {
+     xencall_handle *xcall = CONTAINER_OF(ah, *xcall, tc_ah);
+-    return xentoolcore__restrict_by_dup2_null(xcall->fd);
++    int rc;
++
++    rc = xentoolcore__restrict_by_dup2_null(xcall->buf_fd);
++    if ( rc )
++        goto out;
++
++    rc = xentoolcore__restrict_by_dup2_null(xcall->fd);
++
++out:
++    return rc;
+ }
+ 
+ xencall_handle *xencall_open(xentoollog_logger *logger, unsigned open_flags)
+@@ -30,6 +39,7 @@ xencall_handle *xencall_open(xentoollog_logger *logger, unsigned open_flags)
+     if (!xcall) return NULL;
+ 
+     xcall->fd = -1;
++    xcall->buf_fd = -1;
+     xcall->tc_ah.restrict_callback = all_restrict_cb;
+     xentoolcore__register_active_handle(&xcall->tc_ah);
+ 
+diff --git a/tools/libs/call/linux.c b/tools/libs/call/linux.c
+index 3f1b691fe7..90c2691486 100644
+--- a/tools/libs/call/linux.c
++++ b/tools/libs/call/linux.c
+@@ -56,15 +56,28 @@ int osdep_xencall_open(xencall_handle *xcall)
+     }
+ 
+     xcall->fd = fd;
++
++    /*
++     * Try the same for the hypercall buffer device.
++     */
++    fd = open("/dev/xen/hypercall", O_RDWR|O_CLOEXEC);
++    if ( fd == -1 && errno != ENOENT )
++    {
++        PERROR("Error on trying to open hypercall buffer device");
++        return -1;
++    }
++    xcall->buf_fd = fd;
++
+     return 0;
+ }
+ 
+ int osdep_xencall_close(xencall_handle *xcall)
+ {
+-    int fd = xcall->fd;
+-    if (fd == -1)
+-        return 0;
+-    return close(fd);
++    if ( xcall->buf_fd >= 0 )
++        close(xcall->buf_fd);
++    if ( xcall->fd >= 0 )
++        close(xcall->fd);
++    return 0;
+ }
+ 
+ int osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+@@ -72,7 +85,22 @@ int osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+     return ioctl(xcall->fd, IOCTL_PRIVCMD_HYPERCALL, hypercall);
+ }
+ 
+-void *osdep_alloc_pages(xencall_handle *xcall, size_t npages)
++static void *alloc_pages_bufdev(xencall_handle *xcall, size_t npages)
++{
++    void *p;
++
++    p = mmap(NULL, npages * PAGE_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED,
++             xcall->buf_fd, 0);
++    if ( p == MAP_FAILED )
++    {
++        PERROR("alloc_pages: mmap failed");
++        p = NULL;
++    }
++
++    return p;
++}
++
++static void *alloc_pages_nobufdev(xencall_handle *xcall, size_t npages)
+ {
+     size_t size = npages * PAGE_SIZE;
+     void *p;
+@@ -116,11 +144,27 @@ out:
+     return NULL;
+ }
+ 
++void *osdep_alloc_pages(xencall_handle *xcall, size_t npages)
++{
++    void *p;
++
++    if ( xcall->buf_fd >= 0 )
++        p = alloc_pages_bufdev(xcall, npages);
++    else
++        p = alloc_pages_nobufdev(xcall, npages);
++
++    return p;
++}
++
+ void osdep_free_pages(xencall_handle *xcall, void *ptr, size_t npages)
+ {
+     int saved_errno = errno;
+-    /* Recover the VMA flags. Maybe it's not necessary */
+-    madvise(ptr, npages * PAGE_SIZE, MADV_DOFORK);
++
++    if ( xcall->buf_fd < 0 )
++    {
++        /* Recover the VMA flags. Maybe it's not necessary */
++        madvise(ptr, npages * PAGE_SIZE, MADV_DOFORK);
++    }
+ 
+     munmap(ptr, npages * PAGE_SIZE);
+     /* We MUST propagate the hypercall errno, not unmap call's. */
+diff --git a/tools/libs/call/private.h b/tools/libs/call/private.h
+index 533f0c4a8b..21f992b37e 100644
+--- a/tools/libs/call/private.h
++++ b/tools/libs/call/private.h
+@@ -20,7 +20,12 @@
+ struct xencall_handle {
+     xentoollog_logger *logger, *logger_tofree;
+     unsigned flags;
+-    int fd;
++
++                     /* partially     with /dev/     no /dev/      */
++                     /* initialised   xen/hypercall  xen/hypercall */
++    int fd;          /*    any           >= 0           >= 0       */
++    int buf_fd;      /*    any           >= 0           -1         */
++
+     Xentoolcore__Active_Handle tc_ah;
+ 
+     /*
+-- 
+2.30.2
+

@@ -1,0 +1,40 @@
+From 28ac8a7880f0d046d83e5c6b6185be38a3844c26 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 23 May 2023 14:52:54 +0200
+Subject: [PATCH] xen/sysctl: fix XEN_SYSCTL_getdomaininfolist handling with
+ XSM
+
+In case XSM is active, the handling of XEN_SYSCTL_getdomaininfolist
+can fail if the last domain scanned isn't allowed to be accessed by
+the calling domain (i.e. xsm_getdomaininfo(XSM_HOOK, d) is failing).
+
+Fix that by just ignoring scanned domains where xsm_getdomaininfo()
+is returning an error, like it is effectively done when such a
+situation occurs for a domain not being the last one scanned.
+
+Fixes: d046f361dc93 ("Xen Security Modules: XSM")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: b033eddc9779109c06a26936321d27a2ef4e088b
+master date: 2023-05-02 12:04:58 +0200
+---
+ xen/common/sysctl.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/xen/common/sysctl.c b/xen/common/sysctl.c
+index 02505ab044..0cbfe8bd44 100644
+--- a/xen/common/sysctl.c
++++ b/xen/common/sysctl.c
+@@ -89,8 +89,7 @@ long do_sysctl(XEN_GUEST_HANDLE_PARAM(xen_sysctl_t) u_sysctl)
+             if ( num_domains == op->u.getdomaininfolist.max_domains )
+                 break;
+ 
+-            ret = xsm_getdomaininfo(XSM_HOOK, d);
+-            if ( ret )
++            if ( xsm_getdomaininfo(XSM_HOOK, d) )
+                 continue;
+ 
+             getdomaininfo(d, &info);
+-- 
+2.30.2
+

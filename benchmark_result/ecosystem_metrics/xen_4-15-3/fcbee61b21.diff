@@ -1,0 +1,35 @@
+From fcbee61b21472a814be4383ec7a7d1ae906c4b59 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 7 Jun 2022 14:21:49 +0200
+Subject: [PATCH] build: suppress GNU ld warning about RWX load segments
+
+We cannot really avoid such and we're also not really at risk because of
+them, as we control page table permissions ourselves rather than relying
+on a loader of some sort. Present GNU ld master started warning about
+such, and hence 2.39 is anticipated to have this warning.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+master commit: 68f5aac012b9ae36ce9b65d9ca9cc9f232191ad3
+master date: 2022-05-18 11:17:19 +0200
+---
+ xen/Makefile | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/Makefile b/xen/Makefile
+index 6fed25ce32..0c22f36adf 100644
+--- a/xen/Makefile
++++ b/xen/Makefile
+@@ -221,6 +221,8 @@ endif
+ 
+ AFLAGS += -D__ASSEMBLY__
+ 
++LDFLAGS-$(call ld-option,--warn-rwx-segments) += --no-warn-rwx-segments
++
+ CFLAGS += $(CFLAGS-y)
+ # allow extra CFLAGS externally via EXTRA_CFLAGS_XEN_CORE
+ CFLAGS += $(EXTRA_CFLAGS_XEN_CORE)
+-- 
+2.30.2
+

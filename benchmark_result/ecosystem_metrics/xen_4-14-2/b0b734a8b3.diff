@@ -1,0 +1,62 @@
+From b0b734a8b3e516ff1040884b755a8d47afed31ea Mon Sep 17 00:00:00 2001
+From: Stefano Stabellini <sstabellini@kernel.org>
+Date: Mon, 8 Feb 2021 10:49:32 -0800
+Subject: [PATCH] xen/arm: fix gnttab_need_iommu_mapping
+
+Commit 91d4eca7add broke gnttab_need_iommu_mapping on ARM.
+The offending chunk is:
+
+ #define gnttab_need_iommu_mapping(d)                    \
+-    (is_domain_direct_mapped(d) && need_iommu(d))
++    (is_domain_direct_mapped(d) && need_iommu_pt_sync(d))
+
+On ARM we need gnttab_need_iommu_mapping to be true for dom0 when it is
+directly mapped and IOMMU is enabled for the domain, like the old check
+did, but the new check is always false.
+
+In fact, need_iommu_pt_sync is defined as dom_iommu(d)->need_sync and
+need_sync is set as:
+
+    if ( !is_hardware_domain(d) || iommu_hwdom_strict )
+        hd->need_sync = !iommu_use_hap_pt(d);
+
+iommu_use_hap_pt(d) means that the page-table used by the IOMMU is the
+P2M. It is true on ARM. need_sync means that you have a separate IOMMU
+page-table and it needs to be updated for every change. need_sync is set
+to false on ARM. Hence, gnttab_need_iommu_mapping(d) is false too,
+which is wrong.
+
+As a consequence, when using PV network from a domU on a system where
+IOMMU is on from Dom0, I get:
+
+(XEN) smmu: /smmu@fd800000: Unhandled context fault: fsr=0x402, iova=0x8424cb148, fsynr=0xb0001, cb=0
+[   68.290307] macb ff0e0000.ethernet eth0: DMA bus error: HRESP not OK
+
+The fix is to go back to something along the lines of the old
+implementation of gnttab_need_iommu_mapping.
+
+Signed-off-by: Stefano Stabellini <stefano.stabellini@xilinx.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+Fixes: 91d4eca7add ("mm / iommu: split need_iommu() into has_iommu_pt() and need_iommu_pt_sync()")
+Backport: 4.13+
+(cherry picked from commit 04085ec1ac05a362812e9b0c6b5a8713d7dc88ad)
+---
+ xen/include/asm-arm/grant_table.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/asm-arm/grant_table.h b/xen/include/asm-arm/grant_table.h
+index 6f585b1538..0ce77f9a1c 100644
+--- a/xen/include/asm-arm/grant_table.h
++++ b/xen/include/asm-arm/grant_table.h
+@@ -89,7 +89,7 @@ int replace_grant_host_mapping(unsigned long gpaddr, mfn_t mfn,
+     (((i) >= nr_status_frames(t)) ? INVALID_GFN : (t)->arch.status_gfn[i])
+ 
+ #define gnttab_need_iommu_mapping(d)                    \
+-    (is_domain_direct_mapped(d) && need_iommu_pt_sync(d))
++    (is_domain_direct_mapped(d) && is_iommu_enabled(d))
+ 
+ #endif /* __ASM_GRANT_TABLE_H__ */
+ /*
+-- 
+2.30.2
+

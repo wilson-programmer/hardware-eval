@@ -1,0 +1,74 @@
+From 8f333d13917cbd66b655df18a4476ed58df9d16f Mon Sep 17 00:00:00 2001
+From: Krzysztof Kolasa <kkolasa@winsoft.pl>
+Date: Wed, 11 Dec 2019 15:15:52 +0100
+Subject: [PATCH] lz4: fix system halt at boot kernel on x86_64
+
+Sometimes, on x86_64, decompression fails with the following
+error:
+
+Decompressing Linux...
+
+Decoding failed
+
+ -- System halted
+
+This condition is not needed for a 64bit kernel(from commit d5e7caf):
+
+if( ... ||
+    (op + COPYLENGTH) > oend)
+    goto _output_error
+
+macro LZ4_SECURE_COPY() tests op and does not copy any data
+when op exceeds the value.
+
+added by analogy to lz4_uncompress_unknownoutputsize(...)
+
+Signed-off-by: Krzysztof Kolasa <kkolasa@winsoft.pl>
+[Linux commit 99b7e93c95c78952724a9783de6c78def8fbfc3f]
+
+The offending commit in our case is fcc17f96c277 ("LZ4 : fix the data
+abort issue").
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 5d90ff79542ab9c6eebe5c315c68c196bcf353b9
+master date: 2019-12-09 14:02:35 +0100
+---
+ xen/common/lz4/decompress.c | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/xen/common/lz4/decompress.c b/xen/common/lz4/decompress.c
+index e8636e193a..bef3a9a99c 100644
+--- a/xen/common/lz4/decompress.c
++++ b/xen/common/lz4/decompress.c
+@@ -132,8 +132,12 @@ static int INIT lz4_uncompress(const unsigned char *source, unsigned char *dest,
+ 			/* Error: request to write beyond destination buffer */
+ 			if (cpy > oend)
+ 				goto _output_error;
++#if LZ4_ARCH64
++			if ((ref + COPYLENGTH) > oend)
++#else
+ 			if ((ref + COPYLENGTH) > oend ||
+ 					(op + COPYLENGTH) > oend)
++#endif
+ 				goto _output_error;
+ 			LZ4_SECURECOPY(ref, op, (oend - COPYLENGTH));
+ 			while (op < cpy)
+@@ -266,7 +270,13 @@ static int lz4_uncompress_unknownoutputsize(const unsigned char *source,
+ 		if (cpy > oend - COPYLENGTH) {
+ 			if (cpy > oend)
+ 				goto _output_error; /* write outside of buf */
+-
++#if LZ4_ARCH64
++			if ((ref + COPYLENGTH) > oend)
++#else
++			if ((ref + COPYLENGTH) > oend ||
++					(op + COPYLENGTH) > oend)
++#endif
++				goto _output_error;
+ 			LZ4_SECURECOPY(ref, op, (oend - COPYLENGTH));
+ 			while (op < cpy)
+ 				*op++ = *ref++;
+-- 
+2.30.2
+

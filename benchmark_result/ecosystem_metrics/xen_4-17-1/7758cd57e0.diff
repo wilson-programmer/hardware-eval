@@ -1,0 +1,58 @@
+From 7758cd57e002c5096b2296ede67c59fca68724d7 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 31 Mar 2023 08:35:15 +0200
+Subject: [PATCH] ns16550: correct name/value pair parsing for PCI port/bridge
+
+First of all these were inverted: "bridge=" caused the port coordinates
+to be established, while "port=" controlled the bridge coordinates. And
+then the error messages being identical also wasn't helpful. While
+correcting this also move both case blocks close together.
+
+Fixes: 97fd49a7e074 ("ns16550: add support for UART parameters to be specifed with name-value pairs")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: e692b22230b411d762ac9e278a398e28df474eae
+master date: 2023-03-29 14:55:37 +0200
+---
+ xen/drivers/char/ns16550.c | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/xen/drivers/char/ns16550.c b/xen/drivers/char/ns16550.c
+index ce013fb6a5..97b3d8d269 100644
+--- a/xen/drivers/char/ns16550.c
++++ b/xen/drivers/char/ns16550.c
+@@ -1631,13 +1631,6 @@ static bool __init parse_namevalue_pairs(char *str, struct ns16550 *uart)
+             break;
+ 
+ #ifdef CONFIG_HAS_PCI
+-        case bridge_bdf:
+-            if ( !parse_pci(param_value, NULL, &uart->ps_bdf[0],
+-                            &uart->ps_bdf[1], &uart->ps_bdf[2]) )
+-                PARSE_ERR_RET("Bad port PCI coordinates\n");
+-            uart->ps_bdf_enable = true;
+-            break;
+-
+         case device:
+             if ( strncmp(param_value, "pci", 3) == 0 )
+             {
+@@ -1652,9 +1645,16 @@ static bool __init parse_namevalue_pairs(char *str, struct ns16550 *uart)
+             break;
+ 
+         case port_bdf:
++            if ( !parse_pci(param_value, NULL, &uart->ps_bdf[0],
++                            &uart->ps_bdf[1], &uart->ps_bdf[2]) )
++                PARSE_ERR_RET("Bad port PCI coordinates\n");
++            uart->ps_bdf_enable = true;
++            break;
++
++        case bridge_bdf:
+             if ( !parse_pci(param_value, NULL, &uart->pb_bdf[0],
+                             &uart->pb_bdf[1], &uart->pb_bdf[2]) )
+-                PARSE_ERR_RET("Bad port PCI coordinates\n");
++                PARSE_ERR_RET("Bad bridge PCI coordinates\n");
+             uart->pb_bdf_enable = true;
+             break;
+ #endif
+-- 
+2.30.2
+

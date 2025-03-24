@@ -1,0 +1,44 @@
+From 06760c2bf322cef4622b56bafee74fe93ae01630 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 12 Jun 2020 18:32:27 +0100
+Subject: [PATCH] tools/libxl: Fix memory leak in libxl_cpuid_set()
+
+xc_cpuid_set() returns allocated memory via cpuid_res, which libxl needs to
+free() seeing as it discards the results.
+
+This is logically a backport of c/s b91825f628 "tools/libxc: Drop
+config_transformed parameter from xc_cpuid_set()" but rewritten as one caller
+of xc_cpuid_set() does use returned values.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+(cherry picked from commit c54de7d9df7718ea53bf21e1ff5bbd339602a704)
+---
+ tools/libxl/libxl_cpuid.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/tools/libxl/libxl_cpuid.c b/tools/libxl/libxl_cpuid.c
+index 88b5760c85..07995c81d1 100644
+--- a/tools/libxl/libxl_cpuid.c
++++ b/tools/libxl/libxl_cpuid.c
+@@ -404,12 +404,17 @@ void libxl_cpuid_apply_policy(libxl_ctx *ctx, uint32_t domid)
+ void libxl_cpuid_set(libxl_ctx *ctx, uint32_t domid,
+                      libxl_cpuid_policy_list cpuid)
+ {
+-    int i;
++    int i, j;
+     char *cpuid_res[4];
+ 
+     for (i = 0; cpuid[i].input[0] != XEN_CPUID_INPUT_UNUSED; i++)
++    {
+         xc_cpuid_set(ctx->xch, domid, cpuid[i].input,
+                      (const char**)(cpuid[i].policy), cpuid_res);
++
++        for (j = 0; j < ARRAY_SIZE(cpuid_res); ++j)
++            free(cpuid_res[j]);
++    }
+ }
+ 
+ static const char *input_names[2] = { "leaf", "subleaf" };
+-- 
+2.30.2
+

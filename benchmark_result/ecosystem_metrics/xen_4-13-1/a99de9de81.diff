@@ -1,0 +1,113 @@
+From a99de9de81c7f1c8af532a23b895806225eaf192 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 9 Apr 2020 09:06:31 +0200
+Subject: [PATCH] x86/dom0: improve PVH initrd and metadata placement
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Don't assume there's going to be enough space at the tail of the
+loaded kernel and instead try to find a suitable memory area where the
+initrd and metadata can be loaded.
+
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+
+x86/dom0: Fix build with clang
+
+find_memory() isn't marked as __init, so if it isn't fully inlined, it ends up
+tripping:
+
+  Error: size of dom0_build.o:.text is 0x0c1
+
+Fixes: 73b47eea21 "x86/dom0: improve PVH initrd and metadata placement"
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 73b47eea21045556dc5334e4f17d0c05c23f3c16
+master date: 2020-03-05 10:43:15 +0100
+master commit: 40213cd8626bac712fa69c4978993e87b57a7d0c
+master date: 2020-03-05 18:11:51 +0000
+---
+ xen/arch/x86/hvm/dom0_build.c | 58 ++++++++++++++++++++++++++++++++++-
+ 1 file changed, 57 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/dom0_build.c b/xen/arch/x86/hvm/dom0_build.c
+index 380412151b..9a46005494 100644
+--- a/xen/arch/x86/hvm/dom0_build.c
++++ b/xen/arch/x86/hvm/dom0_build.c
+@@ -491,6 +491,45 @@ static int __init pvh_populate_p2m(struct domain *d)
+ #undef MB1_PAGES
+ }
+ 
++static paddr_t __init find_memory(
++    const struct domain *d, const struct elf_binary *elf, size_t size)
++{
++    paddr_t kernel_start = (paddr_t)elf->dest_base & PAGE_MASK;
++    paddr_t kernel_end = ROUNDUP((paddr_t)elf->dest_base + elf->dest_size,
++                                 PAGE_SIZE);
++    unsigned int i;
++
++    /*
++     * The memory map is sorted and all RAM regions starts and sizes are
++     * aligned to page boundaries.
++     */
++    for ( i = 0; i < d->arch.nr_e820; i++ )
++    {
++        paddr_t start, end = d->arch.e820[i].addr + d->arch.e820[i].size;
++
++        /* Don't use memory below 1MB, as it could overwrite BDA/EBDA/IBFT. */
++        if ( end <= MB(1) || d->arch.e820[i].type != E820_RAM )
++            continue;
++
++        start = MAX(ROUNDUP(d->arch.e820[i].addr, PAGE_SIZE), MB(1));
++
++        ASSERT(IS_ALIGNED(start, PAGE_SIZE) && IS_ALIGNED(end, PAGE_SIZE));
++
++        if ( end <= kernel_start || start >= kernel_end )
++            ; /* No overlap, nothing to do. */
++        /* Deal with the kernel already being loaded in the region. */
++        else if ( kernel_start - start > end - kernel_end )
++            end = kernel_start;
++        else
++            start = kernel_end;
++
++        if ( end - start >= size )
++            return start;
++    }
++
++    return INVALID_PADDR;
++}
++
+ static int __init pvh_load_kernel(struct domain *d, const module_t *image,
+                                   unsigned long image_headroom,
+                                   module_t *initrd, void *image_base,
+@@ -547,7 +586,24 @@ static int __init pvh_load_kernel(struct domain *d, const module_t *image,
+         return rc;
+     }
+ 
+-    last_addr = ROUNDUP(parms.virt_kend - parms.virt_base, PAGE_SIZE);
++    /*
++     * Find a RAM region big enough (and that doesn't overlap with the loaded
++     * kernel) in order to load the initrd and the metadata. Note it could be
++     * split into smaller allocations, done as a single region in order to
++     * simplify it.
++     */
++    last_addr = find_memory(d, &elf, sizeof(start_info) +
++                            (initrd ? ROUNDUP(initrd->mod_end, PAGE_SIZE) +
++                                      sizeof(mod)
++                                    : 0) +
++                            (cmdline ? ROUNDUP(strlen(cmdline) + 1,
++                                               elf_64bit(&elf) ? 8 : 4)
++                                     : 0));
++    if ( last_addr == INVALID_PADDR )
++    {
++        printk("Unable to find a memory region to load initrd and metadata\n");
++        return -ENOMEM;
++    }
+ 
+     if ( initrd != NULL )
+     {
+-- 
+2.30.2
+

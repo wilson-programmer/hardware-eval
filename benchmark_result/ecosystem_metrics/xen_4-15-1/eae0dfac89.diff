@@ -1,0 +1,37 @@
+From eae0dfac891f521ceb6c4733e22a0cd718f336c0 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 4 Jun 2021 14:49:40 +0200
+Subject: [PATCH] x86: fix build race when generating temporary object files
+ (take 2)
+
+The original commit wasn't quite sufficient: Emptying DEPS is helpful
+only when nothing will get added to it subsequently. xen/Rules.mk will,
+after including the local Makefile, amend DEPS by dependencies for
+objects living in sub-directories though. For the purpose of suppressing
+dependencies of the makefiles on the .*.d2 files (and thus to avoid
+their re-generation) it is, however, not necessary at all to play with
+DEPS. Instead we can override DEPS_INCLUDE (which generally is a late-
+expansion variable).
+
+Fixes: 761bb575ce97 ("x86: fix build race when generating temporary object files")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+master commit: 8c90dbb99907f3b471d558775777a84daec7c3f6
+master date: 2021-05-28 09:12:24 +0200
+---
+ xen/arch/x86/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/Makefile b/xen/arch/x86/Makefile
+index b6567c4127..b560c12a58 100644
+--- a/xen/arch/x86/Makefile
++++ b/xen/arch/x86/Makefile
+@@ -286,5 +286,5 @@ clean::
+ # Suppress loading of DEPS files for internal, temporary target files.  This
+ # then also suppresses re-generation of the respective .*.d2 files.
+ ifeq ($(filter-out .xen%.o,$(notdir $(MAKECMDGOALS))),)
+-DEPS:=
++DEPS_INCLUDE:=
+ endif
+-- 
+2.30.2
+

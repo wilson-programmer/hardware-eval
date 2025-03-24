@@ -1,0 +1,62 @@
+From f0e653fb4aea77210b8096c170e82de3c2039d89 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Fri, 16 Dec 2022 18:25:20 +0000
+Subject: [PATCH] tools/ocaml/xb: Drop Xs_ring.write
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+This function is unusued (only Xs_ring.write_substring is used), and the
+bytes/string conversion here is backwards: the C stub implements the bytes
+version and then we use a Bytes.unsafe_of_string to convert a string into
+bytes.
+
+However the operation here really is read-only: we read from the string and
+write it to the ring, so the C stub should implement the read-only string
+version, and if needed we could use Bytes.unsafe_to_string to be able to send
+'bytes'. However that is not necessary as the 'bytes' version is dropped above.
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+(cherry picked from commit 01f139215e678c2dc7d4bb3f9f2777069bb1b091)
+---
+ tools/ocaml/libs/xb/xs_ring.ml      | 5 +----
+ tools/ocaml/libs/xb/xs_ring_stubs.c | 2 +-
+ 2 files changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/tools/ocaml/libs/xb/xs_ring.ml b/tools/ocaml/libs/xb/xs_ring.ml
+index db7f86bd27..dd5e014a33 100644
+--- a/tools/ocaml/libs/xb/xs_ring.ml
++++ b/tools/ocaml/libs/xb/xs_ring.ml
+@@ -25,14 +25,11 @@ module Server_features = Set.Make(struct
+ end)
+ 
+ external read: Xenmmap.mmap_interface -> bytes -> int -> int = "ml_interface_read"
+-external write: Xenmmap.mmap_interface -> bytes -> int -> int = "ml_interface_write"
++external write_substring: Xenmmap.mmap_interface -> string -> int -> int = "ml_interface_write"
+ 
+ external _internal_set_server_features: Xenmmap.mmap_interface -> int -> unit = "ml_interface_set_server_features" [@@noalloc]
+ external _internal_get_server_features: Xenmmap.mmap_interface -> int = "ml_interface_get_server_features" [@@noalloc]
+ 
+-let write_substring mmap buff len =
+-	write mmap (Bytes.unsafe_of_string buff) len
+-
+ let get_server_features mmap =
+ 	(* NB only one feature currently defined above *)
+ 	let x = _internal_get_server_features mmap in
+diff --git a/tools/ocaml/libs/xb/xs_ring_stubs.c b/tools/ocaml/libs/xb/xs_ring_stubs.c
+index 1f58524535..1243c63f03 100644
+--- a/tools/ocaml/libs/xb/xs_ring_stubs.c
++++ b/tools/ocaml/libs/xb/xs_ring_stubs.c
+@@ -112,7 +112,7 @@ CAMLprim value ml_interface_write(value ml_interface,
+ 	CAMLlocal1(ml_result);
+ 
+ 	struct mmap_interface *interface = GET_C_STRUCT(ml_interface);
+-	const unsigned char *buffer = Bytes_val(ml_buffer);
++	const char *buffer = String_val(ml_buffer);
+ 	int len = Int_val(ml_len);
+ 	int result;
+ 
+-- 
+2.30.2
+

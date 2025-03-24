@@ -1,0 +1,56 @@
+From 97b46980822f3c8f2b06990a0b6b1944300a5c8e Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Wed, 15 May 2019 21:17:30 +0100
+Subject: [PATCH] xen/arm: traps: Avoid using BUG_ON() to check guest state in
+ advance_pc()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The condition of the BUG_ON() in advance_pc() is pretty wrong because
+the bits [26:25] and [15:10] have a different meaning between AArch32
+and AArch64 state.
+
+On AArch32, they are used to store PSTATE.IT. On AArch64, they are RES0
+or used for new feature (e.g ARMv8.0-SSBS, ARMv8.5-BTI).
+
+This means a 64-bit guest will hit the BUG_ON() if it is trying to use
+any of these features.
+
+More generally, RES0 means that the bits is reserved for future use. So
+crashing the host is definitely not the right solution.
+
+In this particular case, we only need to know the guest was using 32-bit
+Mode and the Thumb instructions. So replace the BUG_ON() by a proper
+check.
+
+Reported-by: Lukas JÃ¼nger <lukas.juenger@ice.rwth-aachen.de>
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 72615f2e6b98e861c08abb1d2b194126013d54fe)
+---
+ xen/arch/arm/traps.c | 7 ++-----
+ 1 file changed, 2 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/arm/traps.c b/xen/arch/arm/traps.c
+index cd48af0997..e404d5c8d4 100644
+--- a/xen/arch/arm/traps.c
++++ b/xen/arch/arm/traps.c
+@@ -1638,12 +1638,9 @@ int check_conditional_instr(struct cpu_user_regs *regs, const union hsr hsr)
+ void advance_pc(struct cpu_user_regs *regs, const union hsr hsr)
+ {
+     unsigned long itbits, cond, cpsr = regs->cpsr;
++    bool is_thumb = psr_mode_is_32bit(cpsr) && (cpsr & PSR_THUMB);
+ 
+-    /* PSR_IT_MASK bits can only be set for 32-bit processors in Thumb mode. */
+-    BUG_ON( (!psr_mode_is_32bit(cpsr)||!(cpsr&PSR_THUMB))
+-            && (cpsr&PSR_IT_MASK) );
+-
+-    if ( cpsr&PSR_IT_MASK )
++    if ( is_thumb && (cpsr & PSR_IT_MASK) )
+     {
+         /* The ITSTATE[7:0] block is contained in CPSR[15:10],CPSR[26:25]
+          *
+-- 
+2.30.2
+

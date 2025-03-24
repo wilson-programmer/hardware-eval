@@ -1,0 +1,48 @@
+From ee4ce011986e5a6e8283d3ca2631a7ceafa9206f Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Tue, 14 Nov 2023 13:56:13 +0100
+Subject: [PATCH] iommu: fix quarantine mode command line documentation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+With the addition of per-device quarantine page tables the sink page is now
+exclusive for each device, and thus writable.  Update the documentation to
+reflect the current implementation.
+
+Fixes: 14dd241aad8a ('IOMMU/x86: use per-device page tables for quarantining')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 94a5127ebeb4a005f128150909ca78bfea50206a
+master date: 2023-10-19 21:52:52 +0100
+---
+ docs/misc/xen-command-line.pandoc | 9 ++++-----
+ 1 file changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/docs/misc/xen-command-line.pandoc b/docs/misc/xen-command-line.pandoc
+index b92c8f969c..c4afd51a81 100644
+--- a/docs/misc/xen-command-line.pandoc
++++ b/docs/misc/xen-command-line.pandoc
+@@ -1484,15 +1484,14 @@ boolean (e.g. `iommu=no`) can override this and leave the IOMMUs disabled.
+     should be enabled.  Quarantining can be done in two ways: In its basic
+     form, all in-flight DMA will simply be forced to encounter IOMMU
+     faults.  Since there are systems where doing so can cause host lockup,
+-    an alternative form is available where writes to memory will be made
+-    fault, but reads will be directed to a scratch page.  The implication
+-    here is that such reads will go unnoticed, i.e. an admin may not
+-    become aware of the underlying problem.
++    an alternative form is available where accesses to memory will be directed
++    to a scratch page. The implication here is that such accesses will go
++    unnoticed, i.e. an admin may not become aware of the underlying problem.
+ 
+     Therefore, if this option is set to true (the default), Xen always
+     quarantines such devices; they must be explicitly assigned back to Dom0
+     before they can be used there again.  If set to "scratch-page", still
+-    active DMA reads will additionally be directed to a "scratch" page.  If
++    active DMA operations will additionally be directed to a "scratch" page.  If
+     set to false, Xen will only quarantine devices the toolstack has arranged
+     for getting quarantined, and only in the "basic" form.
+ 
+-- 
+2.30.2
+

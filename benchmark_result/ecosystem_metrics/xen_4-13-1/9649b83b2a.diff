@@ -1,0 +1,47 @@
+From 9649b83b2ab4707de79da42307f8757e317bf217 Mon Sep 17 00:00:00 2001
+From: Ashok Raj <ashok.raj@intel.com>
+Date: Thu, 7 May 2020 14:51:20 +0200
+Subject: [PATCH] x86/ucode/intel: Writeback and invalidate caches before
+ updating microcode
+
+Updating microcode is less error prone when caches have been flushed and
+depending on what exactly the microcode is updating. For example, some of the
+issues around certain Broadwell parts can be addressed by doing a full cache
+flush.
+
+Signed-off-by: Ashok Raj <ashok.raj@intel.com>
+Signed-off-by: Borislav Petkov <bp@suse.de>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+[Linux commit 91df9fdf51492aec9fed6b4cbd33160886740f47, ported to Xen]
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 77c82949990edaf21130be842a289a7fb7a439e1
+master date: 2020-05-05 20:18:19 +0100
+---
+ xen/arch/x86/microcode_intel.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/arch/x86/microcode_intel.c b/xen/arch/x86/microcode_intel.c
+index e37c46a836..42fbd19551 100644
+--- a/xen/arch/x86/microcode_intel.c
++++ b/xen/arch/x86/microcode_intel.c
+@@ -30,6 +30,7 @@
+ 
+ #include <asm/msr.h>
+ #include <asm/processor.h>
++#include <asm/system.h>
+ #include <asm/microcode.h>
+ 
+ #define pr_debug(x...) ((void)0)
+@@ -300,6 +301,8 @@ static int apply_microcode(const struct microcode_patch *patch)
+ 
+     BUG_ON(local_irq_is_enabled());
+ 
++    wbinvd();
++
+     /* write microcode via MSR 0x79 */
+     wrmsrl(MSR_IA32_UCODE_WRITE, (unsigned long)mc_intel->bits);
+     wrmsrl(MSR_IA32_UCODE_REV, 0x0ULL);
+-- 
+2.30.2
+

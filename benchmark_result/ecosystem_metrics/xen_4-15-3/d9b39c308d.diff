@@ -1,0 +1,68 @@
+From d9b39c308da9fe7cf58941cff4b343d4b57c2ae5 Mon Sep 17 00:00:00 2001
+From: Jason Andryuk <jandryuk@gmail.com>
+Date: Wed, 6 Apr 2022 10:23:03 +0200
+Subject: [PATCH] libxl: Don't segfault on soft-reset failure
+
+If domain_soft_reset_cb can't rename the save file, it doesn't call
+initiate_domain_create() and calls domcreate_complete().
+
+Skipping initiate_domain_create() means dcs->console_wait is
+uninitialized and all 0s.
+
+We have:
+  domcreate_complete()
+    libxl__xswait_stop()
+      libxl__ev_xswatch_deregister().
+
+The uninitialized slotnum 0 is considered valid (-1 is the invalid
+sentinel), so the NULL pointer path to passed to xs_unwatch() which
+segfaults.
+
+libxl__ev_xswatch_deregister:watch w=0x12bc250 wpath=(null) token=0/0: deregister slotnum=0
+
+Move dcs->console_xswait initialization into the callers of
+initiate_domain_create, do_domain_create() and do_domain_soft_reset(),
+so it is initialized along with the other dcs state.
+
+Fixes: c57e6ebd8c3e ("(lib)xl: soft reset support")
+Signed-off-by: Jason Andryuk <jandryuk@gmail.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+
+master commit: d2ecf97f911fc00a85b34b70ca311b5d355a9756
+master date: 2022-04-01 17:01:57 +0100
+---
+ tools/libs/light/libxl_create.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/libs/light/libxl_create.c b/tools/libs/light/libxl_create.c
+index f3878cecc1..2f171a190a 100644
+--- a/tools/libs/light/libxl_create.c
++++ b/tools/libs/light/libxl_create.c
+@@ -1226,8 +1226,6 @@ static void initiate_domain_create(libxl__egc *egc,
+     libxl_domain_config *const d_config = dcs->guest_config;
+     libxl__domain_build_state *dbs = &dcs->build_state;
+ 
+-    libxl__xswait_init(&dcs->console_xswait);
+-
+     domid = dcs->domid;
+     libxl__domain_build_state_init(dbs);
+     dbs->restore = dcs->restore_fd >= 0;
+@@ -2042,6 +2040,7 @@ static int do_domain_create(libxl_ctx *ctx, libxl_domain_config *d_config,
+     cdcs->dcs.callback = domain_create_cb;
+     cdcs->dcs.domid = INVALID_DOMID;
+     cdcs->dcs.soft_reset = false;
++    libxl__xswait_init(&cdcs->dcs.console_xswait);
+ 
+     if (cdcs->dcs.restore_params.checkpointed_stream ==
+         LIBXL_CHECKPOINTED_STREAM_COLO) {
+@@ -2142,6 +2141,7 @@ static int do_domain_soft_reset(libxl_ctx *ctx,
+     cdcs->dcs.domid = domid;
+     cdcs->dcs.soft_reset = true;
+     cdcs->dcs.callback = domain_create_cb;
++    libxl__xswait_init(&cdcs->dcs.console_xswait);
+     libxl__ao_progress_gethow(&srs->cdcs.dcs.aop_console_how,
+                               aop_console_how);
+     cdcs->domid_out = &domid_out;
+-- 
+2.30.2
+

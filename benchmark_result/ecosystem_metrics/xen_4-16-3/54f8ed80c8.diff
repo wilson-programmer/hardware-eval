@@ -1,0 +1,64 @@
+From 54f8ed80c8308e65c3f57ae6cbd130f43f5ecbbd Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 31 Oct 2022 13:22:17 +0100
+Subject: [PATCH] EFI: don't convert memory marked for runtime use to ordinary
+ RAM
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+efi_init_memory() in both relevant places is treating EFI_MEMORY_RUNTIME
+higher priority than the type of the range. To avoid accessing memory at
+runtime which was re-used for other purposes, make
+efi_arch_process_memory_map() follow suit. While in theory the same would
+apply to EfiACPIReclaimMemory, we don't actually "reclaim" or clobber
+that memory (converted to E820_ACPI on x86) there (and it would be a bug
+if the Dom0 kernel tried to reclaim the range, bypassing Xen's memory
+management, plus it would be at least bogus if it clobbered that space),
+hence that type's handling can be left alone.
+
+Fixes: bf6501a62e80 ("x86-64: EFI boot code")
+Fixes: facac0af87ef ("x86-64: EFI runtime code")
+Fixes: 6d70ea10d49f ("Add ARM EFI boot support")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+master commit: f324300c8347b6aa6f9c0b18e0a90bbf44011a9a
+master date: 2022-10-21 12:30:24 +0200
+---
+ xen/arch/arm/efi/efi-boot.h | 3 ++-
+ xen/arch/x86/efi/efi-boot.h | 4 +++-
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/efi/efi-boot.h b/xen/arch/arm/efi/efi-boot.h
+index 9f26798239..849071fe53 100644
+--- a/xen/arch/arm/efi/efi-boot.h
++++ b/xen/arch/arm/efi/efi-boot.h
+@@ -194,7 +194,8 @@ static EFI_STATUS __init efi_process_memory_map_bootinfo(EFI_MEMORY_DESCRIPTOR *
+ 
+     for ( Index = 0; Index < (mmap_size / desc_size); Index++ )
+     {
+-        if ( desc_ptr->Attribute & EFI_MEMORY_WB &&
++        if ( !(desc_ptr->Attribute & EFI_MEMORY_RUNTIME) &&
++             (desc_ptr->Attribute & EFI_MEMORY_WB) &&
+              (desc_ptr->Type == EfiConventionalMemory ||
+               desc_ptr->Type == EfiLoaderCode ||
+               desc_ptr->Type == EfiLoaderData ||
+diff --git a/xen/arch/x86/efi/efi-boot.h b/xen/arch/x86/efi/efi-boot.h
+index 4ee77fb9bf..d996016223 100644
+--- a/xen/arch/x86/efi/efi-boot.h
++++ b/xen/arch/x86/efi/efi-boot.h
+@@ -185,7 +185,9 @@ static void __init efi_arch_process_memory_map(EFI_SYSTEM_TABLE *SystemTable,
+             /* fall through */
+         case EfiLoaderCode:
+         case EfiLoaderData:
+-            if ( desc->Attribute & EFI_MEMORY_WB )
++            if ( desc->Attribute & EFI_MEMORY_RUNTIME )
++                type = E820_RESERVED;
++            else if ( desc->Attribute & EFI_MEMORY_WB )
+                 type = E820_RAM;
+             else
+         case EfiUnusableMemory:
+-- 
+2.30.2
+

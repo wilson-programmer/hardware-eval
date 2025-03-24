@@ -1,0 +1,97 @@
+From 26d307a322ed9ccc62aa18db632f9dd4611934ce Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Mon, 23 Sep 2019 17:45:22 +0100
+Subject: [PATCH] xen/arm: Ensure the SSBD workaround is re-enabled right after
+ exiting a guest
+
+At the moment, SSBD workaround is re-enabled for Xen after interrupts
+are unmasked. This means we may end up to execute some part of the
+hypervisor if an interrupt is received before the workaround is
+re-enabled.
+
+Each trap may require to unmask different interrupts.
+As the rest of enter_hypervisor_from_guest() does not require to have
+interrupts masked, the function is now split in two parts:
+    1) enter_hypervisor_from_guest_preirq() called with interrupts
+       masked.
+    2) enter_hypervisor_from_guest() called with interrupts unmasked.
+
+Note that while it might be possible to avoid spliting the function in
+two parts, it requires a bit more work than I can currently invest to
+avoid using indirect branch.
+
+Furthermore, the function name is rather generic as there might be more
+work to dob before interrupts are unmasked in the future.
+
+Fixes: a7898e4c59 ("xen/arm: Add ARCH_WORKAROUND_2 support for guests")
+Reported-by: Andrii Anisov <andrii_anisov@epam.com>
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit efee8ba9bf84d54e752f2a44c510cdfb3cc0c282)
+---
+ xen/arch/arm/arm32/entry.S |  2 +-
+ xen/arch/arm/arm64/entry.S |  1 +
+ xen/arch/arm/traps.c       | 14 ++++++++++++--
+ 3 files changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/arm/arm32/entry.S b/xen/arch/arm/arm32/entry.S
+index 59a296a4ad..d5c2982e4a 100644
+--- a/xen/arch/arm/arm32/entry.S
++++ b/xen/arch/arm/arm32/entry.S
+@@ -118,7 +118,7 @@ abort_guest_exit_end:
+         bne return_from_trap
+ 
+ skip_check:
+-        mov pc, lr
++        b   enter_hypervisor_from_guest_preirq
+ ENDPROC(prepare_context_from_guest)
+ 
+         /*
+diff --git a/xen/arch/arm/arm64/entry.S b/xen/arch/arm/arm64/entry.S
+index 8c9963c50b..c476108b7b 100644
+--- a/xen/arch/arm/arm64/entry.S
++++ b/xen/arch/arm/arm64/entry.S
+@@ -196,6 +196,7 @@ lr      .req    x30             /* link register */
+         ALTERNATIVE("bl check_pending_vserror; cbnz x0, 1f",
+                     "nop; nop",
+                     SKIP_SYNCHRONIZE_SERROR_ENTRY_EXIT)
++        bl      enter_hypervisor_from_guest_preirq
+         msr     daifclr, \iflags
+         bl      enter_hypervisor_from_guest
+         mov     x0, sp
+diff --git a/xen/arch/arm/traps.c b/xen/arch/arm/traps.c
+index 53cbaca400..ae7bab6c0e 100644
+--- a/xen/arch/arm/traps.c
++++ b/xen/arch/arm/traps.c
+@@ -1978,15 +1978,25 @@ static inline bool needs_ssbd_flip(struct vcpu *v)
+ 
+ /*
+  * Actions that needs to be done after entering the hypervisor from the
+- * guest and before we handle any request.
++ * guest and before the interrupts are unmasked.
+  */
+-void enter_hypervisor_from_guest(void)
++void enter_hypervisor_from_guest_preirq(void)
+ {
+     struct vcpu *v = current;
+ 
+     /* If the guest has disabled the workaround, bring it back on. */
+     if ( needs_ssbd_flip(v) )
+         arm_smccc_1_1_smc(ARM_SMCCC_ARCH_WORKAROUND_2_FID, 1, NULL);
++}
++
++/*
++ * Actions that needs to be done after entering the hypervisor from the
++ * guest and before we handle any request. Depending on the exception trap,
++ * this may be called with interrupts unmasked.
++ */
++void enter_hypervisor_from_guest(void)
++{
++    struct vcpu *v = current;
+ 
+     /*
+      * If we pended a virtual abort, preserve it until it gets cleared.
+-- 
+2.30.2
+

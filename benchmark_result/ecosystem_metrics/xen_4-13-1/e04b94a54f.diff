@@ -1,0 +1,32 @@
+From e04b94a54fd550636600f8d32f6076c6167dab52 Mon Sep 17 00:00:00 2001
+From: Sander Eikelenboom <linux@eikelenboom.it>
+Date: Wed, 19 Feb 2020 21:31:30 +0100
+Subject: [PATCH] tools/xentop: Fix calculation of used memory
+
+Used memory should be calculated by subtracting free memory from total
+memory.
+
+Fixes: c588c002cc1 ("tools: remove tmem code and commands")
+Signed-off-by: Sander Eikelenboom <linux@eikelenboom.it>
+Acked-by: Wei Liu <wl@xen.org>
+(cherry picked from commit 4b5b431edd984b26f43b3efc7de465f3560a949e)
+---
+ tools/xenstat/xentop/xentop.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/xenstat/xentop/xentop.c b/tools/xenstat/xentop/xentop.c
+index af11ebfbf7..f9f4dfb453 100644
+--- a/tools/xenstat/xentop/xentop.c
++++ b/tools/xenstat/xentop/xentop.c
+@@ -969,7 +969,7 @@ void do_summary(void)
+ 	      "%u crashed, %u dying, %u shutdown \n",
+ 	      num_domains, run, block, pause, crash, dying, shutdown);
+ 
+-	used = xenstat_node_tot_mem(cur_node);
++	used = xenstat_node_tot_mem(cur_node) - xenstat_node_free_mem(cur_node);
+ 	freeable_mb = 0;
+ 
+ 	/* Dump node memory and cpu information */
+-- 
+2.30.2
+

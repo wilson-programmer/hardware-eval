@@ -1,0 +1,40 @@
+From 1bfc29fbdabee4915c4938bfa801aadeba67534f Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 5 Mar 2020 11:06:57 +0100
+Subject: [PATCH] x86: "spec-ctrl=no-xen" should also disable branch hardening
+
+This is controlling Xen behavior alone, after all.
+
+Reported-by: Jin Nan Wang <jnwang@suse.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: e6ca7afcf2ddeb72beade853ccd6fa3332210014
+master date: 2020-02-20 11:37:01 +0100
+---
+ xen/arch/x86/spec_ctrl.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/spec_ctrl.c b/xen/arch/x86/spec_ctrl.c
+index aa632bdcee..6656c44aec 100644
+--- a/xen/arch/x86/spec_ctrl.c
++++ b/xen/arch/x86/spec_ctrl.c
+@@ -97,8 +97,6 @@ static int __init parse_spec_ctrl(const char *s)
+             if ( opt_pv_l1tf_domu < 0 )
+                 opt_pv_l1tf_domu = 0;
+ 
+-            opt_branch_harden = false;
+-
+             if ( opt_tsx == -1 )
+                 opt_tsx = -3;
+ 
+@@ -113,6 +111,7 @@ static int __init parse_spec_ctrl(const char *s)
+             opt_ibpb = false;
+             opt_ssbd = false;
+             opt_l1d_flush = 0;
++            opt_branch_harden = false;
+         }
+         else if ( val > 0 )
+             rc = -EINVAL;
+-- 
+2.30.2
+

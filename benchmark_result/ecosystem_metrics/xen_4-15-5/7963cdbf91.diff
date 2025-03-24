@@ -1,0 +1,103 @@
+From 7963cdbf91d8a8d2f8338171adab3807b20f658a Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 24 Mar 2023 17:59:56 +0000
+Subject: [PATCH] CI: Remove llvm-8 from the Debian Stretch container
+
+For similar reasons to c/s a6b1e2b80fe20.  While this container is still
+build-able for now, all the other problems with explicitly-versioned compilers
+remain.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 7a298375721636290a57f31bb0f7c2a5a38956a4)
+---
+ automation/build/debian/stretch-llvm-8.list |  3 ---
+ automation/build/debian/stretch.dockerfile  | 12 ---------
+ automation/gitlab-ci/build.yaml             | 27 ---------------------
+ 3 files changed, 42 deletions(-)
+ delete mode 100644 automation/build/debian/stretch-llvm-8.list
+
+diff --git a/automation/build/debian/stretch-llvm-8.list b/automation/build/debian/stretch-llvm-8.list
+deleted file mode 100644
+index 09fe843fb2..0000000000
+--- a/automation/build/debian/stretch-llvm-8.list
++++ /dev/null
+@@ -1,3 +0,0 @@
+-# Strech LLVM 8 repos
+-deb http://apt.llvm.org/stretch/ llvm-toolchain-stretch-8 main
+-deb-src http://apt.llvm.org/stretch/ llvm-toolchain-stretch-8 main
+diff --git a/automation/build/debian/stretch.dockerfile b/automation/build/debian/stretch.dockerfile
+index e3bace1f87..09e8a522ea 100644
+--- a/automation/build/debian/stretch.dockerfile
++++ b/automation/build/debian/stretch.dockerfile
+@@ -50,15 +50,3 @@ RUN apt-get update && \
+         apt-get autoremove -y && \
+         apt-get clean && \
+         rm -rf /var/lib/apt/lists* /tmp/* /var/tmp/*
+-
+-RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+-COPY stretch-llvm-8.list /etc/apt/sources.list.d/
+-
+-RUN apt-get update && \
+-    apt-get --quiet --yes install \
+-        clang-8 \
+-        lld-8 \
+-        && \
+-        apt-get autoremove -y && \
+-        apt-get clean && \
+-        rm -rf /var/lib/apt/lists* /tmp/* /var/tmp/*
+diff --git a/automation/gitlab-ci/build.yaml b/automation/gitlab-ci/build.yaml
+index 44f8bc6725..321e167b57 100644
+--- a/automation/gitlab-ci/build.yaml
++++ b/automation/gitlab-ci/build.yaml
+@@ -26,13 +26,6 @@
+     CXX: clang++
+     clang: y
+ 
+-.clang-8-tmpl:
+-  variables: &clang-8
+-    CC: clang-8
+-    CXX: clang++-8
+-    LD: ld.lld-8
+-    clang: y
+-
+ .x86-64-build-tmpl:
+   <<: *build
+   variables:
+@@ -97,16 +90,6 @@
+   variables:
+     <<: *clang
+ 
+-.clang-8-x86-64-build:
+-  extends: .x86-64-build
+-  variables:
+-    <<: *clang-8
+-
+-.clang-8-x86-64-build-debug:
+-  extends: .x86-64-build-debug
+-  variables:
+-    <<: *clang-8
+-
+ .clang-x86-32-build:
+   extends: .x86-32-build
+   variables:
+@@ -216,16 +199,6 @@ debian-stretch-clang-debug:
+   variables:
+     CONTAINER: debian:stretch
+ 
+-debian-stretch-clang-8:
+-  extends: .clang-8-x86-64-build
+-  variables:
+-    CONTAINER: debian:stretch
+-
+-debian-stretch-clang-8-debug:
+-  extends: .clang-8-x86-64-build-debug
+-  variables:
+-    CONTAINER: debian:stretch
+-
+ debian-stretch-gcc:
+   extends: .gcc-x86-64-build
+   variables:
+-- 
+2.30.2
+

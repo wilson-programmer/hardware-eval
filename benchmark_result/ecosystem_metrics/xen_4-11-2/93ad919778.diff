@@ -1,0 +1,37 @@
+From 93ad9197787ee07f3b5e4c44f54fde70d8092862 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 5 Jul 2019 10:32:03 +0200
+Subject: [PATCH] x86/AMD: limit C1E disable family range
+
+Just like for other family values of 0x17 (see "x86/AMD: correct certain
+Fam17 checks"), commit 3157bb4e13 ("Add MSR support for various feature
+AMD processor families") made the original check for Fam11 here include
+families all the way up to Fam17. The involved MSR (0xC0010055),
+however, is fully reserved starting from Fam16, and the two bits of
+interest are reserved for Fam12 and onwards (albeit I admit I wasn't
+able to find any Fam13 doc). Restore the upper bound to be Fam11.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 5c2926f576c9127a8d47217e0cafe00cc741c452
+master date: 2019-06-18 16:34:51 +0200
+---
+ xen/arch/x86/cpu/amd.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/cpu/amd.c b/xen/arch/x86/cpu/amd.c
+index 894b892ef3..20fb515117 100644
+--- a/xen/arch/x86/cpu/amd.c
++++ b/xen/arch/x86/cpu/amd.c
+@@ -626,7 +626,7 @@ static void init_amd(struct cpuinfo_x86 *c)
+ 
+ 	switch(c->x86)
+ 	{
+-	case 0xf ... 0x17:
++	case 0xf ... 0x11:
+ 		disable_c1e(NULL);
+ 		if (acpi_smi_cmd && (acpi_enable_value | acpi_disable_value))
+ 			pv_post_outb_hook = check_disable_c1e;
+-- 
+2.30.2
+

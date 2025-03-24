@@ -1,0 +1,33 @@
+From 4b5cc959dcc477e7165cb623ddc668d0b4a535cf Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Wed, 16 Oct 2019 12:12:51 +0100
+Subject: [PATCH] xen/arm: setup: Calculate correctly the size of Xen
+
+The current size of Xen is computed using _end - _start + 1. However,
+_end is pointing one past the end of Xen, so the size of Xen is
+off-by-one.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 08e2059facd78d5ffaf206ba06ac2017c4adeed4)
+---
+ xen/arch/arm/setup.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/setup.c b/xen/arch/arm/setup.c
+index a2aedc43e2..7fe02120a7 100644
+--- a/xen/arch/arm/setup.c
++++ b/xen/arch/arm/setup.c
+@@ -774,7 +774,7 @@ void __init start_xen(unsigned long boot_phys_offset,
+     /* Register Xen's load address as a boot module. */
+     xen_bootmodule = add_boot_module(BOOTMOD_XEN,
+                              (paddr_t)(uintptr_t)(_start + boot_phys_offset),
+-                             (paddr_t)(uintptr_t)(_end - _start + 1), false);
++                             (paddr_t)(uintptr_t)(_end - _start), false);
+     BUG_ON(!xen_bootmodule);
+ 
+     setup_pagetables(boot_phys_offset);
+-- 
+2.30.2
+

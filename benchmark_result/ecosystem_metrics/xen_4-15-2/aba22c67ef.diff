@@ -1,0 +1,136 @@
+From aba22c67efe4404a2a84e378bfd98def5ec8e647 Mon Sep 17 00:00:00 2001
+From: Stefano Stabellini <sstabellini@kernel.org>
+Date: Wed, 4 Aug 2021 13:57:07 -0700
+Subject: [PATCH] xen/arm: Do not invalidate the P2M when the PT is shared with
+ the IOMMU
+
+Set/Way flushes never work correctly in a virtualized environment.
+
+Our current implementation is based on clearing the valid bit in the p2m
+pagetable to track guest memory accesses. This technique doesn't work
+when the IOMMU is enabled for the domain and the pagetable is shared
+between IOMMU and MMU because it triggers IOMMU faults.
+
+Specifically, p2m_invalidate_root causes IOMMU faults if
+iommu_use_hap_pt returns true for the domain.
+
+Add a check in p2m_set_way_flush: if a set/way instruction is used
+and iommu_use_hap_pt returns true, rather than failing with obscure
+IOMMU faults, inject an undef exception straight away into the guest,
+and print a verbose error message to explain the problem.
+
+Also add an ASSERT in p2m_invalidate_root to make sure we don't
+inadvertently stumble across this problem again in the future.
+
+Signed-off-by: Stefano Stabellini <stefano.stabellini@xilinx.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 2b45ff60301a988badec526846e77b538383ae63)
+---
+ xen/arch/arm/arm64/vsysreg.c |  2 +-
+ xen/arch/arm/p2m.c           | 17 ++++++++++++++++-
+ xen/arch/arm/vcpreg.c        |  2 +-
+ xen/include/asm-arm/p2m.h    |  4 +++-
+ 4 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/arm/arm64/vsysreg.c b/xen/arch/arm/arm64/vsysreg.c
+index 41f18612c6..3743309107 100644
+--- a/xen/arch/arm/arm64/vsysreg.c
++++ b/xen/arch/arm/arm64/vsysreg.c
+@@ -106,7 +106,7 @@ void do_sysreg(struct cpu_user_regs *regs,
+     case HSR_SYSREG_DCCSW:
+     case HSR_SYSREG_DCCISW:
+         if ( !hsr.sysreg.read )
+-            p2m_set_way_flush(current);
++            p2m_set_way_flush(current, regs, hsr);
+         break;
+ 
+     /*
+diff --git a/xen/arch/arm/p2m.c b/xen/arch/arm/p2m.c
+index ac50312620..eaa43c6181 100644
+--- a/xen/arch/arm/p2m.c
++++ b/xen/arch/arm/p2m.c
+@@ -11,6 +11,7 @@
+ #include <asm/flushtlb.h>
+ #include <asm/guest_walk.h>
+ #include <asm/page.h>
++#include <asm/traps.h>
+ 
+ #define MAX_VMID_8_BIT  (1UL << 8)
+ #define MAX_VMID_16_BIT (1UL << 16)
+@@ -1166,11 +1167,16 @@ static void p2m_invalidate_table(struct p2m_domain *p2m, mfn_t mfn)
+ /*
+  * Invalidate all entries in the root page-tables. This is
+  * useful to get fault on entry and do an action.
++ *
++ * p2m_invalid_root() should not be called when the P2M is shared with
++ * the IOMMU because it will cause IOMMU fault.
+  */
+ void p2m_invalidate_root(struct p2m_domain *p2m)
+ {
+     unsigned int i;
+ 
++    ASSERT(!iommu_use_hap_pt(p2m->domain));
++
+     p2m_write_lock(p2m);
+ 
+     for ( i = 0; i < P2M_ROOT_LEVEL; i++ )
+@@ -1815,11 +1821,20 @@ void p2m_flush_vm(struct vcpu *v)
+  *
+  *  - Once the caches are enabled, we stop trapping VM ops.
+  */
+-void p2m_set_way_flush(struct vcpu *v)
++void p2m_set_way_flush(struct vcpu *v, struct cpu_user_regs *regs,
++                       const union hsr hsr)
+ {
+     /* This function can only work with the current vCPU. */
+     ASSERT(v == current);
+ 
++    if ( iommu_use_hap_pt(current->domain) )
++    {
++        gprintk(XENLOG_ERR,
++                "The cache should be flushed by VA rather than by set/way.\n");
++        inject_undef_exception(regs, hsr);
++        return;
++    }
++
+     if ( !(v->arch.hcr_el2 & HCR_TVM) )
+     {
+         v->arch.need_flush_to_ram = true;
+diff --git a/xen/arch/arm/vcpreg.c b/xen/arch/arm/vcpreg.c
+index 55351fc087..67ff02f6f8 100644
+--- a/xen/arch/arm/vcpreg.c
++++ b/xen/arch/arm/vcpreg.c
+@@ -222,7 +222,7 @@ void do_cp15_32(struct cpu_user_regs *regs, const union hsr hsr)
+     case HSR_CPREG32(DCCSW):
+     case HSR_CPREG32(DCCISW):
+         if ( !cp32.read )
+-            p2m_set_way_flush(current);
++            p2m_set_way_flush(current, regs, hsr);
+         break;
+ 
+     /*
+diff --git a/xen/include/asm-arm/p2m.h b/xen/include/asm-arm/p2m.h
+index 4f8b3b0ec7..6a2108398f 100644
+--- a/xen/include/asm-arm/p2m.h
++++ b/xen/include/asm-arm/p2m.h
+@@ -7,6 +7,7 @@
+ #include <xen/mem_access.h>
+ 
+ #include <asm/current.h>
++#include <asm/hsr.h>
+ 
+ #define paddr_bits PADDR_BITS
+ 
+@@ -272,7 +273,8 @@ void p2m_invalidate_root(struct p2m_domain *p2m);
+  */
+ int p2m_cache_flush_range(struct domain *d, gfn_t *pstart, gfn_t end);
+ 
+-void p2m_set_way_flush(struct vcpu *v);
++void p2m_set_way_flush(struct vcpu *v, struct cpu_user_regs *regs,
++                       const union hsr hsr);
+ 
+ void p2m_toggle_cache(struct vcpu *v, bool was_enabled);
+ 
+-- 
+2.30.2
+

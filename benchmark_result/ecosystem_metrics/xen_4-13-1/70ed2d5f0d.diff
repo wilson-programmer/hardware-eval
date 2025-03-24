@@ -1,0 +1,47 @@
+From 70ed2d5f0d51d3bea012170bbf70553463862073 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 7 May 2020 14:47:47 +0200
+Subject: [PATCH] x86/CPUID: correct error indicator for max extended leaf
+
+With the max base leaf using 0, this one should be using the extended
+leaf counterpart thereof, rather than some arbitrary extended leaf.
+
+Fixes: 588a966a572e ("libx86: Introduce x86_cpu_policies_are_compatible()")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 0135be8bd8cd60090298f02310691b688d95c3a8
+master date: 2020-04-30 10:45:09 +0200
+---
+ tools/tests/cpu-policy/test-cpu-policy.c | 2 +-
+ xen/lib/x86/policy.c                     | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/tests/cpu-policy/test-cpu-policy.c b/tools/tests/cpu-policy/test-cpu-policy.c
+index 20ebed923b..fe8cdf6ea9 100644
+--- a/tools/tests/cpu-policy/test-cpu-policy.c
++++ b/tools/tests/cpu-policy/test-cpu-policy.c
+@@ -570,7 +570,7 @@ static void test_is_compatible_failure(void)
+         {
+             .name = "Host extd.max_leaf out of range",
+             .guest_cpuid.extd.max_leaf = 1,
+-            .e = { 0x80000008, -1, -1 },
++            .e = { 0x80000000, -1, -1 },
+         },
+         {
+             .name = "Host no CPUID faulting, Guest wanted",
+diff --git a/xen/lib/x86/policy.c b/xen/lib/x86/policy.c
+index b156a304f4..4beca8767a 100644
+--- a/xen/lib/x86/policy.c
++++ b/xen/lib/x86/policy.c
+@@ -19,7 +19,7 @@ int x86_cpu_policies_are_compatible(const struct cpu_policy *host,
+         FAIL_CPUID(0, NA);
+ 
+     if ( guest->cpuid->extd.max_leaf > host->cpuid->extd.max_leaf )
+-        FAIL_CPUID(0x80000008, NA);
++        FAIL_CPUID(0x80000000, NA);
+ 
+     /* TODO: Audit more CPUID data. */
+ 
+-- 
+2.30.2
+

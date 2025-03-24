@@ -1,0 +1,40 @@
+From 5dae06578cd5dcc312175b00ed6836a85732438d Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 31 Oct 2022 13:19:35 +0100
+Subject: [PATCH] x86emul: respect NSCB
+
+protmode_load_seg() would better adhere to that "feature" of clearing
+base (and limit) during NULL selector loads.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 87a20c98d9f0f422727fe9b4b9e22c2c43a5cd9c
+master date: 2022-10-11 14:30:41 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index 441086ea86..847f8f3771 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -1970,6 +1970,7 @@ amd_like(const struct x86_emulate_ctxt *ctxt)
+ #define vcpu_has_tbm()         (ctxt->cpuid->extd.tbm)
+ #define vcpu_has_clzero()      (ctxt->cpuid->extd.clzero)
+ #define vcpu_has_wbnoinvd()    (ctxt->cpuid->extd.wbnoinvd)
++#define vcpu_has_nscb()        (ctxt->cpuid->extd.nscb)
+ 
+ #define vcpu_has_bmi1()        (ctxt->cpuid->feat.bmi1)
+ #define vcpu_has_hle()         (ctxt->cpuid->feat.hle)
+@@ -2102,7 +2103,7 @@ protmode_load_seg(
+         case x86_seg_tr:
+             goto raise_exn;
+         }
+-        if ( !_amd_like(cp) || !ops->read_segment ||
++        if ( !_amd_like(cp) || vcpu_has_nscb() || !ops->read_segment ||
+              ops->read_segment(seg, sreg, ctxt) != X86EMUL_OKAY )
+             memset(sreg, 0, sizeof(*sreg));
+         else
+-- 
+2.30.2
+

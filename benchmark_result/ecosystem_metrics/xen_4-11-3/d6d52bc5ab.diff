@@ -1,0 +1,42 @@
+From d6d52bc5ab9e3b31ad54f6f215d55d338d35dec5 Mon Sep 17 00:00:00 2001
+From: Stefano Stabellini <sstabellini@kernel.org>
+Date: Mon, 3 Jun 2019 15:02:43 -0700
+Subject: [PATCH] xen/arm: fix nr_pdxs calculation
+
+pfn_to_pdx expects an address, not a size, as a parameter. Specifically,
+it expects the end address, then the masks calculations compensate for
+any holes between start and end. Thus, we should pass the end address to
+pfn_to_pdx.
+
+The initial pdx is stored in frametable_base_pdx, so we can subtract the
+result of pfn_to_pdx(start_address) from nr_pdxs; we know that we don't
+need to cover any memory in the range 0-start in the frametable.
+
+Remove the variable `nr_pages' because it is unused.
+
+Signed-off-by: Stefano Stabellini <stefanos@xilinx.com>
+Reviewed-by: Julien Grall <julien.grall@arm.com>
+CC: JBeulich@suse.com
+(cherry picked from commit f51027be0688540aaab61513b06a8693a37e4c00)
+---
+ xen/arch/arm/mm.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/mm.c b/xen/arch/arm/mm.c
+index d3d4127e98..a940f5976e 100644
+--- a/xen/arch/arm/mm.c
++++ b/xen/arch/arm/mm.c
+@@ -889,8 +889,8 @@ void __init setup_xenheap_mappings(unsigned long base_mfn,
+ /* Map a frame table to cover physical addresses ps through pe */
+ void __init setup_frametable_mappings(paddr_t ps, paddr_t pe)
+ {
+-    unsigned long nr_pages = (pe - ps) >> PAGE_SHIFT;
+-    unsigned long nr_pdxs = pfn_to_pdx(nr_pages);
++    unsigned long nr_pdxs = mfn_to_pdx(mfn_add(maddr_to_mfn(pe), -1)) -
++                            mfn_to_pdx(maddr_to_mfn(ps)) + 1;
+     unsigned long frametable_size = nr_pdxs * sizeof(struct page_info);
+     mfn_t base_mfn;
+     const unsigned long mapping_size = frametable_size < MB(32) ? MB(2) : MB(32);
+-- 
+2.30.2
+

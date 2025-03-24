@@ -1,0 +1,43 @@
+From 9e8edd4c75564530a6fb98f5abba267edb906313 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 23 Nov 2023 12:12:18 +0100
+Subject: [PATCH] x86/x2apic: remove usage of ACPI_FADT_APIC_CLUSTER
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The ACPI FADT APIC_CLUSTER flag mandates that when the interrupt delivery is
+Logical mode APIC must be configured for Cluster destination model.  However in
+apic_x2apic_probe() such flag is incorrectly used to gate whether Physical mode
+can be used.
+
+Since Xen when in x2APIC mode only uses Logical mode together with Cluster
+model completely remove checking for ACPI_FADT_APIC_CLUSTER, as Xen always
+fulfills the requirement signaled by the flag.
+
+Fixes: eb40ae41b658 ('x86/Kconfig: add option for default x2APIC destination mode')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 26a449ce32cef33f2cb50602be19fcc0c4223ba9
+master date: 2023-11-02 10:50:26 +0100
+---
+ xen/arch/x86/genapic/x2apic.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/genapic/x2apic.c b/xen/arch/x86/genapic/x2apic.c
+index ca1db27157..707deef98c 100644
+--- a/xen/arch/x86/genapic/x2apic.c
++++ b/xen/arch/x86/genapic/x2apic.c
+@@ -231,8 +231,7 @@ const struct genapic *__init apic_x2apic_probe(void)
+          */
+         x2apic_phys = iommu_intremap != iommu_intremap_full ||
+                       (acpi_gbl_FADT.flags & ACPI_FADT_APIC_PHYSICAL) ||
+-                      (IS_ENABLED(CONFIG_X2APIC_PHYSICAL) &&
+-                       !(acpi_gbl_FADT.flags & ACPI_FADT_APIC_CLUSTER));
++                      IS_ENABLED(CONFIG_X2APIC_PHYSICAL);
+     }
+     else if ( !x2apic_phys )
+         switch ( iommu_intremap )
+-- 
+2.30.2
+

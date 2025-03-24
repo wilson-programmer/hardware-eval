@@ -1,0 +1,100 @@
+From 90320fd05991d7817cea85e1d45674b757abf03c Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 31 Mar 2023 08:39:32 +0200
+Subject: [PATCH] x86/nospec: Fix evaluate_nospec() code generation under Clang
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+It turns out that evaluate_nospec() code generation is not safe under Clang.
+Given:
+
+  void eval_nospec_test(int x)
+  {
+      if ( evaluate_nospec(x) )
+          asm volatile ("nop #true" ::: "memory");
+      else
+          asm volatile ("nop #false" ::: "memory");
+  }
+
+Clang emits:
+
+  <eval_nospec_test>:
+         0f ae e8                lfence
+         85 ff                   test   %edi,%edi
+         74 02                   je     <eval_nospec_test+0x9>
+         90                      nop
+         c3                      ret
+         90                      nop
+         c3                      ret
+
+which is not safe because the lfence has been hoisted above the conditional
+jump.  Clang concludes that both barrier_nospec_true()'s have identical side
+effects and can safely be merged.
+
+Clang can be persuaded that the side effects are different if there are
+different comments in the asm blocks.  This is fragile, but no more fragile
+that other aspects of this construct.
+
+Introduce barrier_nospec_false() with a separate internal comment to prevent
+Clang merging it with barrier_nospec_true() despite the otherwise-identical
+content.  The generated code now becomes:
+
+  <eval_nospec_test>:
+         85 ff                   test   %edi,%edi
+         74 05                   je     <eval_nospec_test+0x9>
+         0f ae e8                lfence
+         90                      nop
+         c3                      ret
+         0f ae e8                lfence
+         90                      nop
+         c3                      ret
+
+which has the correct number of lfence's, and in the correct place.
+
+Link: https://github.com/llvm/llvm-project/issues/55084
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: bc3c133841435829ba5c0a48427e2a77633502ab
+master date: 2023-03-24 12:16:31 +0000
+---
+ xen/include/asm-x86/nospec.h | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/xen/include/asm-x86/nospec.h b/xen/include/asm-x86/nospec.h
+index 5312ae4c6f..7150e76b87 100644
+--- a/xen/include/asm-x86/nospec.h
++++ b/xen/include/asm-x86/nospec.h
+@@ -10,15 +10,26 @@
+ static always_inline bool barrier_nospec_true(void)
+ {
+ #ifdef CONFIG_SPECULATIVE_HARDEN_BRANCH
+-    alternative("lfence", "", X86_FEATURE_SC_NO_BRANCH_HARDEN);
++    alternative("lfence #nospec-true", "", X86_FEATURE_SC_NO_BRANCH_HARDEN);
+ #endif
+     return true;
+ }
+ 
++static always_inline bool barrier_nospec_false(void)
++{
++#ifdef CONFIG_SPECULATIVE_HARDEN_BRANCH
++    alternative("lfence #nospec-false", "", X86_FEATURE_SC_NO_BRANCH_HARDEN);
++#endif
++    return false;
++}
++
+ /* Allow to protect evaluation of conditionals with respect to speculation */
+ static always_inline bool evaluate_nospec(bool condition)
+ {
+-    return condition ? barrier_nospec_true() : !barrier_nospec_true();
++    if ( condition )
++        return barrier_nospec_true();
++    else
++        return barrier_nospec_false();
+ }
+ 
+ /* Allow to block speculative execution in generic code */
+-- 
+2.30.2
+

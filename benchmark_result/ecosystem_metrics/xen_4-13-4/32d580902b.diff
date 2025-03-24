@@ -1,0 +1,80 @@
+From 32d580902b959000d79d51dff03a3560653c4fcb Mon Sep 17 00:00:00 2001
+From: Oleksandr Tyshchenko <oleksandr_tyshchenko@epam.com>
+Date: Mon, 5 Jul 2021 20:48:51 +0300
+Subject: [PATCH] xen/arm: bootfdt: Always sort memory banks
+
+At the moment, Xen on Arm64 expects the memory banks to be ordered.
+Unfortunately, there may be a case when updated by firmware
+device tree contains unordered banks. This means Xen will panic
+when setting xenheap mappings for the subsequent bank with start
+address being less than xenheap_mfn_start (start address of
+the first bank).
+
+As there is no clear requirement regarding ordering in the device
+tree, update code to be able to deal with by sorting memory
+banks. There is only one heap region on Arm32, so the sorting
+is fine to be done in the common code.
+
+Suggested-by: Julien Grall <jgrall@amazon.com>
+Signed-off-by: Oleksandr Tyshchenko <oleksandr_tyshchenko@epam.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 4473f3601098a2c3cf5ab89d5a29504772985e3a)
+---
+ xen/arch/arm/bootfdt.c | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/xen/arch/arm/bootfdt.c b/xen/arch/arm/bootfdt.c
+index 08fb59f4e7..41fb4dc872 100644
+--- a/xen/arch/arm/bootfdt.c
++++ b/xen/arch/arm/bootfdt.c
+@@ -13,6 +13,7 @@
+ #include <xen/init.h>
+ #include <xen/device_tree.h>
+ #include <xen/libfdt/libfdt.h>
++#include <xen/sort.h>
+ #include <xsm/xsm.h>
+ #include <asm/setup.h>
+ 
+@@ -394,6 +395,21 @@ static void __init early_print_info(void)
+     printk("\n");
+ }
+ 
++/* This function assumes that memory regions are not overlapped */
++static int __init cmp_memory_node(const void *key, const void *elem)
++{
++    const struct membank *handler0 = key;
++    const struct membank *handler1 = elem;
++
++    if ( handler0->start < handler1->start )
++        return -1;
++
++    if ( handler0->start >= (handler1->start + handler1->size) )
++        return 1;
++
++    return 0;
++}
++
+ /**
+  * boot_fdt_info - initialize bootinfo from a DTB
+  * @fdt: flattened device tree binary
+@@ -411,6 +427,15 @@ size_t __init boot_fdt_info(const void *fdt, paddr_t paddr)
+     add_boot_module(BOOTMOD_FDT, paddr, fdt_totalsize(fdt), false);
+ 
+     device_tree_for_each_node((void *)fdt, 0, early_scan_node, NULL);
++
++    /*
++     * On Arm64 setup_xenheap_mappings() expects to be called with the lowest
++     * bank in memory first. There is no requirement that the DT will provide
++     * the banks sorted in ascending order. So sort them through.
++     */
++    sort(bootinfo.mem.bank, bootinfo.mem.nr_banks, sizeof(struct membank),
++         cmp_memory_node, NULL);
++
+     early_print_info();
+ 
+     return fdt_totalsize(fdt);
+-- 
+2.30.2
+

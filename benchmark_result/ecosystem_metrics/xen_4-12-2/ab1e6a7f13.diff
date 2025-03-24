@@ -1,0 +1,58 @@
+From ab1e6a7f13cf9a71aaa68dd342020c95a1b8dc67 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Tue, 24 Sep 2019 11:39:10 +0100
+Subject: [PATCH] xen/arm: Implement workaround for Cortex A-57 and Cortex A72
+ AT speculate
+
+Both Cortex-A57 (erratum 1319537) and Cortex-A72 (erratum 1319367) can
+end with corrupted TLBs if they speculate an AT instruction while S1/S2
+system registers in inconsistent state.
+
+The workaround is the same as for Cortex A-76 implemented by commit
+a18be06aca "xen/arm: Implement workaround for Cortex-A76 erratum 1165522",
+so it is only necessary to plumb in the cpuerrata framework.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 07e44b3d1be32fa2165c2367ae3ef9c6c8b39e1e)
+---
+ docs/misc/arm/silicon-errata.txt |  2 ++
+ xen/arch/arm/cpuerrata.c         | 10 ++++++++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/docs/misc/arm/silicon-errata.txt b/docs/misc/arm/silicon-errata.txt
+index 6cd1366f15..11e5a9dcec 100644
+--- a/docs/misc/arm/silicon-errata.txt
++++ b/docs/misc/arm/silicon-errata.txt
+@@ -48,5 +48,7 @@ stable hypervisors.
+ | ARM            | Cortex-A57      | #852523         | N/A                     |
+ | ARM            | Cortex-A57      | #832075         | ARM64_ERRATUM_832075    |
+ | ARM            | Cortex-A57      | #834220         | ARM64_ERRATUM_834220    |
++| ARM            | Cortex-A57      | #1319537        | N/A                     |
++| ARM            | Cortex-A72      | #1319367        | N/A                     |
+ | ARM            | Cortex-A76      | #1165522        | N/A                     |
+ | ARM            | MMU-500         | #842869         | N/A                     |
+diff --git a/xen/arch/arm/cpuerrata.c b/xen/arch/arm/cpuerrata.c
+index 4431b244fd..edbe789736 100644
+--- a/xen/arch/arm/cpuerrata.c
++++ b/xen/arch/arm/cpuerrata.c
+@@ -495,6 +495,16 @@ static const struct arm_cpu_capabilities arm_errata[] = {
+         .capability = ARM64_WORKAROUND_AT_SPECULATE,
+         MIDR_RANGE(MIDR_CORTEX_A76, 0, 2 << MIDR_VARIANT_SHIFT),
+     },
++    {
++        .desc = "ARM erratum 1319537",
++        .capability = ARM64_WORKAROUND_AT_SPECULATE,
++        MIDR_ALL_VERSIONS(MIDR_CORTEX_A72),
++    },
++    {
++        .desc = "ARM erratum 1319367",
++        .capability = ARM64_WORKAROUND_AT_SPECULATE,
++        MIDR_ALL_VERSIONS(MIDR_CORTEX_A57),
++    },
+     {},
+ };
+ 
+-- 
+2.30.2
+

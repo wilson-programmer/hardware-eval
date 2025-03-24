@@ -1,0 +1,34 @@
+From b2bbd342576576eb8a165a6abf9559d772ee242b Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 12 Mar 2019 14:42:17 +0100
+Subject: [PATCH] Arm/atomic: correct asm() constraints in build_add_sized()
+
+The memory operand is an in/out one, and the auxiliary register gets
+written to early.
+
+Take the opportunity and also drop the redundant cast (the inline
+functions' parameters are already of the casted-to type).
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Julien Grall <julien.grall@arm.com>
+(cherry picked from commit 51ceb1623b9956440f1b9943c67010a90d61f5c5)
+---
+ xen/include/asm-arm/atomic.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/asm-arm/atomic.h b/xen/include/asm-arm/atomic.h
+index 50f2835e35..afb3eeea5b 100644
+--- a/xen/include/asm-arm/atomic.h
++++ b/xen/include/asm-arm/atomic.h
+@@ -30,7 +30,7 @@ static inline void name(volatile type *addr, type val)                  \
+     asm volatile("ldr" size " %"width"1,%0\n"                           \
+                  "add %"width"1,%"width"1,%"width"2\n"                  \
+                  "str" size " %"width"1,%0"                             \
+-                 : "=m" (*(volatile type *)addr), "=r" (t)              \
++                 : "+m" (*addr), "=&r" (t)                              \
+                  : reg (val));                                          \
+ }
+ 
+-- 
+2.30.2
+

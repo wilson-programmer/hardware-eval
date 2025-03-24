@@ -1,0 +1,47 @@
+From 4d544141ebab31dabb542c7dbacad658c5d3757c Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 4 Jun 2021 15:02:13 +0200
+Subject: [PATCH] x86emul: fix test harness build for gas 2.36
+
+All of the sudden, besides .text and .rodata and alike, an always
+present .note.gnu.property section has appeared. This section, when
+converting to binary format output, gets placed according to its
+linked address, causing the resulting blobs to be about 128Mb in size.
+The resulting headers with a C representation of the binary blobs then
+are, of course all a multiple of that size (and take accordingly long
+to create). I didn't bother waiting to see what size the final
+test_x86_emulator binary then would have had.
+
+See also https://sourceware.org/bugzilla/show_bug.cgi?id=27753.
+
+Rather than figuring out whether gas supports -mx86-used-note=, simply
+remove the section while creating *.bin.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+master commit: aa803ba38a867551917d11059eaa044955556e05
+master date: 2021-05-17 15:41:28 +0200
+---
+ tools/tests/x86_emulator/testcase.mk | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/tests/x86_emulator/testcase.mk b/tools/tests/x86_emulator/testcase.mk
+index dafeb6caf7..d4aa82e3f3 100644
+--- a/tools/tests/x86_emulator/testcase.mk
++++ b/tools/tests/x86_emulator/testcase.mk
+@@ -12,11 +12,11 @@ all: $(TESTCASE).bin
+ %.bin: %.c
+ 	$(CC) $(filter-out -M% .%,$(CFLAGS)) -c $<
+ 	$(LD) $(LDFLAGS_DIRECT) -N -Ttext 0x100000 -o $*.tmp $*.o
+-	$(OBJCOPY) -O binary $*.tmp $@
++	$(OBJCOPY) -O binary -R .note.gnu.property $*.tmp $@
+ 	rm -f $*.tmp
+ 
+ %-opmask.bin: opmask.S
+ 	$(CC) $(filter-out -M% .%,$(CFLAGS)) -c $< -o $(basename $@).o
+ 	$(LD) $(LDFLAGS_DIRECT) -N -Ttext 0x100000 -o $(basename $@).tmp $(basename $@).o
+-	$(OBJCOPY) -O binary $(basename $@).tmp $@
++	$(OBJCOPY) -O binary -R .note.gnu.property $(basename $@).tmp $@
+ 	rm -f $(basename $@).tmp
+-- 
+2.30.2
+

@@ -1,0 +1,86 @@
+From bb4c1a8253463e9e63e91bdb2c64a642e14ec893 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Thu, 18 Jul 2019 12:57:14 +0100
+Subject: [PATCH] xen/arm64: Correctly compute the virtual address in
+ maddr_to_virt()
+
+The helper maddr_to_virt() is used to translate a machine address to a
+virtual address. To save some valuable address space, some part of the
+machine address may be compressed.
+
+In theory the PDX code is free to compress any bits so there are no
+guarantee the machine index computed will be always greater than
+xenheap_mfn_start. This would result to return a virtual address that is
+not part of the direct map and trigger a crash at least on debug-build later
+on because of the check in virt_to_page().
+
+A recently reverted patch (see 1191156361 "xen/arm: fix mask calculation
+in pdx_init_mask") allows the PDX to compress more bits and triggered a
+crash on AMD Seattle Platform.
+
+Avoid the crash by keeping track of the base PDX for the xenheap and use
+it for computing the virtual address.
+
+Note that virt_to_maddr() does not need to have similar modification as
+it is using the hardware to translate the virtual address to a machine
+address.
+
+Take the opportunity to fix the ASSERT() as the direct map base address
+correspond to the start of the RAM (this is not always 0).
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 612d476e74a314be514ee6a9744eea8db09d32e5)
+---
+ xen/arch/arm/mm.c        | 2 ++
+ xen/include/asm-arm/mm.h | 6 ++++--
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/mm.c b/xen/arch/arm/mm.c
+index 8a53544975..80049572d9 100644
+--- a/xen/arch/arm/mm.c
++++ b/xen/arch/arm/mm.c
+@@ -151,6 +151,7 @@ mfn_t xenheap_mfn_end __read_mostly;
+ vaddr_t xenheap_virt_end __read_mostly;
+ #ifdef CONFIG_ARM_64
+ vaddr_t xenheap_virt_start __read_mostly;
++unsigned long xenheap_base_pdx __read_mostly;
+ #endif
+ 
+ unsigned long frametable_base_pdx __read_mostly;
+@@ -811,6 +812,7 @@ void __init setup_xenheap_mappings(unsigned long base_mfn,
+     if ( mfn_eq(xenheap_mfn_start, INVALID_MFN) )
+     {
+         xenheap_mfn_start = _mfn(base_mfn);
++        xenheap_base_pdx = mfn_to_pdx(_mfn(base_mfn));
+         xenheap_virt_start = DIRECTMAP_VIRT_START +
+             (base_mfn - mfn) * PAGE_SIZE;
+     }
+diff --git a/xen/include/asm-arm/mm.h b/xen/include/asm-arm/mm.h
+index 7ded2066e5..55ed4e61b8 100644
+--- a/xen/include/asm-arm/mm.h
++++ b/xen/include/asm-arm/mm.h
+@@ -135,6 +135,7 @@ extern mfn_t xenheap_mfn_start, xenheap_mfn_end;
+ extern vaddr_t xenheap_virt_end;
+ #ifdef CONFIG_ARM_64
+ extern vaddr_t xenheap_virt_start;
++extern unsigned long xenheap_base_pdx;
+ #endif
+ 
+ #ifdef CONFIG_ARM_32
+@@ -253,9 +254,10 @@ static inline void *maddr_to_virt(paddr_t ma)
+ #else
+ static inline void *maddr_to_virt(paddr_t ma)
+ {
+-    ASSERT(pfn_to_pdx(ma >> PAGE_SHIFT) < (DIRECTMAP_SIZE >> PAGE_SHIFT));
++    ASSERT((pfn_to_pdx(ma >> PAGE_SHIFT) - xenheap_base_pdx) <
++           (DIRECTMAP_SIZE >> PAGE_SHIFT));
+     return (void *)(XENHEAP_VIRT_START -
+-                    mfn_to_maddr(xenheap_mfn_start) +
++                    (xenheap_base_pdx << PAGE_SHIFT) +
+                     ((ma & ma_va_bottom_mask) |
+                      ((ma & ma_top_mask) >> pfn_pdx_hole_shift)));
+ }
+-- 
+2.30.2
+

@@ -1,0 +1,40 @@
+From 66653b4620c3b43709f093f836b227566739a851 Mon Sep 17 00:00:00 2001
+From: Ian Jackson <ian.jackson@eu.citrix.com>
+Date: Mon, 9 Jul 2018 14:14:07 +0100
+Subject: [PATCH] Xen 4.11: Switch to final release tags
+
+No functional change: in each case this tag refers to the same commit
+as previously.
+
+Signed-off-by: Ian Jackson <Ian.Jackson@eu.citrix.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+---
+ Config.mk | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/Config.mk b/Config.mk
+index 9183496bbe..8b77c6a209 100644
+--- a/Config.mk
++++ b/Config.mk
+@@ -275,15 +275,15 @@ SEABIOS_UPSTREAM_URL ?= git://xenbits.xen.org/seabios.git
+ MINIOS_UPSTREAM_URL ?= git://xenbits.xen.org/mini-os.git
+ endif
+ OVMF_UPSTREAM_REVISION ?= 947f3737abf65fda63f3ffd97fddfa6986986868
+-QEMU_UPSTREAM_REVISION ?= qemu-xen-4.11.0-rc6
+-MINIOS_UPSTREAM_REVISION ?= xen-4.11.0-rc1.1
++QEMU_UPSTREAM_REVISION ?= qemu-xen-4.11.0
++MINIOS_UPSTREAM_REVISION ?= xen-RELEASE-4.11.0
+ 
+ SEABIOS_UPSTREAM_REVISION ?= rel-1.11.1
+ 
+ ETHERBOOT_NICS ?= rtl8139 8086100e
+ 
+ 
+-QEMU_TRADITIONAL_REVISION ?= xen-4.11.0-rc1
++QEMU_TRADITIONAL_REVISION ?= xen-4.11.0
+ # Fri Sep 15 19:37:27 2017 +0100
+ # qemu-xen-traditional: Link against xentoolcore
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,35 @@
+From f6594c3f05bbec0a97cb313378d33fc0eee51cc2 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 7 Jun 2022 14:22:11 +0200
+Subject: [PATCH] build: silence GNU ld warning about executable stacks
+
+While for C files the compiler is supposed to arrange for emitting
+respective information, for assembly sources we're responsible ourselves.
+Present GNU ld master started warning about such, and hence 2.39 is
+anticipated to have this warning.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+master commit: 62d22296a95d259c934ca2f39ac511d729cfbb68
+master date: 2022-05-18 11:18:45 +0200
+---
+ xen/Makefile | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/Makefile b/xen/Makefile
+index 0c22f36adf..85358930a8 100644
+--- a/xen/Makefile
++++ b/xen/Makefile
+@@ -221,6 +221,8 @@ endif
+ 
+ AFLAGS += -D__ASSEMBLY__
+ 
++$(call cc-option-add,AFLAGS,CC,-Wa$(comma)--noexecstack)
++
+ LDFLAGS-$(call ld-option,--warn-rwx-segments) += --no-warn-rwx-segments
+ 
+ CFLAGS += $(CFLAGS-y)
+-- 
+2.30.2
+

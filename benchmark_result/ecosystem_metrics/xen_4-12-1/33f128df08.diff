@@ -1,0 +1,38 @@
+From 33f128df08e2b5236e422c0f30ad90d8cbcaedf9 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Marek=20Marczykowski-G=C3=B3recki?=
+ <marmarek@invisiblethingslab.com>
+Date: Tue, 4 Jun 2019 15:35:35 +0200
+Subject: [PATCH] bitmap: fix bitmap_fill with zero-sized bitmap
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+When bitmap_fill(..., 0) is called, do not try to write anything. Before
+this patch, it tried to write almost LONG_MAX, surely overwriting
+something.
+
+Signed-off-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 93df28be2d4f620caf18109222d046355ac56327
+master date: 2019-05-13 10:12:00 +0200
+---
+ xen/include/xen/bitmap.h | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/include/xen/bitmap.h b/xen/include/xen/bitmap.h
+index fe3c720e82..0430c1ce2a 100644
+--- a/xen/include/xen/bitmap.h
++++ b/xen/include/xen/bitmap.h
+@@ -126,6 +126,8 @@ static inline void bitmap_fill(unsigned long *dst, int nbits)
+ 	size_t nlongs = BITS_TO_LONGS(nbits);
+ 
+ 	switch (nlongs) {
++	case 0:
++		break;
+ 	default:
+ 		memset(dst, -1, (nlongs - 1) * sizeof(unsigned long));
+ 		/* fall through */
+-- 
+2.30.2
+

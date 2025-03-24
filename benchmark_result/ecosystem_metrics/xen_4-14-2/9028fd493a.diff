@@ -1,0 +1,33 @@
+From 9028fd493a69b1e216239542d986240fa1ea7167 Mon Sep 17 00:00:00 2001
+From: Tamas K Lengyel <tamas@tklengyel.com>
+Date: Thu, 21 Jan 2021 16:20:27 +0100
+Subject: [PATCH] x86/mem_sharing: fix uninitialized 'preempted' variable
+
+UBSAN catches an uninitialized use of the 'preempted' variable in
+fork_hap_allocation when there is no preemption.
+
+Fixes: 41548c5472a ("mem_sharing: VM forking")
+Signed-off-by: Tamas K Lengyel <tamas@tklengyel.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: cb34a2fa162184b150d48a3b6f385bacbec22ce7
+master date: 2021-01-18 17:50:11 +0000
+---
+ xen/arch/x86/mm/mem_sharing.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/mm/mem_sharing.c b/xen/arch/x86/mm/mem_sharing.c
+index c428fd16ce..468bbcfa67 100644
+--- a/xen/arch/x86/mm/mem_sharing.c
++++ b/xen/arch/x86/mm/mem_sharing.c
+@@ -1628,7 +1628,7 @@ static int copy_vcpu_settings(struct domain *cd, const struct domain *d)
+ static int fork_hap_allocation(struct domain *cd, struct domain *d)
+ {
+     int rc;
+-    bool preempted;
++    bool preempted = false;
+     unsigned long mb = hap_get_allocation(d);
+ 
+     if ( mb == hap_get_allocation(cd) )
+-- 
+2.30.2
+

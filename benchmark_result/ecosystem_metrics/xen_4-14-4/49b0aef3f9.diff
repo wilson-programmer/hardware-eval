@@ -1,0 +1,61 @@
+From 49b0aef3f916e325e10d7d90ea25ea0321ac0d48 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 15 Oct 2021 11:19:41 +0200
+Subject: [PATCH] AMD/IOMMU: consider hidden devices when flushing device I/O
+ TLBs
+
+Hidden devices are associated with DomXEN but usable by the
+hardware domain. Hence they need flushing as well when all devices are
+to have flushes invoked.
+
+While there drop a redundant ATS-enabled check and constify the first
+parameter of the involved function.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+master commit: 036432e8b27e1ef21e0f0204ba9b0e3972a031c2
+master date: 2021-10-12 11:54:34 +0200
+---
+ xen/drivers/passthrough/amd/iommu_cmd.c | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_cmd.c b/xen/drivers/passthrough/amd/iommu_cmd.c
+index fc5377f5f2..e155b1168f 100644
+--- a/xen/drivers/passthrough/amd/iommu_cmd.c
++++ b/xen/drivers/passthrough/amd/iommu_cmd.c
+@@ -309,14 +309,11 @@ void amd_iommu_flush_iotlb(u8 devfn, const struct pci_dev *pdev,
+     spin_unlock_irqrestore(&iommu->lock, flags);
+ }
+ 
+-static void amd_iommu_flush_all_iotlbs(struct domain *d, daddr_t daddr,
++static void amd_iommu_flush_all_iotlbs(const struct domain *d, daddr_t daddr,
+                                        unsigned int order)
+ {
+     struct pci_dev *pdev;
+ 
+-    if ( !ats_enabled )
+-        return;
+-
+     for_each_pdev( d, pdev )
+     {
+         u8 devfn = pdev->devfn;
+@@ -347,7 +344,16 @@ static void _amd_iommu_flush_pages(struct domain *d,
+     }
+ 
+     if ( ats_enabled )
++    {
+         amd_iommu_flush_all_iotlbs(d, daddr, order);
++
++        /*
++         * Hidden devices are associated with DomXEN but usable by the
++         * hardware domain. Hence they need dealing with here as well.
++         */
++        if ( is_hardware_domain(d) )
++            amd_iommu_flush_all_iotlbs(dom_xen, daddr, order);
++    }
+ }
+ 
+ void amd_iommu_flush_all_pages(struct domain *d)
+-- 
+2.30.2
+

@@ -1,0 +1,37 @@
+From 9fbd91a388b4b45d0330c8cb93702af6ab9ec5d2 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 6 Apr 2022 10:23:52 +0200
+Subject: [PATCH] tools/firmware: force -fcf-protection=none
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Do so right in firmware/Rules.mk, like it's done for other compiler
+flags.
+
+Fixes: 3667f7f8f7 ('x86: Introduce support for CET-IBT')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 7225f6e0cd3afd48b4d61c43dd8fead0f4c92193
+master date: 2022-04-04 12:30:00 +0100
+---
+ tools/firmware/Rules.mk | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/tools/firmware/Rules.mk b/tools/firmware/Rules.mk
+index 9f78a7dec9..c227fe2524 100644
+--- a/tools/firmware/Rules.mk
++++ b/tools/firmware/Rules.mk
+@@ -15,6 +15,8 @@ CFLAGS += -Werror
+ 
+ $(call cc-options-add,CFLAGS,CC,$(EMBEDDED_EXTRA_CFLAGS))
+ 
++$(call cc-option-add,CFLAGS,CC,-fcf-protection=none)
++
+ # Extra CFLAGS suitable for an embedded type of environment.
+ CFLAGS += -ffreestanding -msoft-float
+ 
+-- 
+2.30.2
+

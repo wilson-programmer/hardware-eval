@@ -1,0 +1,40 @@
+From 5f3c215eb5a537c5d5bcfbaafb3e547bcb62d960 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Mon, 27 Jan 2020 17:50:50 +0100
+Subject: [PATCH] docs: add DIRECTORY_PART specification do xenstore protocol
+ doc
+
+DIRECTORY_PART was missing in docs/misc/xenstore.txt. Add it.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Paul Durrant <pdurrant@amazon.com>
+Acked-by: Wei Liu <wl@xen.org>
+Backport: 4.9+
+(cherry picked from commit 94a0252c10cb9938bdee98cc456c23e17b28eafb)
+---
+ docs/misc/xenstore.txt | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/docs/misc/xenstore.txt b/docs/misc/xenstore.txt
+index ae1b6a8c6e..65570183b6 100644
+--- a/docs/misc/xenstore.txt
++++ b/docs/misc/xenstore.txt
+@@ -152,6 +152,15 @@ DIRECTORY		<path>|			<child-leaf-name>|*
+ 	leafnames.  The resulting children are each named
+ 	<path>/<child-leaf-name>.
+ 
++DIRECTORY_PART		<path>|<offset>		<gencnt>|<child-leaf-name>|*
++	Same as DIRECTORY, but to be used for children lists longer than
++	XENSTORE_PAYLOAD_MAX. Input are <path> and the byte offset into
++	the list of children to return. Return values are the generation
++	count <gencnt> of the node (to be used to ensure the node hasn't
++	changed between two reads: <gencnt> being the same for multiple
++	reads guarantees the node hasn't changed) and the list of children
++	starting at the specified <offset> of the complete list.
++
+ GET_PERMS	 	<path>|			<perm-as-string>|+
+ SET_PERMS		<path>|<perm-as-string>|+?
+ 	<perm-as-string> is one of the following
+-- 
+2.30.2
+

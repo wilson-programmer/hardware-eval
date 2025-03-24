@@ -1,0 +1,125 @@
+From b4cf1d608bb7d73d7827d794d4d3b7f19de8c274 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 26 Jun 2018 15:26:24 +0200
+Subject: [PATCH] x86/EFI: further correct FPU state handling around runtime
+ calls
+
+We must not leave a vCPU with CR0.TS clear when it is not in fully eager
+mode and has not touched non-lazy state. Instead of adding a 3rd
+invocation of stts() to vcpu_restore_fpu_eager(), consolidate all of
+them into a single one done at the end of the function.
+
+Rename the function at the same time to better reflect its purpose, as
+the patches touches all of its occurences anyway.
+
+The new function parameter is not really well named, but
+"need_stts_if_not_fully_eager" seemed excessive to me.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Paul Durrant <paul.durrant@citrix.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+master commit: 23839a0fa0bbe78c174cd2bb49083e153f0f99df
+master date: 2018-06-26 15:23:08 +0200
+---
+ xen/arch/x86/domain.c      |  2 +-
+ xen/arch/x86/hvm/emulate.c |  2 +-
+ xen/arch/x86/i387.c        | 13 ++++++++-----
+ xen/common/efi/runtime.c   |  2 +-
+ xen/include/asm-x86/i387.h |  2 +-
+ 5 files changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index 0ca820a00a..9850a782ec 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -1636,7 +1636,7 @@ static void __context_switch(void)
+             if ( cpu_has_xsaves && is_hvm_vcpu(n) )
+                 set_msr_xss(n->arch.hvm_vcpu.msr_xss);
+         }
+-        vcpu_restore_fpu_eager(n);
++        vcpu_restore_fpu_nonlazy(n, false);
+         nd->arch.ctxt_switch->to(n);
+     }
+ 
+diff --git a/xen/arch/x86/hvm/emulate.c b/xen/arch/x86/hvm/emulate.c
+index 7ecee12ffc..cac968f48e 100644
+--- a/xen/arch/x86/hvm/emulate.c
++++ b/xen/arch/x86/hvm/emulate.c
+@@ -2147,7 +2147,7 @@ static void hvmemul_put_fpu(
+          *   by hvmemul_get_fpu().
+          */
+         if ( curr->arch.fully_eager_fpu )
+-            vcpu_restore_fpu_eager(curr);
++            vcpu_restore_fpu_nonlazy(curr, false);
+         else
+         {
+             curr->fpu_dirtied = false;
+diff --git a/xen/arch/x86/i387.c b/xen/arch/x86/i387.c
+index 9c752732a3..a1d128dd94 100644
+--- a/xen/arch/x86/i387.c
++++ b/xen/arch/x86/i387.c
+@@ -206,11 +206,11 @@ static inline void fpu_fxsave(struct vcpu *v)
+ /*       VCPU FPU Functions    */
+ /*******************************/
+ /* Restore FPU state whenever VCPU is schduled in. */
+-void vcpu_restore_fpu_eager(struct vcpu *v)
++void vcpu_restore_fpu_nonlazy(struct vcpu *v, bool need_stts)
+ {
+     /* Restore nonlazy extended state (i.e. parts not tracked by CR0.TS). */
+     if ( !v->arch.fully_eager_fpu && !v->arch.nonlazy_xstate_used )
+-        return;
++        goto maybe_stts;
+ 
+     ASSERT(!is_idle_vcpu(v));
+ 
+@@ -233,14 +233,17 @@ void vcpu_restore_fpu_eager(struct vcpu *v)
+         v->fpu_dirtied = 1;
+ 
+         /* Xen doesn't need TS set, but the guest might. */
+-        if ( is_pv_vcpu(v) && (v->arch.pv_vcpu.ctrlreg[0] & X86_CR0_TS) )
+-            stts();
++        need_stts = is_pv_vcpu(v) && (v->arch.pv_vcpu.ctrlreg[0] & X86_CR0_TS);
+     }
+     else
+     {
+         fpu_xrstor(v, XSTATE_NONLAZY);
+-        stts();
++        need_stts = true;
+     }
++
++ maybe_stts:
++    if ( need_stts )
++        stts();
+ }
+ 
+ /* 
+diff --git a/xen/common/efi/runtime.c b/xen/common/efi/runtime.c
+index aad3ab57d2..3d118d571d 100644
+--- a/xen/common/efi/runtime.c
++++ b/xen/common/efi/runtime.c
+@@ -135,7 +135,7 @@ void efi_rs_leave(struct efi_rs_state *state)
+     irq_exit();
+     efi_rs_on_cpu = NR_CPUS;
+     spin_unlock(&efi_rs_lock);
+-    vcpu_restore_fpu_eager(curr);
++    vcpu_restore_fpu_nonlazy(curr, true);
+ }
+ 
+ bool efi_rs_using_pgtables(void)
+diff --git a/xen/include/asm-x86/i387.h b/xen/include/asm-x86/i387.h
+index 7cfa215d30..243de672eb 100644
+--- a/xen/include/asm-x86/i387.h
++++ b/xen/include/asm-x86/i387.h
+@@ -28,7 +28,7 @@ struct ix87_env {
+     uint16_t fds, _res6;
+ };
+ 
+-void vcpu_restore_fpu_eager(struct vcpu *v);
++void vcpu_restore_fpu_nonlazy(struct vcpu *v, bool need_stts);
+ void vcpu_restore_fpu_lazy(struct vcpu *v);
+ void vcpu_save_fpu(struct vcpu *v);
+ void save_fpu_enable(void);
+-- 
+2.30.2
+

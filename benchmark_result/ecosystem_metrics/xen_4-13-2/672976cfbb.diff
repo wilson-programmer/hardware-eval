@@ -1,0 +1,35 @@
+From 672976cfbb2673065b4e8bb380189a9332c98cbc Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 24 Jun 2020 16:31:09 +0200
+Subject: [PATCH] xen/trace: Don't dump offline CPUs in
+ debugtrace_dump_worker()
+
+The 'T' debugkey reliably wedges on one of my systems, which has a sparse
+APIC_ID layout due to a non power-of-2 number of cores per socket.  The
+per_cpu(dt_cpu_data, cpu) calcution falls over the deliberately non-canonical
+poison value.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: abf378e6483195b98a3f32e2c9d017e0eeeb275f
+master date: 2020-05-22 20:04:46 +0100
+---
+ xen/common/debugtrace.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/common/debugtrace.c b/xen/common/debugtrace.c
+index a788e55b4c..11ac198d93 100644
+--- a/xen/common/debugtrace.c
++++ b/xen/common/debugtrace.c
+@@ -94,7 +94,7 @@ static void debugtrace_dump_worker(void)
+ 
+     debugtrace_dump_buffer(dt_data, "global");
+ 
+-    for ( cpu = 0; cpu < nr_cpu_ids; cpu++ )
++    for_each_online_cpu ( cpu )
+     {
+         char buf[16];
+ 
+-- 
+2.30.2
+

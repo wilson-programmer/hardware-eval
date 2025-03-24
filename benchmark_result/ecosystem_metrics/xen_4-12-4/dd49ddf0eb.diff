@@ -1,0 +1,41 @@
+From dd49ddf0eb2c61a38fd1174084103c0cceae254e Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 24 Jun 2020 16:58:22 +0200
+Subject: [PATCH] x86/guest: Fix assembler warnings with newer binutils
+
+GAS of at least version 2.34 complains:
+
+  hypercall_page.S: Assembler messages:
+  hypercall_page.S:24: Warning: symbol 'HYPERCALL_set_trap_table' already has its type set
+  ...
+  hypercall_page.S:71: Warning: symbol 'HYPERCALL_arch_7' already has its type set
+
+which is because the whole page is declared as STT_OBJECT already.  Rearrange
+.set with respect to .type in DECLARE_HYPERCALL() so STT_FUNC is already in
+place.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+---
+ xen/arch/x86/guest/hypercall_page.S | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/guest/hypercall_page.S b/xen/arch/x86/guest/hypercall_page.S
+index 26afabf909..21408a69e8 100644
+--- a/xen/arch/x86/guest/hypercall_page.S
++++ b/xen/arch/x86/guest/hypercall_page.S
+@@ -17,9 +17,9 @@ GLOBAL(hypercall_page)
+  */
+ #define DECLARE_HYPERCALL(name)                                                 \
+         .globl HYPERCALL_ ## name;                                              \
+-        .set   HYPERCALL_ ## name, hypercall_page + __HYPERVISOR_ ## name * 32; \
+         .type  HYPERCALL_ ## name, STT_FUNC;                                    \
+-        .size  HYPERCALL_ ## name, 32
++        .size  HYPERCALL_ ## name, 32;                                          \
++        .set   HYPERCALL_ ## name, hypercall_page + __HYPERVISOR_ ## name * 32
+ 
+ DECLARE_HYPERCALL(set_trap_table)
+ DECLARE_HYPERCALL(mmu_update)
+-- 
+2.30.2
+

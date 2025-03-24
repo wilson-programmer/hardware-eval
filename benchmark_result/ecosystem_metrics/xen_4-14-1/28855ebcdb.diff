@@ -1,0 +1,67 @@
+From 28855ebcdbfa437e60bc16c761405476fe16bc39 Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Wed, 29 Jul 2020 14:50:37 +0100
+Subject: [PATCH] xen/arm: cmpxchg: Add missing memory barriers in
+ __cmpxchg_mb_timeout()
+
+The function __cmpxchg_mb_timeout() was intended to have the same
+semantics as __cmpxchg_mb(). Unfortunately, the memory barriers were
+not added when first implemented.
+
+There is no known issue with the existing callers, but the barriers are
+added given this is the expected semantics in Xen.
+
+The issue was introduced by XSA-295.
+
+Backport: 4.8+
+Fixes: 86b0bc958373 ("xen/arm: cmpxchg: Provide a new helper that can timeout")
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+(cherry picked from commit d501ef90ae7f2a79130ea89acb3d6d1792972934)
+---
+ xen/include/asm-arm/arm32/cmpxchg.h | 8 +++++++-
+ xen/include/asm-arm/arm64/cmpxchg.h | 8 +++++++-
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/xen/include/asm-arm/arm32/cmpxchg.h b/xen/include/asm-arm/arm32/cmpxchg.h
+index 49ca2a0d7a..0770f272ee 100644
+--- a/xen/include/asm-arm/arm32/cmpxchg.h
++++ b/xen/include/asm-arm/arm32/cmpxchg.h
+@@ -147,7 +147,13 @@ static always_inline bool __cmpxchg_mb_timeout(volatile void *ptr,
+ 					       int size,
+ 					       unsigned int max_try)
+ {
+-	return __int_cmpxchg(ptr, old, new, size, true, max_try);
++	bool ret;
++
++	smp_mb();
++	ret = __int_cmpxchg(ptr, old, new, size, true, max_try);
++	smp_mb();
++
++	return ret;
+ }
+ 
+ #define cmpxchg(ptr,o,n)						\
+diff --git a/xen/include/asm-arm/arm64/cmpxchg.h b/xen/include/asm-arm/arm64/cmpxchg.h
+index 5bc2e1f786..fc5c60f0bd 100644
+--- a/xen/include/asm-arm/arm64/cmpxchg.h
++++ b/xen/include/asm-arm/arm64/cmpxchg.h
+@@ -160,7 +160,13 @@ static always_inline bool __cmpxchg_mb_timeout(volatile void *ptr,
+ 					       int size,
+ 					       unsigned int max_try)
+ {
+-	return __int_cmpxchg(ptr, old, new, size, true, max_try);
++	bool ret;
++
++	smp_mb();
++	ret = __int_cmpxchg(ptr, old, new, size, true, max_try);
++	smp_mb();
++
++	return ret;
+ }
+ 
+ #define cmpxchg(ptr, o, n) \
+-- 
+2.30.2
+

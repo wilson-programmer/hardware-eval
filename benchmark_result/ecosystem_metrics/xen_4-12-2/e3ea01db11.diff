@@ -1,0 +1,41 @@
+From e3ea01db11f78cd0555ab6c3d9e82b2cbea3e667 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Mon, 7 Oct 2019 13:57:00 +0100
+Subject: [PATCH] xen/arm: Update the ASSERT() in SYNCHRONIZE_SERROR()
+
+The macro SYNCHRONIZE_SERROR() has an assert to check whether it will
+be called with Abort interrupt unmasked. However, this is only done if
+a given cap is not enabled.
+
+None of the callers will treat the abort interrupt differently
+depending on a feature. Furthermore, it makes more difficult to check
+whether SYNCHRONIZE_SERROR() is going to be called with abort interrupt
+unmasked.
+
+Therefore, we now require the abort interrupt to be unmasked regardless
+the state of the cap.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 2e2356c7bd8f99aa42ed60ceed0e4ba4e06adb8f)
+---
+ xen/include/asm-arm/processor.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/asm-arm/processor.h b/xen/include/asm-arm/processor.h
+index b5f515805d..783f033813 100644
+--- a/xen/include/asm-arm/processor.h
++++ b/xen/include/asm-arm/processor.h
+@@ -486,7 +486,7 @@ register_t get_default_hcr_flags(void);
+  */
+ #define SYNCHRONIZE_SERROR(feat)                                  \
+     do {                                                          \
+-        ASSERT(!cpus_have_cap(feat) || local_abort_is_enabled()); \
++        ASSERT(local_abort_is_enabled());                         \
+         asm volatile(ALTERNATIVE("dsb sy; isb",                   \
+                                  "nop; nop", feat)                \
+                                  : : : "memory");                 \
+-- 
+2.30.2
+

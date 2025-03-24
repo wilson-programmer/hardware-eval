@@ -1,0 +1,35 @@
+From 3c8e7395e2d01140c862c78fa9483e46c0dbd343 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 28 Feb 2022 19:31:00 +0000
+Subject: [PATCH] x86/cet: Remove XEN_SHSTK's dependency on EXPERT
+
+CET-SS hardware is now available from multiple vendors, the feature has
+downstream users, and was declared security supported in XSA-398.
+
+Enable it by default.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit fc90d75c2b71ae15b75128e7d0d4dbe718164ecb)
+---
+ xen/arch/x86/Kconfig | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/Kconfig b/xen/arch/x86/Kconfig
+index 4fdb39af3e..51763450e4 100644
+--- a/xen/arch/x86/Kconfig
++++ b/xen/arch/x86/Kconfig
+@@ -111,8 +111,8 @@ config HVM
+ 	  If unsure, say Y.
+ 
+ config XEN_SHSTK
+-	bool "Supervisor Shadow Stacks (EXPERT)"
+-	depends on HAS_AS_CET_SS && EXPERT
++	bool "Supervisor Shadow Stacks"
++	depends on HAS_AS_CET_SS
+ 	default y
+ 	---help---
+ 	  Control-flow Enforcement Technology (CET) is a set of features in
+-- 
+2.30.2
+

@@ -1,0 +1,32 @@
+From e5195730f1c1d0dee68ffa951008c01431c371e8 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 9 Apr 2020 09:12:26 +0200
+Subject: [PATCH] x86/ucode/amd: Fix assertion in compare_patch()
+
+This is clearly a typo.
+
+Fixes: 9da23943ccd "microcode: introduce a global cache of ucode patch"
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+master commit: 13ed5d49a4214dc3521d4af7bfcf13fbcf5bfd63
+master date: 2020-03-26 18:57:45 +0000
+---
+ xen/arch/x86/microcode_amd.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/microcode_amd.c b/xen/arch/x86/microcode_amd.c
+index 00750f7bbb..eb7ae79918 100644
+--- a/xen/arch/x86/microcode_amd.c
++++ b/xen/arch/x86/microcode_amd.c
+@@ -222,7 +222,7 @@ static enum microcode_match_result compare_patch(
+ 
+     /* Both patches to compare are supposed to be applicable to local CPU. */
+     ASSERT(microcode_fits(new->mc_amd) != MIS_UCODE);
+-    ASSERT(microcode_fits(new->mc_amd) != MIS_UCODE);
++    ASSERT(microcode_fits(old->mc_amd) != MIS_UCODE);
+ 
+     return compare_header(new_header, old_header);
+ }
+-- 
+2.30.2
+

@@ -1,0 +1,46 @@
+From a319cbb3071919935d2424b0b116b22bcf028452 Mon Sep 17 00:00:00 2001
+From: Jeff Kubascik <jeff.kubascik@dornerworks.com>
+Date: Mon, 27 Apr 2020 14:58:20 +0200
+Subject: [PATCH] sched/core: fix bug when moving a domain between cpupools
+
+For each UNIT, sched_set_affinity is called before unit->priv is updated
+to the new cpupool private UNIT data structure. The issue is
+sched_set_affinity will call the adjust_affinity method of the cpupool.
+If defined, the new cpupool may use unit->priv (e.g. credit), which at
+this point still references the old cpupool private UNIT data structure.
+
+This change fixes the bug by moving the switch of unit->priv earler in
+the function.
+
+Signed-off-by: Jeff Kubascik <jeff.kubascik@dornerworks.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Acked-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: ee97008433f15e60478058c8ace514b939b6f862
+master date: 2020-04-17 09:27:21 +0200
+---
+ xen/common/schedule.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/common/schedule.c b/xen/common/schedule.c
+index 820bd5050c..e3bd9cdccd 100644
+--- a/xen/common/schedule.c
++++ b/xen/common/schedule.c
+@@ -683,6 +683,7 @@ int sched_move_domain(struct domain *d, struct cpupool *c)
+         unsigned int unit_p = new_p;
+ 
+         unitdata = unit->priv;
++        unit->priv = unit_priv[unit_idx];
+ 
+         for_each_sched_unit_vcpu ( unit, v )
+         {
+@@ -704,7 +705,6 @@ int sched_move_domain(struct domain *d, struct cpupool *c)
+          */
+         spin_unlock_irq(lock);
+ 
+-        unit->priv = unit_priv[unit_idx];
+         if ( !d->is_dying )
+             sched_move_irqs(unit);
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,78 @@
+From 2b5de808288da505cbe7b115c645989142577bcd Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 20 Apr 2021 12:03:29 +0200
+Subject: [PATCH] fix for_each_cpu() again for NR_CPUS=1
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Unfortunately aa50f45332f1 ("xen: fix for_each_cpu when NR_CPUS=1") has
+caused quite a bit of fallout with gcc10, e.g. (there are at least two
+more similar ones, and I didn't bother trying to find them all):
+
+In file included from .../xen/include/xen/config.h:13,
+                 from <command-line>:
+core_parking.c: In function âcore_parking_powerâ:
+.../xen/include/asm/percpu.h:12:51: error: array subscript 1 is above array bounds of âlong unsigned int[1]â [-Werror=array-bounds]
+   12 |     (*RELOC_HIDE(&per_cpu__##var, __per_cpu_offset[cpu]))
+.../xen/include/xen/compiler.h:141:29: note: in definition of macro âRELOC_HIDEâ
+  141 |     (typeof(ptr)) (__ptr + (off)); })
+      |                             ^~~
+core_parking.c:133:39: note: in expansion of macro âper_cpuâ
+  133 |             core_tmp = cpumask_weight(per_cpu(cpu_core_mask, cpu));
+      |                                       ^~~~~~~
+In file included from .../xen/include/xen/percpu.h:4,
+                 from .../xen/include/asm/msr.h:7,
+                 from .../xen/include/asm/time.h:5,
+                 from .../xen/include/xen/time.h:76,
+                 from .../xen/include/xen/spinlock.h:4,
+                 from .../xen/include/xen/cpu.h:5,
+                 from core_parking.c:19:
+.../xen/include/asm/percpu.h:6:22: note: while referencing â__per_cpu_offsetâ
+    6 | extern unsigned long __per_cpu_offset[NR_CPUS];
+      |                      ^~~~~~~~~~~~~~~~
+
+One of the further errors even went as far as claiming that an array
+index (range) of [0, 0] was outside the bounds of a [1] array, so
+something fishy is pretty clearly going on there.
+
+The compiler apparently wants to be able to see that the loop isn't
+really a loop in order to avoid triggering such warnings, yet what
+exactly makes it consider the loop exit condition constant and within
+the [0, 1] range isn't obvious - using ((mask)->bits[0] & 1) instead of
+cpumask_test_cpu() for example did _not_ help.
+
+Re-instate a special form of for_each_cpu(), experimentally "proven" to
+avoid the diagnostics.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 625faf9f002bd6ff4b6457a016b8ff338223b659
+master date: 2021-04-07 12:24:45 +0200
+---
+ xen/include/xen/cpumask.h | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/xen/include/xen/cpumask.h b/xen/include/xen/cpumask.h
+index e69589fc08..9826707909 100644
+--- a/xen/include/xen/cpumask.h
++++ b/xen/include/xen/cpumask.h
+@@ -368,10 +368,15 @@ static inline void free_cpumask_var(cpumask_var_t mask)
+ #define FREE_CPUMASK_VAR(m) free_cpumask_var(m)
+ #endif
+ 
++#if NR_CPUS > 1
+ #define for_each_cpu(cpu, mask)			\
+ 	for ((cpu) = cpumask_first(mask);	\
+ 	     (cpu) < nr_cpu_ids;		\
+ 	     (cpu) = cpumask_next(cpu, mask))
++#else /* NR_CPUS == 1 */
++#define for_each_cpu(cpu, mask)			\
++	for ((cpu) = 0; (cpu) < cpumask_test_cpu(0, mask); ++(cpu))
++#endif /* NR_CPUS */
+ 
+ /*
+  * The following particular system cpumasks and operations manage
+-- 
+2.30.2
+

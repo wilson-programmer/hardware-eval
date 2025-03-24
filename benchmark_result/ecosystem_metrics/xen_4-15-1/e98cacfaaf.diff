@@ -1,0 +1,55 @@
+From e98cacfaaf157cf11257993b75225e6d0028f433 Mon Sep 17 00:00:00 2001
+From: Michal Orzel <michal.orzel@arm.com>
+Date: Wed, 5 May 2021 09:43:01 +0200
+Subject: [PATCH] arm: Modify type of actlr to register_t
+
+AArch64 registers are 64bit whereas AArch32 registers
+are 32bit or 64bit. MSR/MRS are expecting 64bit values thus
+we should get rid of helpers READ/WRITE_SYSREG32
+in favour of using READ/WRITE_SYSREG.
+We should also use register_t type when reading sysregs
+which can correspond to uint64_t or uint32_t.
+Even though many AArch64 registers have upper 32bit reserved
+it does not mean that they can't be widen in the future.
+
+ACTLR_EL1 system register bits are implementation defined
+which means it is possibly a latent bug on current HW as the CPU
+implementer may already have decided to use the top 32bit.
+
+Signed-off-by: Michal Orzel <michal.orzel@arm.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit b80470c84553808fef3a6803000ceee8a100e63c)
+---
+ xen/arch/arm/domain.c        | 2 +-
+ xen/include/asm-arm/domain.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/domain.c b/xen/arch/arm/domain.c
+index bdd3d3e5b5..5eaf4c718e 100644
+--- a/xen/arch/arm/domain.c
++++ b/xen/arch/arm/domain.c
+@@ -330,7 +330,7 @@ static void schedule_tail(struct vcpu *prev)
+ 
+ static void continue_new_vcpu(struct vcpu *prev)
+ {
+-    current->arch.actlr = READ_SYSREG32(ACTLR_EL1);
++    current->arch.actlr = READ_SYSREG(ACTLR_EL1);
+     processor_vcpu_initialise(current);
+ 
+     schedule_tail(prev);
+diff --git a/xen/include/asm-arm/domain.h b/xen/include/asm-arm/domain.h
+index 1da90f207d..bb0a6adbe0 100644
+--- a/xen/include/asm-arm/domain.h
++++ b/xen/include/asm-arm/domain.h
+@@ -156,7 +156,7 @@ struct arch_vcpu
+ 
+     /* Control Registers */
+     register_t sctlr;
+-    uint32_t actlr;
++    register_t actlr;
+     uint32_t cpacr;
+ 
+     uint32_t contextidr;
+-- 
+2.30.2
+

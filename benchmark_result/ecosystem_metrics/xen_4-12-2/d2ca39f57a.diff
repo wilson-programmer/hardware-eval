@@ -1,0 +1,51 @@
+From d2ca39f57ac9270fc05e36f2b39d40c2811684ff Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 23 Sep 2019 14:24:02 +0200
+Subject: [PATCH] p2m/ept: pass correct level to atomic_write_ept_entry in
+ ept_invalidate_emt
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The level passed to ept_invalidate_emt corresponds to the EPT entry
+passed as the mfn parameter, which is a pointer to an EPT page table,
+hence the entries in that page table will have one level less than the
+parent.
+
+Fix the call to atomic_write_ept_entry to pass the correct level, ie:
+one level less than the parent.
+
+Fixes: 50fe6e73705 ('pvh dom0: add and remove foreign pages')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>.
+master commit: b806c91275fb1ab7696ebf033b56631693056c90
+master date: 2019-08-28 16:57:36 +0200
+---
+ xen/arch/x86/mm/p2m-ept.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/mm/p2m-ept.c b/xen/arch/x86/mm/p2m-ept.c
+index 6b8468c793..952ebad82f 100644
+--- a/xen/arch/x86/mm/p2m-ept.c
++++ b/xen/arch/x86/mm/p2m-ept.c
+@@ -349,7 +349,7 @@ static int ept_next_level(struct p2m_domain *p2m, bool_t read_only,
+  * also for their subtrees needing P2M type re-calculation.
+  */
+ static bool_t ept_invalidate_emt(struct p2m_domain *p2m, mfn_t mfn,
+-                                 bool_t recalc, int level)
++                                 bool_t recalc, unsigned int parent_level)
+ {
+     int rc;
+     ept_entry_t *epte = map_domain_page(mfn);
+@@ -367,7 +367,7 @@ static bool_t ept_invalidate_emt(struct p2m_domain *p2m, mfn_t mfn,
+         e.emt = MTRR_NUM_TYPES;
+         if ( recalc )
+             e.recalc = 1;
+-        rc = atomic_write_ept_entry(p2m, &epte[i], e, level);
++        rc = atomic_write_ept_entry(p2m, &epte[i], e, parent_level - 1);
+         ASSERT(rc == 0);
+         changed = 1;
+     }
+-- 
+2.30.2
+

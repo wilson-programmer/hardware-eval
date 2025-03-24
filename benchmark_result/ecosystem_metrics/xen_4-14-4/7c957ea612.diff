@@ -1,0 +1,81 @@
+From 7c957ea6125a1510baee4e01413451612c29312b Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 19 Nov 2021 09:37:37 +0100
+Subject: [PATCH] x86emul: de-duplicate scatters to the same linear address
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The SDM specifically allows for earlier writes to fully overlapping
+ranges to be dropped. If a guest did so, hvmemul_phys_mmio_access()
+would crash it if varying data was written to the same address. Detect
+overlaps early, as doing so in hvmemul_{linear,phys}_mmio_access() would
+be quite a bit more difficult. To maintain proper faulting behavior,
+instead of dropping earlier write instances of fully overlapping slots
+altogether, write the data of the final of these slots multiple times.
+(We also can't pull ahead the [single] write of the data of the last of
+the slots, clearing all involved slots' op_mask bits together, as this
+would yield incorrect results if there were intervening partially
+overlapping ones.)
+
+Note that due to cache slot use being linear address based, there's no
+similar issue with multiple writes to the same physical address (mapped
+through different linear addresses).
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: a8cddbac5051020bb4a59a7f0ea27500c51063fb
+master date: 2021-10-19 10:02:39 +0200
+---
+ xen/arch/x86/x86_emulate/x86_emulate.c | 31 +++++++++++++++++++++-----
+ 1 file changed, 26 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/x86/x86_emulate/x86_emulate.c b/xen/arch/x86/x86_emulate/x86_emulate.c
+index f186ae65fd..de46ec1b44 100644
+--- a/xen/arch/x86/x86_emulate/x86_emulate.c
++++ b/xen/arch/x86/x86_emulate/x86_emulate.c
+@@ -10024,15 +10024,36 @@ x86_emulate(
+ 
+         for ( i = 0; op_mask; ++i )
+         {
+-            long idx = b & 1 ? index.qw[i] : index.dw[i];
++            long idx = (b & 1 ? index.qw[i]
++                              : index.dw[i]) * (1 << state->sib_scale);
++            unsigned long offs = truncate_ea(ea.mem.off + idx);
++            unsigned int j, slot;
+ 
+             if ( !(op_mask & (1 << i)) )
+                 continue;
+ 
+-            rc = ops->write(ea.mem.seg,
+-                            truncate_ea(ea.mem.off +
+-                                        idx * (1 << state->sib_scale)),
+-                            (void *)mmvalp + i * op_bytes, op_bytes, ctxt);
++            /*
++             * hvmemul_linear_mmio_access() will find a cache slot based on
++             * linear address.  hvmemul_phys_mmio_access() will crash the
++             * domain if observing varying data getting written to the same
++             * cache slot.  Utilize that squashing earlier writes to fully
++             * overlapping addresses is permitted by the spec.  We can't,
++             * however, drop the writes altogether, to maintain correct
++             * faulting behavior.  Instead write the data from the last of
++             * the fully overlapping slots multiple times.
++             */
++            for ( j = (slot = i) + 1; j < n; ++j )
++            {
++                long idx2 = (b & 1 ? index.qw[j]
++                                   : index.dw[j]) * (1 << state->sib_scale);
++
++                if ( (op_mask & (1 << j)) &&
++                     truncate_ea(ea.mem.off + idx2) == offs )
++                    slot = j;
++            }
++
++            rc = ops->write(ea.mem.seg, offs,
++                            (void *)mmvalp + slot * op_bytes, op_bytes, ctxt);
+             if ( rc != X86EMUL_OKAY )
+             {
+                 /* See comment in gather emulation. */
+-- 
+2.30.2
+

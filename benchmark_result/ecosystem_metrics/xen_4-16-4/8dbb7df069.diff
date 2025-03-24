@@ -1,0 +1,88 @@
+From 8dbb7df069db23df42e7b8c36eaec9c4f842577c Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 24 Apr 2023 13:05:24 +0200
+Subject: [PATCH] x86/hvm: Disallow disabling paging in 64bit mode
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The Long Mode consistency checks exist to "ensure that the processor does not
+enter an undefined mode or state that results in unpredictable behavior".  APM
+Vol2 Table 14-5 "Long-Mode Consistency Checks" lists them, but there is no row
+preventing the OS from trying to exit Long mode while in 64bit mode.  This
+could leave the CPU in Protected Mode with an %rip above the 4G boundary.
+
+Experimentally, AMD CPUs really do permit this state transition.  An OS which
+tries it hits an instant SHUTDOWN, even in cases where the truncation I expect
+to be going on behind the scenes ought to result in sane continued execution.
+
+Furthermore, right from the very outset, the APM Vol2 14.7 "Leaving Long Mode"
+section instructs peoples to switch to a compatibility mode segment first
+before clearing CR0.PG, which does clear out the upper bits in %rip.  This is
+further backed up by Vol2 Figure 1-6 "Operating Modes of the AMD64
+Architecture".
+
+Either way, this appears to have been a genuine oversight in the AMD64 spec.
+
+Intel, on the other hand, rejects this state transition with #GP.
+
+Between revision 71 (Nov 2019) and 72 (May 2020) of SDM Vol3, a footnote to
+4.1.2 "Paging-Mode Enable" was altered from
+
+  If CR4.PCIDE= 1, an attempt to clear CR0.PG causes a general-protection
+  exception (#GP); software should clear CR4.PCIDE before attempting to
+  disable paging.
+
+to
+
+  If the logical processor is in 64-bit mode or if CR4.PCIDE= 1, an attempt to
+  clear CR0.PG causes a general-protection exception (#GP). Software should
+  transition to compatibility mode and clear CR4.PCIDE before attempting to
+  disable paging.
+
+which acknowledges this corner case, but there doesn't appear to be any other
+discussion even in the relevant Long Mode sections.
+
+So it appears that Intel spotted and addressed the corner case in IA-32e mode,
+but were 15 years late to document it.
+
+Xen was written to the AMD spec, and misses the check.  Follow the Intel
+behaviour, because it is more sensible and avoids hitting a VMEntry failure.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 18c128ba66e6308744850aca96dbffd18f91c29b
+master date: 2023-04-14 18:18:20 +0100
+---
+ xen/arch/x86/hvm/hvm.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/hvm.c b/xen/arch/x86/hvm/hvm.c
+index 1fe658d902..8fb3ac504d 100644
+--- a/xen/arch/x86/hvm/hvm.c
++++ b/xen/arch/x86/hvm/hvm.c
+@@ -2357,6 +2357,21 @@ int hvm_set_cr0(unsigned long value, bool may_defer)
+     }
+     else if ( !(value & X86_CR0_PG) && (old_value & X86_CR0_PG) )
+     {
++        struct segment_register cs;
++
++        hvm_get_segment_register(v, x86_seg_cs, &cs);
++
++        /*
++         * Intel documents a #GP fault in this case, and VMEntry checks reject
++         * it as a valid state.  AMD permits the state transition, and hits
++         * SHUTDOWN immediately thereafter.  Follow the Intel behaviour.
++         */
++        if ( (v->arch.hvm.guest_efer & EFER_LME) && cs.l )
++        {
++            HVM_DBG_LOG(DBG_LEVEL_1, "Guest attempt to clear CR0.PG in 64bit mode");
++            return X86EMUL_EXCEPTION;
++        }
++
+         if ( hvm_pcid_enabled(v) )
+         {
+             HVM_DBG_LOG(DBG_LEVEL_1, "Guest attempts to clear CR0.PG "
+-- 
+2.30.2
+

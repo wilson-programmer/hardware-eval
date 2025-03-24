@@ -1,0 +1,194 @@
+From 45cf6ad5e5606eb33e041dc93625b3bf8f346793 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 25 Aug 2021 14:50:16 +0200
+Subject: [PATCH] x86/cet: Fix shskt manipulation error with
+ BUGFRAME_{warn,run_fn}
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+This was a clear oversight in the original CET work.  The BUGFRAME_run_fn and
+BUGFRAME_warn paths update regs->rip without an equivalent adjustment to the
+shadow stack, causing IRET to suffer #CP because of the mismatch.
+
+One subtle, and therefore fragile, aspect of extable_shstk_fixup() was that it
+required regs->rip to have its old value as a cross-check that the right word
+in the shadow stack was being edited.
+
+Rework extable_shstk_fixup() into fixup_exception_return() which takes
+ownership of the update to both the regular and shadow stacks, ensuring that
+the regs->rip update is ordered correctly.
+
+Use the new fixup_exception_return() for BUGFRAME_run_fn and BUGFRAME_warn to
+ensure that the shadow stack is updated too.
+
+Fixes: 209fb9919b50 ("x86/extable: Adjust extable handling to be shadow stack compatible")
+Reported-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Tested-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+
+x86/cet: Fix build on newer versions of GCC
+
+Some versions of GCC complain with:
+
+  traps.c:405:22: error: 'get_shstk_bottom' defined but not used [-Werror=unused-function]
+   static unsigned long get_shstk_bottom(unsigned long sp)
+                        ^~~~~~~~~~~~~~~~
+  cc1: all warnings being treated as errors
+
+Change #ifdef to if ( IS_ENABLED(...) ) to make the sole user of
+get_shstk_bottom() visible to the compiler.
+
+Fixes: 35727551c070 ("x86/cet: Fix shskt manipulation error with BUGFRAME_{warn,run_fn}")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Compile-tested-by: Jan Beulich <jbeulich@suse.com>
+Tested-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+master commit: 35727551c0703493a2240e967cffc3063b13d49c
+master date: 2021-08-16 16:03:20 +0100
+master commit: 54c9736382e0d558a6acd820e44185e020131c48
+master date: 2021-08-17 12:55:48 +0100
+---
+ xen/arch/x86/traps.c | 96 +++++++++++++++++++++++---------------------
+ 1 file changed, 51 insertions(+), 45 deletions(-)
+
+diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
+index 3c2e563cce..939c91a0ca 100644
+--- a/xen/arch/x86/traps.c
++++ b/xen/arch/x86/traps.c
+@@ -777,53 +777,62 @@ static void do_reserved_trap(struct cpu_user_regs *regs)
+           trapnr, vec_name(trapnr), regs->error_code);
+ }
+ 
+-static void extable_shstk_fixup(struct cpu_user_regs *regs, unsigned long fixup)
++static void fixup_exception_return(struct cpu_user_regs *regs,
++                                   unsigned long fixup)
+ {
+-    unsigned long ssp, *ptr, *base;
++    if ( IS_ENABLED(CONFIG_XEN_SHSTK) )
++    {
++        unsigned long ssp, *ptr, *base;
+ 
+-    asm ( "rdsspq %0" : "=r" (ssp) : "0" (1) );
+-    if ( ssp == 1 )
+-        return;
++        asm ( "rdsspq %0" : "=r" (ssp) : "0" (1) );
++        if ( ssp == 1 )
++            goto shstk_done;
+ 
+-    ptr = _p(ssp);
+-    base = _p(get_shstk_bottom(ssp));
++        ptr = _p(ssp);
++        base = _p(get_shstk_bottom(ssp));
+ 
+-    for ( ; ptr < base; ++ptr )
+-    {
+-        /*
+-         * Search for %rip.  The shstk currently looks like this:
+-         *
+-         *   ...  [Likely pointed to by SSP]
+-         *   %cs  [== regs->cs]
+-         *   %rip [== regs->rip]
+-         *   SSP  [Likely points to 3 slots higher, above %cs]
+-         *   ...  [call tree to this function, likely 2/3 slots]
+-         *
+-         * and we want to overwrite %rip with fixup.  There are two
+-         * complications:
+-         *   1) We cant depend on SSP values, because they won't differ by 3
+-         *      slots if the exception is taken on an IST stack.
+-         *   2) There are synthetic (unrealistic but not impossible) scenarios
+-         *      where %rip can end up in the call tree to this function, so we
+-         *      can't check against regs->rip alone.
+-         *
+-         * Check for both regs->rip and regs->cs matching.
+-         */
+-        if ( ptr[0] == regs->rip && ptr[1] == regs->cs )
++        for ( ; ptr < base; ++ptr )
+         {
+-            asm ( "wrssq %[fix], %[stk]"
+-                  : [stk] "=m" (ptr[0])
+-                  : [fix] "r" (fixup) );
+-            return;
++            /*
++             * Search for %rip.  The shstk currently looks like this:
++             *
++             *   ...  [Likely pointed to by SSP]
++             *   %cs  [== regs->cs]
++             *   %rip [== regs->rip]
++             *   SSP  [Likely points to 3 slots higher, above %cs]
++             *   ...  [call tree to this function, likely 2/3 slots]
++             *
++             * and we want to overwrite %rip with fixup.  There are two
++             * complications:
++             *   1) We cant depend on SSP values, because they won't differ by
++             *      3 slots if the exception is taken on an IST stack.
++             *   2) There are synthetic (unrealistic but not impossible)
++             *      scenarios where %rip can end up in the call tree to this
++             *      function, so we can't check against regs->rip alone.
++             *
++             * Check for both regs->rip and regs->cs matching.
++             */
++            if ( ptr[0] == regs->rip && ptr[1] == regs->cs )
++            {
++                asm ( "wrssq %[fix], %[stk]"
++                      : [stk] "=m" (ptr[0])
++                      : [fix] "r" (fixup) );
++                goto shstk_done;
++            }
+         }
++
++        /*
++         * We failed to locate and fix up the shadow IRET frame.  This could
++         * be due to shadow stack corruption, or bad logic above.  We cannot
++         * continue executing the interrupted context.
++         */
++        BUG();
++
+     }
++ shstk_done:
+ 
+-    /*
+-     * We failed to locate and fix up the shadow IRET frame.  This could be
+-     * due to shadow stack corruption, or bad logic above.  We cannot continue
+-     * executing the interrupted context.
+-     */
+-    BUG();
++    /* Fixup the regular stack. */
++    regs->rip = fixup;
+ }
+ 
+ static bool extable_fixup(struct cpu_user_regs *regs, bool print)
+@@ -842,10 +851,7 @@ static bool extable_fixup(struct cpu_user_regs *regs, bool print)
+                vec_name(regs->entry_vector), regs->error_code,
+                _p(regs->rip), _p(regs->rip), _p(fixup));
+ 
+-    if ( IS_ENABLED(CONFIG_XEN_SHSTK) )
+-        extable_shstk_fixup(regs, fixup);
+-
+-    regs->rip = fixup;
++    fixup_exception_return(regs, fixup);
+     this_cpu(last_extable_addr) = regs->rip;
+ 
+     return true;
+@@ -1136,7 +1142,7 @@ void do_invalid_op(struct cpu_user_regs *regs)
+         void (*fn)(struct cpu_user_regs *) = bug_ptr(bug);
+ 
+         fn(regs);
+-        regs->rip = (unsigned long)eip;
++        fixup_exception_return(regs, (unsigned long)eip);
+         return;
+     }
+ 
+@@ -1157,7 +1163,7 @@ void do_invalid_op(struct cpu_user_regs *regs)
+     case BUGFRAME_warn:
+         printk("Xen WARN at %s%s:%d\n", prefix, filename, lineno);
+         show_execution_state(regs);
+-        regs->rip = (unsigned long)eip;
++        fixup_exception_return(regs, (unsigned long)eip);
+         return;
+ 
+     case BUGFRAME_bug:
+-- 
+2.30.2
+

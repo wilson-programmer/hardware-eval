@@ -1,0 +1,50 @@
+From e23d2234e08872ac1c719f3e338994581483440f Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 15 Jun 2018 11:49:06 +0200
+Subject: [PATCH] x86/HVM: account for fully eager FPU mode in emulation
+
+In fully eager mode we must not clear fpu_dirtied, set CR0.TS, or invoke
+the fpu_leave() hook. Instead do what the mode's name says: Restore
+state right away.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+---
+ xen/arch/x86/hvm/emulate.c | 19 +++++++++++++------
+ 1 file changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/emulate.c b/xen/arch/x86/hvm/emulate.c
+index c9aa18884d..03a4944e88 100644
+--- a/xen/arch/x86/hvm/emulate.c
++++ b/xen/arch/x86/hvm/emulate.c
+@@ -2139,13 +2139,20 @@ static void hvmemul_put_fpu(
+     if ( backout == X86EMUL_FPU_fpu )
+     {
+         /*
+-         * To back out changes to the register file simply adjust state such
+-         * that upon next FPU insn use by the guest we'll reload the state
+-         * saved (or freshly loaded) by hvmemul_get_fpu().
++         * To back out changes to the register file
++         * - in fully eager mode, restore original state immediately,
++         * - in lazy mode, simply adjust state such that upon next FPU insn
++         *   use by the guest we'll reload the state saved (or freshly loaded)
++         *   by hvmemul_get_fpu().
+          */
+-        curr->fpu_dirtied = false;
+-        stts();
+-        hvm_funcs.fpu_leave(curr);
++        if ( curr->arch.fully_eager_fpu )
++            vcpu_restore_fpu_eager(curr);
++        else
++        {
++            curr->fpu_dirtied = false;
++            stts();
++            hvm_funcs.fpu_leave(curr);
++        }
+     }
+ }
+ 
+-- 
+2.30.2
+

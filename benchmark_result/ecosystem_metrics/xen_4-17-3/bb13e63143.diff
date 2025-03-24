@@ -1,0 +1,207 @@
+From bb13e631432a6fbcc0391431fc27ac85dc438248 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 14 Nov 2023 13:58:18 +0100
+Subject: [PATCH] x86: support data operand independent timing mode
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+[1] specifies a long list of instructions which are intended to exhibit
+timing behavior independent of the data they operate on. On certain
+hardware this independence is optional, controlled by a bit in a new
+MSR. Provide a command line option to control the mode Xen and its
+guests are to operate in, with a build time control over the default.
+Longer term we may want to allow guests to control this.
+
+Since Arm64 supposedly also has such a control, put command line option
+and Kconfig control in common files.
+
+[1] https://www.intel.com/content/www/us/en/developer/articles/technical/software-security-guidance/best-practices/data-operand-independent-timing-isa-guidance.html
+
+Requested-by: Demi Marie Obenour <demi@invisiblethingslab.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: bad1ac345b1910b820b8a703ad1b9f66412ea844
+master date: 2023-10-20 15:50:05 +0200
+---
+ CHANGELOG.md                          |  4 ++++
+ docs/misc/xen-command-line.pandoc     | 11 +++++++++++
+ xen/arch/x86/Kconfig                  |  1 +
+ xen/arch/x86/cpu/common.c             | 24 ++++++++++++++++++++++++
+ xen/arch/x86/include/asm/cpufeature.h |  1 +
+ xen/common/Kconfig                    | 18 ++++++++++++++++++
+ xen/common/kernel.c                   |  5 +++++
+ xen/include/xen/param.h               |  2 ++
+ 8 files changed, 66 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index bb0eceb69a..3da238d5b9 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+  - Ignore VCPUOP_set_singleshot_timer's VCPU_SSHOTTMR_future flag. The only
+    known user doesn't use it properly, leading to in-guest breakage.
+ 
++### Added
++ - On x86, support for enforcing system-wide operation in Data Operand
++   Independent Timing Mode.
++
+ ## [4.17.0](https://xenbits.xen.org/gitweb/?p=xen.git;a=shortlog;h=RELEASE-4.17.0) - 2022-12-12
+ 
+ ### Changed
+diff --git a/docs/misc/xen-command-line.pandoc b/docs/misc/xen-command-line.pandoc
+index c4afd51a81..5ad24a70a9 100644
+--- a/docs/misc/xen-command-line.pandoc
++++ b/docs/misc/xen-command-line.pandoc
+@@ -770,6 +770,17 @@ Specify the size of the console debug trace buffer. By specifying `cpu:`
+ additionally a trace buffer of the specified size is allocated per cpu.
+ The debug trace feature is only enabled in debugging builds of Xen.
+ 
++### dit (x86/Intel)
++> `= <boolean>`
++
++> Default: `CONFIG_DIT_DEFAULT`
++
++Specify whether Xen and guests should operate in Data Independent Timing
++mode (Intel calls this DOITM, Data Operand Independent Timing Mode). Note
++that enabling this option cannot guarantee anything beyond what underlying
++hardware guarantees (with, where available and known to Xen, respective
++tweaks applied).
++
+ ### dma_bits
+ > `= <integer>`
+ 
+diff --git a/xen/arch/x86/Kconfig b/xen/arch/x86/Kconfig
+index 2a5c3304e2..ab47cc23ac 100644
+--- a/xen/arch/x86/Kconfig
++++ b/xen/arch/x86/Kconfig
+@@ -14,6 +14,7 @@ config X86
+ 	select HAS_ALTERNATIVE
+ 	select HAS_COMPAT
+ 	select HAS_CPUFREQ
++	select HAS_DIT
+ 	select HAS_EHCI
+ 	select HAS_EX_TABLE
+ 	select HAS_FAST_MULTIPLY
+diff --git a/xen/arch/x86/cpu/common.c b/xen/arch/x86/cpu/common.c
+index ffa6099307..54ea7fa831 100644
+--- a/xen/arch/x86/cpu/common.c
++++ b/xen/arch/x86/cpu/common.c
+@@ -211,6 +211,28 @@ void ctxt_switch_levelling(const struct vcpu *next)
+ 		alternative_vcall(ctxt_switch_masking, next);
+ }
+ 
++static void setup_doitm(void)
++{
++    uint64_t msr;
++
++    if ( !cpu_has_doitm )
++        return;
++
++    /*
++     * We don't currently enumerate DOITM to guests.  As a conseqeuence, guest
++     * kernels will believe they're safe even when they are not.
++     *
++     * For now, set it unilaterally.  This prevents otherwise-correct crypto
++     * code from becoming vulnerable to timing sidechannels.
++     */
++
++    rdmsrl(MSR_UARCH_MISC_CTRL, msr);
++    msr |= UARCH_CTRL_DOITM;
++    if ( !opt_dit )
++        msr &= ~UARCH_CTRL_DOITM;
++    wrmsrl(MSR_UARCH_MISC_CTRL, msr);
++}
++
+ bool_t opt_cpu_info;
+ boolean_param("cpuinfo", opt_cpu_info);
+ 
+@@ -596,6 +618,8 @@ void identify_cpu(struct cpuinfo_x86 *c)
+ 
+ 		mtrr_bp_init();
+ 	}
++
++	setup_doitm();
+ }
+ 
+ /* leaf 0xb SMT level */
+diff --git a/xen/arch/x86/include/asm/cpufeature.h b/xen/arch/x86/include/asm/cpufeature.h
+index b818ef75c0..9ef7756593 100644
+--- a/xen/arch/x86/include/asm/cpufeature.h
++++ b/xen/arch/x86/include/asm/cpufeature.h
+@@ -155,6 +155,7 @@
+ #define cpu_has_if_pschange_mc_no boot_cpu_has(X86_FEATURE_IF_PSCHANGE_MC_NO)
+ #define cpu_has_tsx_ctrl        boot_cpu_has(X86_FEATURE_TSX_CTRL)
+ #define cpu_has_taa_no          boot_cpu_has(X86_FEATURE_TAA_NO)
++#define cpu_has_doitm           boot_cpu_has(X86_FEATURE_DOITM)
+ #define cpu_has_fb_clear        boot_cpu_has(X86_FEATURE_FB_CLEAR)
+ #define cpu_has_rrsba           boot_cpu_has(X86_FEATURE_RRSBA)
+ #define cpu_has_gds_ctrl        boot_cpu_has(X86_FEATURE_GDS_CTRL)
+diff --git a/xen/common/Kconfig b/xen/common/Kconfig
+index 855c843113..e7794cb7f6 100644
+--- a/xen/common/Kconfig
++++ b/xen/common/Kconfig
+@@ -38,6 +38,9 @@ config HAS_COMPAT
+ config HAS_DEVICE_TREE
+ 	bool
+ 
++config HAS_DIT # Data Independent Timing
++	bool
++
+ config HAS_EX_TABLE
+ 	bool
+ 
+@@ -172,6 +175,21 @@ config SPECULATIVE_HARDEN_GUEST_ACCESS
+ 
+ endmenu
+ 
++config DIT_DEFAULT
++	bool "Data Independent Timing default"
++	depends on HAS_DIT
++	help
++	  Hardware often surfaces instructions the timing of which is dependent
++	  on the data they process.  Some of these instructions may be used in
++	  timing sensitive environments, e.g. cryptography.  When such
++	  instructions exist, hardware may further surface a control allowing
++	  to make the behavior of such instructions independent of the data
++	  they act upon.  Note the build time value can be overridden at runtime
++	  using the "dit" command line option.
++
++	  NB: Intel calls the feature DOITM (Data Operand Independent Timing
++	      Mode).
++
+ config HYPFS
+ 	bool "Hypervisor file system support"
+ 	default y
+diff --git a/xen/common/kernel.c b/xen/common/kernel.c
+index 0e8abe0cf8..f64f7dab37 100644
+--- a/xen/common/kernel.c
++++ b/xen/common/kernel.c
+@@ -22,6 +22,11 @@
+ 
+ enum system_state system_state = SYS_STATE_early_boot;
+ 
++#ifdef CONFIG_HAS_DIT
++bool __ro_after_init opt_dit = IS_ENABLED(CONFIG_DIT_DEFAULT);
++boolean_param("dit", opt_dit);
++#endif
++
+ xen_commandline_t saved_cmdline;
+ static const char __initconst opt_builtin_cmdline[] = CONFIG_CMDLINE;
+ 
+diff --git a/xen/include/xen/param.h b/xen/include/xen/param.h
+index 1b2c7db954..93c3fe7cb7 100644
+--- a/xen/include/xen/param.h
++++ b/xen/include/xen/param.h
+@@ -184,6 +184,8 @@ extern struct param_hypfs __paramhypfs_start[], __paramhypfs_end[];
+     string_param(_name, _var); \
+     string_runtime_only_param(_name, _var)
+ 
++extern bool opt_dit;
++
+ static inline void no_config_param(const char *cfg, const char *param,
+                                    const char *s, const char *e)
+ {
+-- 
+2.30.2
+

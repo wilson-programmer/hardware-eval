@@ -1,0 +1,48 @@
+From 02f9760498ce1c4fb320045f3f3b8f515d124ad4 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 4 Jun 2021 14:51:25 +0200
+Subject: [PATCH] x86/Intel: insert Tiger Lake model numbers
+
+Both match prior generation processors as far as LBR and C-state MSRs
+go (SDM rev 073). The if_pschange_mc erratum, according to the spec
+update, is not applicable.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: e93c3712d67098453760fd61c338cbf62dd08da1
+master date: 2020-12-22 09:00:03 +0100
+---
+ xen/arch/x86/acpi/cpu_idle.c | 3 +++
+ xen/arch/x86/hvm/vmx/vmx.c   | 2 ++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/xen/arch/x86/acpi/cpu_idle.c b/xen/arch/x86/acpi/cpu_idle.c
+index 27e0b52621..c092086b33 100644
+--- a/xen/arch/x86/acpi/cpu_idle.c
++++ b/xen/arch/x86/acpi/cpu_idle.c
+@@ -183,6 +183,9 @@ static void do_get_hw_residencies(void *arg)
+     /* Ice Lake */
+     case 0x7D:
+     case 0x7E:
++    /* Tiger Lake */
++    case 0x8C:
++    case 0x8D:
+     /* Kaby Lake */
+     case 0x8E:
+     case 0x9E:
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index cc6d4ece22..ca47f83cd4 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -2787,6 +2787,8 @@ static const struct lbr_info *last_branch_msr_get(void)
+         case 0x7a:
+         /* Ice Lake */
+         case 0x7d: case 0x7e:
++        /* Tiger Lake */
++        case 0x8c: case 0x8d:
+         /* Tremont */
+         case 0x86:
+         /* Kaby Lake */
+-- 
+2.30.2
+

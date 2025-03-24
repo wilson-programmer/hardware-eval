@@ -1,0 +1,34 @@
+From 1d71404bfe8d222314eb7f1971fdc6776fb52c08 Mon Sep 17 00:00:00 2001
+From: Ian Jackson <ian.jackson@eu.citrix.com>
+Date: Mon, 1 Apr 2019 09:54:56 +0100
+Subject: [PATCH] SUPPORT.md: Specify support lifetime for 4.12
+
+CC: Lars Kurth <lars.kurth@citrix.com>
+CC: Juergen Gross <jgross@suse.com>
+Signed-off-by: Ian Jackson <ian.jackson@eu.citrix.com>
+---
+ SUPPORT.md | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/SUPPORT.md b/SUPPORT.md
+index 19fc8d7533..d7bcf71d09 100644
+--- a/SUPPORT.md
++++ b/SUPPORT.md
+@@ -9,10 +9,10 @@ for the definitions of the support status levels etc.
+ 
+ # Release Support
+ 
+-    Xen-Version: 4.12-rc
+-    Initial-Release: n/a
+-    Supported-Until: TBD
+-    Security-Support-Until: Unreleased - not yet security-supported
++    Xen-Version: 4.12
++    Initial-Release: 2019-04-02
++    Supported-Until: 2020-10-02
++    Security-Support-Until: 2022-04-02
+ 
+ Release Notes
+ : <a href="https://wiki.xenproject.org/wiki/Xen_Project_X.YY_Release_Notes">RN</a>
+-- 
+2.30.2
+

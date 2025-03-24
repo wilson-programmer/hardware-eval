@@ -1,0 +1,87 @@
+From 657dc5f5f6269008fd7484ca7cca723e21455483 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 29 Dec 2022 15:39:13 +0000
+Subject: [PATCH] CI: Drop automation/configs/
+
+Having 3 extra hypervisor builds on the end of a full build is deeply
+confusing to debug if one of them fails, because the .config file presented in
+the artefacts is not the one which caused a build failure.  Also, the log
+tends to be truncated in the UI.
+
+PV-only is tested as part of PV-Shim in a full build anyway, so doesn't need
+repeating.  HVM-only and neither appear frequently in randconfig, so drop all
+the logic here to simplify things.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Michal Orzel <michal.orzel@amd.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 7b20009a812f26e74bdbde2ab96165376b3dad34)
+---
+ automation/configs/x86/hvm_only_config  |  3 ---
+ automation/configs/x86/no_hvm_pv_config |  3 ---
+ automation/configs/x86/pv_only_config   |  3 ---
+ automation/scripts/build                | 21 ---------------------
+ 4 files changed, 30 deletions(-)
+ delete mode 100644 automation/configs/x86/hvm_only_config
+ delete mode 100644 automation/configs/x86/no_hvm_pv_config
+ delete mode 100644 automation/configs/x86/pv_only_config
+
+diff --git a/automation/configs/x86/hvm_only_config b/automation/configs/x86/hvm_only_config
+deleted file mode 100644
+index 9efbddd535..0000000000
+--- a/automation/configs/x86/hvm_only_config
++++ /dev/null
+@@ -1,3 +0,0 @@
+-CONFIG_HVM=y
+-# CONFIG_PV is not set
+-# CONFIG_DEBUG is not set
+diff --git a/automation/configs/x86/no_hvm_pv_config b/automation/configs/x86/no_hvm_pv_config
+deleted file mode 100644
+index 0bf6a8e468..0000000000
+--- a/automation/configs/x86/no_hvm_pv_config
++++ /dev/null
+@@ -1,3 +0,0 @@
+-# CONFIG_HVM is not set
+-# CONFIG_PV is not set
+-# CONFIG_DEBUG is not set
+diff --git a/automation/configs/x86/pv_only_config b/automation/configs/x86/pv_only_config
+deleted file mode 100644
+index e9d8b4a7c7..0000000000
+--- a/automation/configs/x86/pv_only_config
++++ /dev/null
+@@ -1,3 +0,0 @@
+-CONFIG_PV=y
+-# CONFIG_HVM is not set
+-# CONFIG_DEBUG is not set
+diff --git a/automation/scripts/build b/automation/scripts/build
+index 281f8b1fcc..2c807fa397 100755
+--- a/automation/scripts/build
++++ b/automation/scripts/build
+@@ -73,24 +73,3 @@ if [[ "${XEN_TARGET_ARCH}" != "x86_32" ]]; then
+         cp -r dist binaries/
+     fi
+ fi
+-
+-if [[ "${hypervisor_only}" == "y" ]]; then
+-    # If we are build testing a specific Kconfig exit now, there's no point in
+-    # testing all the possible configs.
+-    exit 0
+-fi
+-
+-# Build all the configs we care about
+-case ${XEN_TARGET_ARCH} in
+-    x86_64) arch=x86 ;;
+-    *) exit 0 ;;
+-esac
+-
+-cfg_dir="automation/configs/${arch}"
+-for cfg in `ls ${cfg_dir}`; do
+-    echo "Building $cfg"
+-    make -j$(nproc) -C xen clean
+-    rm -f xen/.config
+-    make -C xen KBUILD_DEFCONFIG=../../../../${cfg_dir}/${cfg} XEN_CONFIG_EXPERT=y defconfig
+-    make -j$(nproc) -C xen XEN_CONFIG_EXPERT=y
+-done
+-- 
+2.30.2
+

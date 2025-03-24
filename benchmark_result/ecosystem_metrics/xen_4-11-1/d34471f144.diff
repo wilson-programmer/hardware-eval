@@ -1,0 +1,54 @@
+From d34471f1440b0556a323f31051da58fa0f70ad18 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 5 Nov 2018 15:01:20 +0100
+Subject: [PATCH] x86: fix "xpti=" and "pv-l1tf=" yet again
+
+While commit 2a3b34ec47 ("x86/spec-ctrl: Yet more fixes for xpti=
+parsing") indeed fixed "xpti=dom0", it broke "xpti=no-dom0", in that
+this then became equivalent to "xpti=no". In particular, the presence
+of "xpti=" alone on the command line means nothing as to which default
+is to be overridden; "xpti=no-dom0", for example, ought to have no
+effect for DomU-s, as this is distinct from both "xpti=no-dom0,domu"
+and "xpti=no-dom0,no-domu".
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 8743d2dea539617e237c77556a91dc357098a8af
+master date: 2018-10-04 14:49:56 +0200
+---
+ xen/arch/x86/spec_ctrl.c | 12 ------------
+ 1 file changed, 12 deletions(-)
+
+diff --git a/xen/arch/x86/spec_ctrl.c b/xen/arch/x86/spec_ctrl.c
+index f0c3d76e4f..eb480c1f08 100644
+--- a/xen/arch/x86/spec_ctrl.c
++++ b/xen/arch/x86/spec_ctrl.c
+@@ -231,12 +231,6 @@ static __init int parse_pv_l1tf(const char *s)
+     const char *ss;
+     int val, rc = 0;
+ 
+-    /* Inhibit the defaults as an explicit choice has been given. */
+-    if ( opt_pv_l1tf_hwdom == -1 )
+-        opt_pv_l1tf_hwdom = 0;
+-    if ( opt_pv_l1tf_domu == -1 )
+-        opt_pv_l1tf_domu = 0;
+-
+     /* Interpret 'pv-l1tf' alone in its positive boolean form. */
+     if ( *s == '\0' )
+         opt_pv_l1tf_hwdom = opt_pv_l1tf_domu = 1;
+@@ -691,12 +685,6 @@ static __init int parse_xpti(const char *s)
+     const char *ss;
+     int val, rc = 0;
+ 
+-    /* Inhibit the defaults as an explicit choice has been given. */
+-    if ( opt_xpti_hwdom == -1 )
+-        opt_xpti_hwdom = 0;
+-    if ( opt_xpti_domu == -1 )
+-        opt_xpti_domu = 0;
+-
+     /* Interpret 'xpti' alone in its positive boolean form. */
+     if ( *s == '\0' )
+         opt_xpti_hwdom = opt_xpti_domu = 1;
+-- 
+2.30.2
+

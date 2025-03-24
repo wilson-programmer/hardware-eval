@@ -1,0 +1,36 @@
+rand_read_throughput: (g=0): rw=randread, bs=(R) 1024KiB-1024KiB, (W) 1024KiB-1024KiB, (T) 1024KiB-1024KiB, ioengine=libaio, iodepth=64
+...
+fio-3.1
+Starting 4 processes
+rand_read_throughput: Laying out IO file (1 file / 100MiB)
+rand_read_throughput: Laying out IO file (1 file / 100MiB)
+rand_read_throughput: Laying out IO file (1 file / 100MiB)
+rand_read_throughput: Laying out IO file (1 file / 100MiB)
+
+rand_read_throughput: (groupid=0, jobs=4): err= 0: pid=15578: Tue Jun  4 01:13:37 2024
+   read: IOPS=1915, BW=1920MiB/s (2013MB/s)(113GiB/60015msec)
+    slat (usec): min=82, max=36137, avg=1876.30, stdev=2399.36
+    clat (msec): min=2, max=362, avg=131.47, stdev=30.13
+     lat (msec): min=4, max=365, avg=133.39, stdev=30.39
+    clat percentiles (msec):
+     |  1.00th=[   47],  5.00th=[   84], 10.00th=[   99], 20.00th=[  112],
+     | 30.00th=[  120], 40.00th=[  126], 50.00th=[  131], 60.00th=[  138],
+     | 70.00th=[  144], 80.00th=[  153], 90.00th=[  165], 95.00th=[  178],
+     | 99.00th=[  224], 99.50th=[  241], 99.90th=[  279], 99.95th=[  300],
+     | 99.99th=[  355]
+   bw (  KiB/s): min=270997, max=870400, per=25.10%, avg=493452.90, stdev=72251.01, samples=480
+   iops        : min=  264, max=  850, avg=481.52, stdev=70.60, samples=480
+  lat (msec)   : 4=0.01%, 10=0.01%, 20=0.02%, 50=1.16%, 100=9.68%
+  lat (msec)   : 250=89.01%, 500=0.35%
+  cpu          : usr=6.25%, sys=27.83%, ctx=133418, majf=0, minf=10
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.1%, 16=0.1%, 32=0.1%, >=64=103.2%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.1%, >=64=0.0%
+     issued rwt: total=114950,0,0, short=0,0,0, dropped=0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=64
+
+Run status group 0 (all jobs):
+   READ: bw=1920MiB/s (2013MB/s), 1920MiB/s-1920MiB/s (2013MB/s-2013MB/s), io=113GiB (121GB), run=60015-60015msec
+
+Disk stats (read/write):
+  xvda: ios=951317/15, merge=0/10, ticks=3167600/36, in_queue=3098928, util=99.83%

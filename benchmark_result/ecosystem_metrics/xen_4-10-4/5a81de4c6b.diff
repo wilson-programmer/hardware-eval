@@ -1,0 +1,47 @@
+From 5a81de4c6b6036974f29e2330a493f23a8f0c1f0 Mon Sep 17 00:00:00 2001
+From: Wei Liu <wei.liu2@citrix.com>
+Date: Wed, 28 Nov 2018 17:43:33 +0000
+Subject: [PATCH] tools/firmware: update OVMF Makefile, when necessary
+
+[ This is two commits from master aka staging-4.12: ]
+
+OVMF has become dependent on OpenSSL, which is included as a
+submodule.  Initialise submodules before building.
+
+Signed-off-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+(cherry picked from commit b16281870e06f5f526029a4e69634a16dc38e8e4)
+
+tools: only call git when necessary in OVMF Makefile
+
+Users may choose to export a snapshot of OVMF and build it
+with xen.git supplied ovmf-makefile. In that case we don't
+need to call `git submodule`.
+
+Fixes b16281870e.
+
+Reported-by: Olaf Hering <olaf@aepfle.de>
+Signed-off-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 68292c94a60eab24514ab4a8e4772af24dead807)
+(cherry picked from commit e983e8ae84efd5e43045a3d20a820f13cb4a75bf)
+---
+ tools/firmware/ovmf-makefile | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/firmware/ovmf-makefile b/tools/firmware/ovmf-makefile
+index 2838744461..55f9992145 100644
+--- a/tools/firmware/ovmf-makefile
++++ b/tools/firmware/ovmf-makefile
+@@ -16,6 +16,7 @@ all: build
+ 
+ .PHONY: build
+ build:
++	if test -e .git ; then $(GIT) submodule update --init --recursive ; fi
+ 	OvmfPkg/build.sh -a X64 -b $(TARGET) -n 4
+ 	cp Build/OvmfX64/$(TARGET)_GCC*/FV/OVMF.fd ovmf.bin
+ 
+-- 
+2.30.2
+

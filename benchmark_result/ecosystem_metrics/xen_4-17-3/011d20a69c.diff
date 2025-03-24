@@ -1,0 +1,47 @@
+From 011d20a69cf453c968d9f7d9b326bc4ae0870e9d Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 14 Nov 2023 13:59:40 +0100
+Subject: [PATCH] docs: Fix IOMMU command line docs some more
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Make the command line docs match the actual implementation, and state that the
+default behaviour is selected at compile time.
+
+Fixes: 980d6acf1517 ("IOMMU: make DMA containment of quarantined devices optional")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 850382254b78e07e7ccbf80010c3b43897a158f9
+master date: 2023-10-31 15:48:07 +0000
+---
+ docs/misc/xen-command-line.pandoc | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/docs/misc/xen-command-line.pandoc b/docs/misc/xen-command-line.pandoc
+index 5ad24a70a9..038ac7398c 100644
+--- a/docs/misc/xen-command-line.pandoc
++++ b/docs/misc/xen-command-line.pandoc
+@@ -1444,7 +1444,8 @@ detection of systems known to misbehave upon accesses to that port.
+ > Default: `new` unless directed-EOI is supported
+ 
+ ### iommu
+-    = List of [ <bool>, verbose, debug, force, required, quarantine[=scratch-page],
++    = List of [ <bool>, verbose, debug, force, required,
++                quarantine=<bool>|scratch-page,
+                 sharept, superpages, intremap, intpost, crash-disable,
+                 snoop, qinval, igfx, amd-iommu-perdev-intremap,
+                 dom0-{passthrough,strict} ]
+@@ -1483,7 +1484,8 @@ boolean (e.g. `iommu=no`) can override this and leave the IOMMUs disabled.
+     successfully.
+ 
+ *   The `quarantine` option can be used to control Xen's behavior when
+-    de-assigning devices from guests.
++    de-assigning devices from guests.  The default behaviour is chosen at
++    compile time, and is one of `CONFIG_IOMMU_QUARANTINE_{NONE,BASIC,SCRATCH_PAGE}`.
+ 
+     When a PCI device is assigned to an untrusted domain, it is possible
+     for that domain to program the device to DMA to an arbitrary address.
+-- 
+2.30.2
+

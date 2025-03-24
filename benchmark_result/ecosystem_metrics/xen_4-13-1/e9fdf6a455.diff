@@ -1,0 +1,39 @@
+From e9fdf6a455da1d3ab7e7d127738afc6456b13914 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Thu, 9 Apr 2020 09:09:40 +0200
+Subject: [PATCH] x86/shim: fix ballooning up the guest
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+args.preempted is meaningless here as it doesn't signal whether the
+hypercall was preempted before. Use start_extent instead which is
+correct (as long as the hypercall was invoked in a "normal" way).
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 76dbabb59eeaa78e9f57407e5b15a6606488333e
+master date: 2020-03-18 12:55:54 +0100
+---
+ xen/common/memory.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/common/memory.c b/xen/common/memory.c
+index 309e872edf..3c085a0cd0 100644
+--- a/xen/common/memory.c
++++ b/xen/common/memory.c
+@@ -1190,8 +1190,8 @@ long do_memory_op(unsigned long cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+         }
+ 
+ #ifdef CONFIG_X86
+-        if ( pv_shim && op != XENMEM_decrease_reservation && !args.preempted )
+-            /* Avoid calling pv_shim_online_memory when preempted. */
++        if ( pv_shim && op != XENMEM_decrease_reservation && !start_extent )
++            /* Avoid calling pv_shim_online_memory when in a continuation. */
+             pv_shim_online_memory(args.nr_extents, args.extent_order);
+ #endif
+ 
+-- 
+2.30.2
+

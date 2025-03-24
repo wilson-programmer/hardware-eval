@@ -1,0 +1,67 @@
+From 1c3927f8f6743538a35aa45a91a2d4adbde9f277 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Wed, 5 Jul 2023 08:25:03 +0200
+Subject: [PATCH] build: define ARCH and SRCARCH later
+
+Defining ARCH and SRCARCH later in xen/Makefile allows to switch to
+immediate evaluation variable type.
+
+ARCH and SRCARCH depend on value defined in Config.mk and aren't used
+for e.g. TARGET_SUBARCH or TARGET_ARCH, and not before they're needed in
+a sub-make or a rule.
+
+This will help reduce the number of times the shell rune is been
+run.
+
+With GNU make 4.4, the number of execution of the command present in
+these $(shell ) increased greatly. This is probably because as of make
+4.4, exported variable are also added to the environment of $(shell )
+construct.
+
+Also, `make -d` shows a lot of these:
+    Makefile:39: not recursively expanding SRCARCH to export to shell function
+    Makefile:38: not recursively expanding ARCH to export to shell function
+
+Reported-by: Jason Andryuk <jandryuk@gmail.com>
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Tested-by: Jason Andryuk <jandryuk@gmail.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 58e0a3f3b2c430f8640ef9df67ac857b0008ebc8)
+---
+ xen/Makefile | 13 +++++++------
+ 1 file changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/xen/Makefile b/xen/Makefile
+index f6005bd536..7ecfa6e8e9 100644
+--- a/xen/Makefile
++++ b/xen/Makefile
+@@ -35,12 +35,6 @@ MAKEFLAGS += -rR
+ 
+ EFI_MOUNTPOINT ?= $(BOOT_DIR)/efi
+ 
+-ARCH=$(XEN_TARGET_ARCH)
+-SRCARCH=$(shell echo $(ARCH) | \
+-          sed -e 's/x86.*/x86/' -e s'/arm\(32\|64\)/arm/g' \
+-              -e s'/riscv.*/riscv/g')
+-export ARCH SRCARCH
+-
+ # Allow someone to change their config file
+ export KCONFIG_CONFIG ?= .config
+ 
+@@ -241,6 +235,13 @@ include scripts/Kbuild.include
+ include $(XEN_ROOT)/Config.mk
+ 
+ # Set ARCH/SUBARCH appropriately.
++
++ARCH := $(XEN_TARGET_ARCH)
++SRCARCH := $(shell echo $(ARCH) | \
++    sed -e 's/x86.*/x86/' -e 's/arm\(32\|64\)/arm/g' \
++        -e 's/riscv.*/riscv/g')
++export ARCH SRCARCH
++
+ export TARGET_SUBARCH  := $(XEN_TARGET_ARCH)
+ export TARGET_ARCH     := $(shell echo $(XEN_TARGET_ARCH) | \
+                             sed -e 's/x86.*/x86/' -e s'/arm\(32\|64\)/arm/g' \
+-- 
+2.30.2
+

@@ -1,0 +1,55 @@
+From df11056150070ee6404bd242e3c7d70d55ee2686 Mon Sep 17 00:00:00 2001
+From: Tamas K Lengyel <tamas.lengyel@intel.com>
+Date: Fri, 7 Aug 2020 17:27:11 +0200
+Subject: [PATCH] x86/vmx: use P2M_ALLOC in vmx_load_pdptrs instead of
+ P2M_UNSHARE
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+While forking VMs running a small RTOS system (Zephyr) a Xen crash has been
+observed due to a mm-lock order violation while copying the HVM CPU context
+from the parent. This issue has been identified to be due to
+hap_update_paging_modes first getting a lock on the gfn using get_gfn. This
+call also creates a shared entry in the fork's memory map for the cr3 gfn. The
+function later calls hap_update_cr3 while holding the paging_lock, which
+results in the lock-order violation in vmx_load_pdptrs when it tries to unshare
+the above entry when it grabs the page with the P2M_UNSHARE flag set.
+
+Since vmx_load_pdptrs only reads from the page its usage of P2M_UNSHARE was
+unnecessary to start with. Using P2M_ALLOC is the appropriate flag to ensure
+the p2m is properly populated.
+
+Note that the lock order violation is avoided because before the paging_lock is
+taken a lookup is performed with P2M_ALLOC that forks the page, thus the second
+lookup in vmx_load_pdptrs succeeds without having to perform the fork. We keep
+P2M_ALLOC in vmx_load_pdptrs because there are code-paths leading up to it
+which don't take the paging_lock and that have no previous lookup. Currently no
+other code-path exists leading there with the paging_lock taken, thus no
+further adjustments are necessary.
+
+Signed-off-by: Tamas K Lengyel <tamas.lengyel@intel.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: b67e859d0823f5b450e29379af9142d44a3ea370
+master date: 2020-06-19 15:24:55 +0200
+---
+ xen/arch/x86/hvm/vmx/vmx.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index 662c3988dd..36b979851f 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -1385,7 +1385,7 @@ static void vmx_load_pdptrs(struct vcpu *v)
+     if ( (cr3 & 0x1fUL) && !hvm_pcid_enabled(v) )
+         goto crash;
+ 
+-    page = get_page_from_gfn(v->domain, cr3 >> PAGE_SHIFT, &p2mt, P2M_UNSHARE);
++    page = get_page_from_gfn(v->domain, cr3 >> PAGE_SHIFT, &p2mt, P2M_ALLOC);
+     if ( !page )
+     {
+         /* Ideally you don't want to crash but rather go into a wait 
+-- 
+2.30.2
+

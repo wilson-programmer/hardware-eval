@@ -1,0 +1,73 @@
+From 72a5bde6912198fb2d26ef94ae9cb7ed2bb6bb43 Mon Sep 17 00:00:00 2001
+From: Jason Andryuk <jandryuk@gmail.com>
+Date: Wed, 6 Apr 2022 10:19:57 +0200
+Subject: [PATCH] libxl: Re-scope qmp_proxy_spawn.ao usage
+
+I've observed this failed assertion:
+libxl_event.c:2057: libxl__ao_inprogress_gc: Assertion `ao' failed.
+
+AFAICT, this is happening in qmp_proxy_spawn_outcome where
+sdss->qmp_proxy_spawn.ao is NULL.
+
+The out label of spawn_stub_launch_dm() calls qmp_proxy_spawn_outcome(),
+but it is only in the success path that sdss->qmp_proxy_spawn.ao gets
+set to the current ao.
+
+qmp_proxy_spawn_outcome() should instead use sdss->dm.spawn.ao, which is
+the already in-use ao when spawn_stub_launch_dm() is called.  The same
+is true for spawn_qmp_proxy().
+
+With this, move sdss->qmp_proxy_spawn.ao initialization to
+spawn_qmp_proxy() since its use is for libxl__spawn_spawn() and it can
+be initialized along with the rest of sdss->qmp_proxy_spawn.
+
+Fixes: 83c845033dc8 ("libxl: use vchan for QMP access with Linux stubdomain")
+Signed-off-by: Jason Andryuk <jandryuk@gmail.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: d62a34423a1a98aefd7c30e22d2d82d198f077c8
+master date: 2022-04-01 17:01:57 +0100
+---
+ tools/libs/light/libxl_dm.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/tools/libs/light/libxl_dm.c b/tools/libs/light/libxl_dm.c
+index 9a8ddbe188..1864ee30f0 100644
+--- a/tools/libs/light/libxl_dm.c
++++ b/tools/libs/light/libxl_dm.c
+@@ -2567,7 +2567,6 @@ static void spawn_stub_launch_dm(libxl__egc *egc,
+             goto out;
+     }
+ 
+-    sdss->qmp_proxy_spawn.ao = ao;
+     if (libxl__stubdomain_is_linux(&guest_config->b_info)) {
+         spawn_qmp_proxy(egc, sdss);
+     } else {
+@@ -2584,7 +2583,7 @@ out:
+ static void spawn_qmp_proxy(libxl__egc *egc,
+                             libxl__stub_dm_spawn_state *sdss)
+ {
+-    STATE_AO_GC(sdss->qmp_proxy_spawn.ao);
++    STATE_AO_GC(sdss->dm.spawn.ao);
+     const uint32_t guest_domid = sdss->dm.guest_domid;
+     const uint32_t dm_domid = sdss->pvqemu.guest_domid;
+     const char *dom_path = libxl__xs_get_dompath(gc, dm_domid);
+@@ -2598,6 +2597,7 @@ static void spawn_qmp_proxy(libxl__egc *egc,
+         goto out;
+     }
+ 
++    sdss->qmp_proxy_spawn.ao = ao;
+     sdss->qmp_proxy_spawn.what = GCSPRINTF("domain %d device model qmp proxy", guest_domid);
+     sdss->qmp_proxy_spawn.pidpath = GCSPRINTF("%s/image/qmp-proxy-pid", dom_path);
+     sdss->qmp_proxy_spawn.xspath = DEVICE_MODEL_XS_PATH(gc, LIBXL_TOOLSTACK_DOMID,
+@@ -2685,7 +2685,7 @@ static void qmp_proxy_spawn_outcome(libxl__egc *egc,
+                                     libxl__stub_dm_spawn_state *sdss,
+                                     int rc)
+ {
+-    STATE_AO_GC(sdss->qmp_proxy_spawn.ao);
++    STATE_AO_GC(sdss->dm.spawn.ao);
+     /*
+      * Until xenconsoled learns how to handle multiple consoles, require qemu
+      * in dom0 to serve consoles for a stubdomain - it require at least 3 of them.
+-- 
+2.30.2
+

@@ -1,0 +1,167 @@
+From dd79dcc9f1bfd775fd7889d6684c41feee7c4eb0 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 4 Apr 2022 15:19:52 +0200
+Subject: [PATCH] vpci/msix: fix PBA accesses
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Map the PBA in order to access it from the MSI-X read and write
+handlers. Note that previously the handlers would pass the physical
+host address into the {read,write}{l,q} handlers, which is wrong as
+those expect a linear address.
+
+Map the PBA using ioremap when the first access is performed. Note
+that 32bit arches might want to abstract the call to ioremap into a
+vPCI arch handler, so they can use a fixmap range to map the PBA.
+
+Reported-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Tested-by: Alex Olson <Alex.Olson@starlab.io>
+master commit: b4f21160601155762a4d014db9623af921fec959
+master date: 2022-03-09 16:21:01 +0100
+---
+ xen/drivers/vpci/msix.c | 65 ++++++++++++++++++++++++++++++++++++++---
+ xen/drivers/vpci/vpci.c |  2 ++
+ xen/include/xen/vpci.h  |  2 ++
+ 3 files changed, 65 insertions(+), 4 deletions(-)
+
+diff --git a/xen/drivers/vpci/msix.c b/xen/drivers/vpci/msix.c
+index 846f1b8d70..ac5de98f6d 100644
+--- a/xen/drivers/vpci/msix.c
++++ b/xen/drivers/vpci/msix.c
+@@ -182,6 +182,38 @@ static struct vpci_msix_entry *get_entry(struct vpci_msix *msix,
+     return &msix->entries[(addr - start) / PCI_MSIX_ENTRY_SIZE];
+ }
+ 
++static void __iomem *get_pba(struct vpci *vpci)
++{
++    struct vpci_msix *msix = vpci->msix;
++    /*
++     * PBA will only be unmapped when the device is deassigned, so access it
++     * without holding the vpci lock.
++     */
++    void __iomem *pba = read_atomic(&msix->pba);
++
++    if ( likely(pba) )
++        return pba;
++
++    pba = ioremap(vmsix_table_addr(vpci, VPCI_MSIX_PBA),
++                  vmsix_table_size(vpci, VPCI_MSIX_PBA));
++    if ( !pba )
++        return read_atomic(&msix->pba);
++
++    spin_lock(&vpci->lock);
++    if ( !msix->pba )
++    {
++        write_atomic(&msix->pba, pba);
++        spin_unlock(&vpci->lock);
++    }
++    else
++    {
++        spin_unlock(&vpci->lock);
++        iounmap(pba);
++    }
++
++    return read_atomic(&msix->pba);
++}
++
+ static int msix_read(struct vcpu *v, unsigned long addr, unsigned int len,
+                      unsigned long *data)
+ {
+@@ -200,6 +232,10 @@ static int msix_read(struct vcpu *v, unsigned long addr, unsigned int len,
+ 
+     if ( VMSIX_ADDR_IN_RANGE(addr, msix->pdev->vpci, VPCI_MSIX_PBA) )
+     {
++        struct vpci *vpci = msix->pdev->vpci;
++        unsigned int idx = addr - vmsix_table_addr(vpci, VPCI_MSIX_PBA);
++        const void __iomem *pba = get_pba(vpci);
++
+         /*
+          * Access to PBA.
+          *
+@@ -207,14 +243,22 @@ static int msix_read(struct vcpu *v, unsigned long addr, unsigned int len,
+          * guest address space. If this changes the address will need to be
+          * translated.
+          */
++        if ( !pba )
++        {
++            gprintk(XENLOG_WARNING,
++                    "%pp: unable to map MSI-X PBA, report all pending\n",
++                    msix->pdev);
++            return X86EMUL_OKAY;
++        }
++
+         switch ( len )
+         {
+         case 4:
+-            *data = readl(addr);
++            *data = readl(pba + idx);
+             break;
+ 
+         case 8:
+-            *data = readq(addr);
++            *data = readq(pba + idx);
+             break;
+ 
+         default:
+@@ -278,14 +322,27 @@ static int msix_write(struct vcpu *v, unsigned long addr, unsigned int len,
+         /* Ignore writes to PBA for DomUs, it's behavior is undefined. */
+         if ( is_hardware_domain(d) )
+         {
++            struct vpci *vpci = msix->pdev->vpci;
++            unsigned int idx = addr - vmsix_table_addr(vpci, VPCI_MSIX_PBA);
++            const void __iomem *pba = get_pba(vpci);
++
++            if ( !pba )
++            {
++                /* Unable to map the PBA, ignore write. */
++                gprintk(XENLOG_WARNING,
++                        "%pp: unable to map MSI-X PBA, write ignored\n",
++                        msix->pdev);
++                return X86EMUL_OKAY;
++            }
++
+             switch ( len )
+             {
+             case 4:
+-                writel(data, addr);
++                writel(data, pba + idx);
+                 break;
+ 
+             case 8:
+-                writeq(data, addr);
++                writeq(data, pba + idx);
+                 break;
+ 
+             default:
+diff --git a/xen/drivers/vpci/vpci.c b/xen/drivers/vpci/vpci.c
+index cbd1bac7fc..a27c9e600d 100644
+--- a/xen/drivers/vpci/vpci.c
++++ b/xen/drivers/vpci/vpci.c
+@@ -48,6 +48,8 @@ void vpci_remove_device(struct pci_dev *pdev)
+         xfree(r);
+     }
+     spin_unlock(&pdev->vpci->lock);
++    if ( pdev->vpci->msix && pdev->vpci->msix->pba )
++        iounmap(pdev->vpci->msix->pba);
+     xfree(pdev->vpci->msix);
+     xfree(pdev->vpci->msi);
+     xfree(pdev->vpci);
+diff --git a/xen/include/xen/vpci.h b/xen/include/xen/vpci.h
+index 9f5b5d52e1..f19e79447a 100644
+--- a/xen/include/xen/vpci.h
++++ b/xen/include/xen/vpci.h
+@@ -127,6 +127,8 @@ struct vpci {
+         bool enabled         : 1;
+         /* Masked? */
+         bool masked          : 1;
++        /* PBA map */
++        void __iomem *pba;
+         /* Entries. */
+         struct vpci_msix_entry {
+             uint64_t addr;
+-- 
+2.30.2
+

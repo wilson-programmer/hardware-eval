@@ -1,0 +1,50 @@
+From d1caf6ee727b6fa4199f4ce50e9af5b66a6688ff Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 14 Sep 2018 13:04:44 +0200
+Subject: [PATCH] rangeset: make inquiry functions tolerate NULL inputs
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Rather than special casing the ->iomem_caps check in x86's
+get_page_from_l1e() for the dom_xen case, let's be more tolerant in
+general, along the lines of rangeset_is_empty(): A never allocated
+rangeset can't possibly contain or overlap any range.
+
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Wei Liu <wei.liu2@citrix.com>
+master commit: ad0a9f273d6d6f0545cd9b708b2d4be581a6cadd
+master date: 2018-08-17 13:54:40 +0200
+---
+ xen/common/rangeset.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/xen/common/rangeset.c b/xen/common/rangeset.c
+index bb68ce62e4..7788cdd241 100644
+--- a/xen/common/rangeset.c
++++ b/xen/common/rangeset.c
+@@ -256,6 +256,9 @@ bool_t rangeset_contains_range(
+ 
+     ASSERT(s <= e);
+ 
++    if ( !r )
++        return false;
++
+     read_lock(&r->lock);
+     x = find_range(r, s);
+     contains = (x && (x->e >= e));
+@@ -272,6 +275,9 @@ bool_t rangeset_overlaps_range(
+ 
+     ASSERT(s <= e);
+ 
++    if ( !r )
++        return false;
++
+     read_lock(&r->lock);
+     x = find_range(r, e);
+     overlaps = (x && (s <= x->e));
+-- 
+2.30.2
+

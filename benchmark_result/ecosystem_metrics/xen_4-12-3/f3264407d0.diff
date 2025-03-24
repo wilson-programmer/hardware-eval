@@ -1,0 +1,46 @@
+From f3264407d0feadd948359242ac346567d8afa23a Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 9 Apr 2020 09:33:20 +0200
+Subject: [PATCH] x86/ucode/amd: Fix potential buffer overrun with equiv table
+ handling
+
+find_equiv_cpu_id() loops until it finds a 0 installed_cpu entry.  Well formed
+AMD microcode containers have this property.
+
+Extend the checking in install_equiv_cpu_table() to reject tables which don't
+have a sentinal at the end.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 1f97b6b9f1b5978659c5735954c37c130e7bb151
+master date: 2020-03-27 13:13:26 +0000
+---
+ xen/arch/x86/microcode_amd.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/microcode_amd.c b/xen/arch/x86/microcode_amd.c
+index 01bd6d6cc1..4a75cab684 100644
+--- a/xen/arch/x86/microcode_amd.c
++++ b/xen/arch/x86/microcode_amd.c
+@@ -297,6 +297,7 @@ static int install_equiv_cpu_table(
+     size_t *offset)
+ {
+     const struct mpbhdr *mpbuf = data + *offset + 4;
++    const struct equiv_cpu_entry *eq;
+ 
+     *offset += mpbuf->len + CONT_HDR_SIZE;	/* add header length */
+ 
+@@ -306,7 +307,9 @@ static int install_equiv_cpu_table(
+         return -EINVAL;
+     }
+ 
+-    if ( mpbuf->len == 0 )
++    if ( mpbuf->len == 0 || mpbuf->len % sizeof(*eq) ||
++         (eq = (const void *)mpbuf->data,
++          eq[(mpbuf->len / sizeof(*eq)) - 1].installed_cpu) )
+     {
+         printk(KERN_ERR "microcode: Wrong microcode equivalent cpu table length\n");
+         return -EINVAL;
+-- 
+2.30.2
+

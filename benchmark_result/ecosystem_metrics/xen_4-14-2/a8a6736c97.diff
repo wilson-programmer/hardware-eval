@@ -1,0 +1,112 @@
+From a8a6736c976f1ab14439952bd78dfd5bf3daffe9 Mon Sep 17 00:00:00 2001
+From: Luca Fancellu <luca.fancellu@arm.com>
+Date: Thu, 10 Dec 2020 10:42:58 +0000
+Subject: [PATCH] xen/arm: Add workaround for Cortex-A53 erratum #843419
+
+On the Cortex A53, when executing in AArch64 state, a load or store instruction
+which uses the result of an ADRP instruction as a base register, or which uses
+a base register written by an instruction immediately after an ADRP to the
+same register, might access an incorrect address.
+
+The workaround is to enable the linker flag --fix-cortex-a53-843419
+if present, to check and fix the affected sequence. Otherwise print a warning
+that Xen may be susceptible to this errata
+
+Signed-off-by: Luca Fancellu <luca.fancellu@arm.com>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit d81133d45d81d35a4e7445778bfd1179190cbd31)
+---
+ docs/misc/arm/silicon-errata.txt |  1 +
+ xen/arch/arm/Kconfig             | 19 +++++++++++++++++++
+ xen/arch/arm/Makefile            |  8 ++++++++
+ xen/scripts/Kbuild.include       | 12 ++++++++++++
+ 4 files changed, 40 insertions(+)
+
+diff --git a/docs/misc/arm/silicon-errata.txt b/docs/misc/arm/silicon-errata.txt
+index a15290285f..67f9f3b395 100644
+--- a/docs/misc/arm/silicon-errata.txt
++++ b/docs/misc/arm/silicon-errata.txt
+@@ -45,6 +45,7 @@ stable hypervisors.
+ | ARM            | Cortex-A53      | #827319         | ARM64_ERRATUM_827319    |
+ | ARM            | Cortex-A53      | #824069         | ARM64_ERRATUM_824069    |
+ | ARM            | Cortex-A53      | #819472         | ARM64_ERRATUM_819472    |
++| ARM            | Cortex-A53      | #843419         | ARM64_ERRATUM_843419    |
+ | ARM            | Cortex-A55      | #1530923        | N/A                     |
+ | ARM            | Cortex-A57      | #852523         | N/A                     |
+ | ARM            | Cortex-A57      | #832075         | ARM64_ERRATUM_832075    |
+diff --git a/xen/arch/arm/Kconfig b/xen/arch/arm/Kconfig
+index f938dd21bd..3a17c9e319 100644
+--- a/xen/arch/arm/Kconfig
++++ b/xen/arch/arm/Kconfig
+@@ -186,6 +186,25 @@ config ARM64_ERRATUM_819472
+ 
+ 	  If unsure, say Y.
+ 
++config ARM64_ERRATUM_843419
++	bool "Cortex-A53: 843419: A load or store might access an incorrect address"
++	default y
++	depends on ARM_64
++	help
++	  This option adds an alternative code sequence to work around ARM
++	  erratum 843419 on Cortex-A53 parts up to r0p4.
++
++	  When executing in AArch64 state, a load or store instruction which uses
++	  the result of an ADRP instruction as a base register, or which uses a
++	  base register written by an instruction immediately after an ADRP to the
++	  same register, might access an incorrect address.
++
++	  The workaround enables the linker to check if the affected sequence is
++	  produced and it will fix it with an alternative not affected sequence
++	  that produce the same behavior.
++
++	  If unsure, say Y.
++
+ config ARM64_ERRATUM_832075
+ 	bool "Cortex-A57: 832075: possible deadlock on mixing exclusive memory accesses with device loads"
+ 	default y
+diff --git a/xen/arch/arm/Makefile b/xen/arch/arm/Makefile
+index 1ded44d200..ced90495ce 100644
+--- a/xen/arch/arm/Makefile
++++ b/xen/arch/arm/Makefile
+@@ -101,6 +101,14 @@ prelink.o: $(ALL_OBJS) FORCE
+ 	$(call if_changed,ld)
+ endif
+ 
++ifeq ($(CONFIG_ARM64_ERRATUM_843419),y)
++    ifeq ($(call ld-option, --fix-cortex-a53-843419),n)
++        $(warning ld does not support --fix-cortex-a53-843419; xen may be susceptible to erratum)
++    else
++        XEN_LDFLAGS += --fix-cortex-a53-843419
++    endif
++endif
++
+ targets += prelink.o
+ 
+ $(TARGET)-syms: prelink.o xen.lds
+diff --git a/xen/scripts/Kbuild.include b/xen/scripts/Kbuild.include
+index e62eddc365..83c7e1457b 100644
+--- a/xen/scripts/Kbuild.include
++++ b/xen/scripts/Kbuild.include
+@@ -43,6 +43,18 @@ define as-option-add-closure
+     endif
+ endef
+ 
++# $(if-success,<command>,<then>,<else>)
++# Return <then> if <command> exits with 0, <else> otherwise.
++if-success = $(shell { $(1); } >/dev/null 2>&1 && echo "$(2)" || echo "$(3)")
++
++# $(success,<command>)
++# Return y if <command> exits with 0, n otherwise
++success = $(call if-success,$(1),y,n)
++
++# $(ld-option,<flag>)
++# Return y if the linker supports <flag>, n otherwise
++ld-option = $(call success,$(LD) -v $(1))
++
+ # cc-ifversion
+ # Usage:  EXTRA_CFLAGS += $(call cc-ifversion, -lt, 0402, -O1)
+ cc-ifversion = $(shell [ $(CONFIG_GCC_VERSION)0 $(1) $(2)000 ] && echo $(3) || echo $(4))
+-- 
+2.30.2
+

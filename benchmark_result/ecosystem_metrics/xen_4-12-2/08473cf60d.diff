@@ -1,0 +1,194 @@
+From 08473cf60d9c30153ee54753fdcfd5bd165a2820 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 6 Dec 2019 12:45:05 +0100
+Subject: [PATCH] x86/svm: Write the correct %eip into the outgoing task
+
+The TASK_SWITCH vmexit has fault semantics, and doesn't provide any NRIPs
+assistance with instruction length.  As a result, any instruction-induced task
+switch has the outgoing task's %eip pointing at the instruction switch caused
+the switch, rather than after it.
+
+This causes callers of task gates to livelock (repeatedly execute the call/jmp
+to enter the task), and any restartable task to become a nop after its first
+use (the (re)entry state points at the iret used to exit the task).
+
+32bit Windows in particular is known to use task gates for NMI handling, and
+to use NMI IPIs.
+
+In the task switch handler, distinguish instruction-induced from
+interrupt/exception-induced task switches, and decode the instruction under
+%rip to calculate its length.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 1d758bc6d1a8c0f658a874470c349ee4e27aee46
+master date: 2019-11-28 17:14:38 +0000
+---
+ xen/arch/x86/hvm/svm/emulate.c        | 54 +++++++++++++++++++++++++
+ xen/arch/x86/hvm/svm/svm.c            | 58 ++++++++++++++++++++++-----
+ xen/include/asm-x86/hvm/svm/emulate.h |  1 +
+ 3 files changed, 103 insertions(+), 10 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/svm/emulate.c b/xen/arch/x86/hvm/svm/emulate.c
+index 3e52592847..d586bad127 100644
+--- a/xen/arch/x86/hvm/svm/emulate.c
++++ b/xen/arch/x86/hvm/svm/emulate.c
+@@ -116,6 +116,60 @@ unsigned int svm_get_insn_len(struct vcpu *v, unsigned int instr_enc)
+     return 0;
+ }
+ 
++/*
++ * TASK_SWITCH vmexits never provide an instruction length.  We must always
++ * decode under %rip to find the answer.
++ */
++unsigned int svm_get_task_switch_insn_len(void)
++{
++    struct hvm_emulate_ctxt ctxt;
++    struct x86_emulate_state *state;
++    unsigned int emul_len, modrm_reg;
++
++    hvm_emulate_init_once(&ctxt, NULL, guest_cpu_user_regs());
++    hvm_emulate_init_per_insn(&ctxt, NULL, 0);
++    state = x86_decode_insn(&ctxt.ctxt, hvmemul_insn_fetch);
++    if ( IS_ERR_OR_NULL(state) )
++        return 0;
++
++    emul_len = x86_insn_length(state, &ctxt.ctxt);
++
++    /*
++     * Check for an instruction which can cause a task switch.  Any far
++     * jmp/call/ret, any software interrupt/exception with trap semantics
++     * (except icebp - handled specially), and iret.
++     */
++    switch ( ctxt.ctxt.opcode )
++    {
++    case 0xff: /* Grp 5 */
++        /* call / jmp (far, absolute indirect) */
++        if ( (unsigned int)x86_insn_modrm(state, NULL, &modrm_reg) >= 3 ||
++             (modrm_reg != 3 && modrm_reg != 5) )
++        {
++    default:
++            printk(XENLOG_G_WARNING "Bad instruction for task switch\n");
++            hvm_dump_emulation_state(XENLOG_G_WARNING, "SVM Insn len",
++                                     &ctxt, X86EMUL_UNHANDLEABLE);
++            emul_len = 0;
++            break;
++        }
++        /* Fallthrough */
++    case 0x9a: /* call (far, absolute) */
++    case 0xca: /* ret imm16 (far) */
++    case 0xcb: /* ret (far) */
++    case 0xcc: /* int3 */
++    case 0xcd: /* int imm8 */
++    case 0xce: /* into */
++    case 0xcf: /* iret */
++    case 0xea: /* jmp (far, absolute) */
++        break;
++    }
++
++    x86_emulate_free_state(state);
++
++    return emul_len;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/xen/arch/x86/hvm/svm/svm.c b/xen/arch/x86/hvm/svm/svm.c
+index c20d4c7800..9128e923b0 100644
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -2853,7 +2853,52 @@ void svm_vmexit_handler(struct cpu_user_regs *regs)
+ 
+     case VMEXIT_TASK_SWITCH: {
+         enum hvm_task_switch_reason reason;
+-        int32_t errcode = -1;
++        int32_t errcode = -1, insn_len = -1;
++
++        /*
++         * All TASK_SWITCH intercepts have fault-like semantics.  NRIP is
++         * never provided, even for instruction-induced task switches, but we
++         * need to know the instruction length in order to set %eip suitably
++         * in the outgoing TSS.
++         *
++         * For a task switch which vectored through the IDT, look at the type
++         * to distinguish interrupts/exceptions from instruction based
++         * switches.
++         */
++        if ( vmcb->exitintinfo.fields.v )
++        {
++            switch ( vmcb->exitintinfo.fields.type )
++            {
++                /*
++                 * #BP and #OF are from INT3/INTO respectively.  #DB from
++                 * ICEBP is handled specially, and already has fault
++                 * semantics.
++                 */
++            case X86_EVENTTYPE_HW_EXCEPTION:
++                if ( vmcb->exitintinfo.fields.vector == TRAP_int3 ||
++                     vmcb->exitintinfo.fields.vector == TRAP_overflow )
++                    break;
++                /* Fallthrough */
++            case X86_EVENTTYPE_EXT_INTR:
++            case X86_EVENTTYPE_NMI:
++                insn_len = 0;
++                break;
++            }
++
++            /*
++             * The common logic above will have forwarded the vectoring
++             * information.  Undo this as we are going to emulate.
++             */
++            vmcb->eventinj.bytes = 0;
++        }
++
++        /*
++         * insn_len being -1 indicates that we have an instruction-induced
++         * task switch.  Decode under %rip to find its length.
++         */
++        if ( insn_len < 0 && (insn_len = svm_get_task_switch_insn_len()) == 0 )
++            goto crash_or_fault;
++
+         if ( (vmcb->exitinfo2 >> 36) & 1 )
+             reason = TSW_iret;
+         else if ( (vmcb->exitinfo2 >> 38) & 1 )
+@@ -2863,15 +2908,7 @@ void svm_vmexit_handler(struct cpu_user_regs *regs)
+         if ( (vmcb->exitinfo2 >> 44) & 1 )
+             errcode = (uint32_t)vmcb->exitinfo2;
+ 
+-        /*
+-         * Some processors set the EXITINTINFO field when the task switch
+-         * is caused by a task gate in the IDT. In this case we will be
+-         * emulating the event injection, so we do not want the processor
+-         * to re-inject the original event!
+-         */
+-        vmcb->eventinj.bytes = 0;
+-
+-        hvm_task_switch(vmcb->exitinfo1, reason, errcode, 0);
++        hvm_task_switch(vmcb->exitinfo1, reason, errcode, insn_len);
+         break;
+     }
+ 
+@@ -3068,6 +3105,7 @@ void svm_vmexit_handler(struct cpu_user_regs *regs)
+         gprintk(XENLOG_ERR, "Unexpected vmexit: reason %#"PRIx64", "
+                 "exitinfo1 %#"PRIx64", exitinfo2 %#"PRIx64"\n",
+                 exit_reason, vmcb->exitinfo1, vmcb->exitinfo2);
++    crash_or_fault:
+         svm_crash_or_fault(v);
+         break;
+     }
+diff --git a/xen/include/asm-x86/hvm/svm/emulate.h b/xen/include/asm-x86/hvm/svm/emulate.h
+index 9af10061c5..eb1a8c24af 100644
+--- a/xen/include/asm-x86/hvm/svm/emulate.h
++++ b/xen/include/asm-x86/hvm/svm/emulate.h
+@@ -51,6 +51,7 @@
+ struct vcpu;
+ 
+ unsigned int svm_get_insn_len(struct vcpu *v, unsigned int instr_enc);
++unsigned int svm_get_task_switch_insn_len(void);
+ 
+ #endif /* __ASM_X86_HVM_SVM_EMULATE_H__ */
+ 
+-- 
+2.30.2
+

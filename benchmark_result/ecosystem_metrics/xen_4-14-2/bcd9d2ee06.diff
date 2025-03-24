@@ -1,0 +1,95 @@
+From bcd9d2ee060121198ca58dbf3c275b3e534e01b1 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Fri, 8 Jan 2021 11:57:37 +0000
+Subject: [PATCH] tools/oxenstored: Trim txhistory on xenbus reconnect
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+There is a global history, containing transactions from the past 0.05s, which
+get trimmed whenever any transaction commits or aborts.  Destroying a domain
+will cause xenopsd to perform some transactions deleting the tree, so that is
+fine.  But I think that a domain can abuse the xenbus reconnect facility to
+cause a large history to be recorded - provided that noone does any
+transactions on the system inbetween, which may be difficult to achieve given
+squeezed's constant pinging.
+
+The theoretical situation is like this:
+- a domain starts a transaction, creates as large a tree as it can, commits
+  it. Then repeatedly:
+    - start a transaction, do nothing with it, start a transaction, delete
+      part of the large tree, write some new unique data there, don't commit
+    - cause a xenbus reconnect (I think this can be done by writing something
+      to the ring). This causes all transactions/watches for the connection to
+      be cleared, but NOT the history, there were no commits, so nobody
+      trimmed the history, i.e. it the history can contain transactions from
+      more than just 0.05s
+    - loop back and start more transactions, you can keep this up indefinitely
+      without hitting quotas
+
+Now there is a periodic History.trim running every 0.05s, so I don't think you
+can do much damage with it.  But lets be safe an trim the transaction history
+anyway on reconnect.
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+(cherry picked from commit 2a47797d1f3b14aab4f0368ab833abd311f94a70)
+---
+ tools/ocaml/xenstored/connection.ml | 2 +-
+ tools/ocaml/xenstored/history.ml    | 4 ++++
+ tools/ocaml/xenstored/process.ml    | 4 ++--
+ 3 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/tools/ocaml/xenstored/connection.ml b/tools/ocaml/xenstored/connection.ml
+index fa0d3c4d92..850539e43a 100644
+--- a/tools/ocaml/xenstored/connection.ml
++++ b/tools/ocaml/xenstored/connection.ml
+@@ -47,7 +47,7 @@ let mark_as_bad con =
+ 
+ let initial_next_tid = 1
+ 
+-let reconnect con =
++let do_reconnect con =
+ 	Xenbus.Xb.reconnect con.xb;
+ 	(* dom is the same *)
+ 	Hashtbl.clear con.transactions;
+diff --git a/tools/ocaml/xenstored/history.ml b/tools/ocaml/xenstored/history.ml
+index f39565bff5..3899353da8 100644
+--- a/tools/ocaml/xenstored/history.ml
++++ b/tools/ocaml/xenstored/history.ml
+@@ -53,6 +53,10 @@ let end_transaction txn con tid commit =
+ 	trim ~txn ();
+ 	success
+ 
++let reconnect con =
++	trim ();
++	Connection.do_reconnect con
++
+ let push (x: history_record) =
+ 	let dom = x.con.Connection.dom in
+ 	match dom with
+diff --git a/tools/ocaml/xenstored/process.ml b/tools/ocaml/xenstored/process.ml
+index 437d2dcf9e..3ab09c6ce9 100644
+--- a/tools/ocaml/xenstored/process.ml
++++ b/tools/ocaml/xenstored/process.ml
+@@ -566,7 +566,7 @@ let do_input store cons doms con =
+ 			Connection.do_input con
+ 		with Xenbus.Xb.Reconnect ->
+ 			info "%s requests a reconnect" (Connection.get_domstr con);
+-			Connection.reconnect con;
++			History.reconnect con;
+ 			info "%s reconnection complete" (Connection.get_domstr con);
+ 			false
+ 		| Failure exp ->
+@@ -605,7 +605,7 @@ let do_output _store _cons _doms con =
+ 			ignore (Connection.do_output con)
+ 		with Xenbus.Xb.Reconnect ->
+ 			info "%s requests a reconnect" (Connection.get_domstr con);
+-			Connection.reconnect con;
++			History.reconnect con;
+ 			info "%s reconnection complete" (Connection.get_domstr con)
+ 	)
+ 
+-- 
+2.30.2
+

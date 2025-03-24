@@ -1,0 +1,49 @@
+From 524e739a49f5a62f2bfc8248b44ea4ec9f9d81f9 Mon Sep 17 00:00:00 2001
+From: Stefano Stabellini <sstabellini@kernel.org>
+Date: Tue, 14 Jan 2020 15:31:55 -0800
+Subject: [PATCH] xen/arm: during efi boot, improve the check for usable memory
+
+When booting via EFI, the EFI memory map has information about memory
+regions and their type. Improve the check for the type and attribute of
+each memory region to figure out whether it is usable memory or not.
+This patch brings the check on par with Linux v5.5-rc6 and makes more
+memory reusable as normal memory by Xen (except that Linux also reuses
+EFI_PERSISTENT_MEMORY, which we do not).
+
+Specifically, this patch also reuses memory marked as
+EfiLoaderCode/Data, and it uses both Attribute and Type for the check
+(Attribute needs to be EFI_MEMORY_WB).
+
+Reported-by: Roman Shaposhnik <roman@zededa.com>
+Signed-off-by: Stefano Stabellini <stefano.stabellini@xilinx.com>
+Acked-by: Julien Grall <julien@xen.org>
+(cherry picked from commit b31666c8912bf18d9eff963b06d856e7e818ff34)
+---
+ xen/arch/arm/efi/efi-boot.h | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/arm/efi/efi-boot.h b/xen/arch/arm/efi/efi-boot.h
+index ca655ff003..3c0772d3f2 100644
+--- a/xen/arch/arm/efi/efi-boot.h
++++ b/xen/arch/arm/efi/efi-boot.h
+@@ -149,10 +149,13 @@ static EFI_STATUS __init efi_process_memory_map_bootinfo(EFI_MEMORY_DESCRIPTOR *
+ 
+     for ( Index = 0; Index < (mmap_size / desc_size); Index++ )
+     {
+-        if ( desc_ptr->Type == EfiConventionalMemory ||
+-             (!map_bs &&
+-              (desc_ptr->Type == EfiBootServicesCode ||
+-               desc_ptr->Type == EfiBootServicesData)) )
++        if ( desc_ptr->Attribute & EFI_MEMORY_WB &&
++             (desc_ptr->Type == EfiConventionalMemory ||
++              desc_ptr->Type == EfiLoaderCode ||
++              desc_ptr->Type == EfiLoaderData ||
++              (!map_bs &&
++               (desc_ptr->Type == EfiBootServicesCode ||
++                desc_ptr->Type == EfiBootServicesData))) )
+         {
+             if ( !meminfo_add_bank(&bootinfo.mem, desc_ptr) )
+             {
+-- 
+2.30.2
+

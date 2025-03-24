@@ -1,0 +1,65 @@
+From bbce51a8da3985502a5d55f7b431a9a8c446b5b2 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 21 Jan 2021 16:25:06 +0100
+Subject: [PATCH] x86/ACPI: don't overwrite FADT
+
+When marking fields invalid for our own purposes, we should do so in our
+local copy (so we will notice later on), not in the firmware provided
+one (which another entity may want to look at again, e.g. after kexec).
+Also mark the function parameter const to notice such issues right away.
+
+Instead use the pointer at the firmware copy for specifying an adjacent
+printk()'s arguments. If nothing else this at least reduces the number
+of relocations the assembler hasto emit and the linker has to process.
+
+Fixes: 62d1a69a4e9f ("ACPI: support v5 (reduced HW) sleep interface")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 654c917d94d24587bb6b4a8d862baf04b25cbe33
+master date: 2021-01-11 14:55:52 +0100
+---
+ xen/arch/x86/acpi/boot.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/xen/arch/x86/acpi/boot.c b/xen/arch/x86/acpi/boot.c
+index 0b0a8f62e4..5dfa8e3dca 100644
+--- a/xen/arch/x86/acpi/boot.c
++++ b/xen/arch/x86/acpi/boot.c
+@@ -347,7 +347,7 @@ static int __init acpi_invalidate_bgrt(struct acpi_table_header *table)
+ 
+ /* Get pm1x_cnt and pm1x_evt information for ACPI sleep */
+ static void __init
+-acpi_fadt_parse_sleep_info(struct acpi_table_fadt *fadt)
++acpi_fadt_parse_sleep_info(const struct acpi_table_fadt *fadt)
+ {
+ 	struct acpi_table_facs *facs = NULL;
+ 	uint64_t facs_pa;
+@@ -360,10 +360,10 @@ acpi_fadt_parse_sleep_info(struct acpi_table_fadt *fadt)
+ 		printk(KERN_INFO PREFIX
+ 		       "v5 SLEEP INFO: control[%d:%"PRIx64"],"
+ 		       " status[%d:%"PRIx64"]\n",
+-		       acpi_sinfo.sleep_control.space_id,
+-		       acpi_sinfo.sleep_control.address,
+-		       acpi_sinfo.sleep_status.space_id,
+-		       acpi_sinfo.sleep_status.address);
++		       fadt->sleep_control.space_id,
++		       fadt->sleep_control.address,
++		       fadt->sleep_status.space_id,
++		       fadt->sleep_status.address);
+ 
+ 		if ((fadt->sleep_control.address &&
+ 		     (fadt->sleep_control.bit_offset ||
+@@ -382,8 +382,8 @@ acpi_fadt_parse_sleep_info(struct acpi_table_fadt *fadt)
+ 			       fadt->sleep_status.bit_offset,
+ 			       fadt->sleep_status.bit_width,
+ 			       fadt->sleep_status.access_width);
+-			fadt->sleep_control.address = 0;
+-			fadt->sleep_status.address = 0;
++			acpi_sinfo.sleep_control.address = 0;
++			acpi_sinfo.sleep_status.address = 0;
+ 		}
+ 	}
+ 
+-- 
+2.30.2
+

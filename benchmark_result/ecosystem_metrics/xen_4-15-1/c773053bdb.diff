@@ -1,0 +1,110 @@
+From c773053bdbf3780cd2aa2ebe61837afc3de36bd0 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 24 Jun 2021 16:38:37 +0200
+Subject: [PATCH] libxencall: osdep_hypercall() should return long
+
+Some hypercalls, memory-op in particular, can return values requiring
+more than 31 bits to represent. Hence the underlying layers need to make
+sure they won't truncate such values. (Note that for Solaris the
+function also gets renamed, to match the other OSes.)
+
+Due to them merely propagating ioctl()'s return value, this change is
+benign on Linux and Solaris. IOW there's an actual effect here only for
+the BSDs and MiniOS, but even then further adjustments are needed at the
+xencall<N>() level.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+Backport-requested-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 6409210a5f51860cb17b5e0f97debe164dab26d7)
+---
+ tools/libs/call/freebsd.c | 2 +-
+ tools/libs/call/linux.c   | 2 +-
+ tools/libs/call/minios.c  | 2 +-
+ tools/libs/call/netbsd.c  | 2 +-
+ tools/libs/call/private.h | 2 +-
+ tools/libs/call/solaris.c | 2 +-
+ 6 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/tools/libs/call/freebsd.c b/tools/libs/call/freebsd.c
+index 28bfd852c1..6d2e8704b3 100644
+--- a/tools/libs/call/freebsd.c
++++ b/tools/libs/call/freebsd.c
+@@ -62,7 +62,7 @@ int osdep_xencall_close(xencall_handle *xcall)
+     return close(fd);
+ }
+ 
+-int osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
++long osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+ {
+     int fd = xcall->fd;
+     int ret;
+diff --git a/tools/libs/call/linux.c b/tools/libs/call/linux.c
+index 51fa4899eb..6d588e6bea 100644
+--- a/tools/libs/call/linux.c
++++ b/tools/libs/call/linux.c
+@@ -80,7 +80,7 @@ int osdep_xencall_close(xencall_handle *xcall)
+     return 0;
+ }
+ 
+-int osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
++long osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+ {
+     return ioctl(xcall->fd, IOCTL_PRIVCMD_HYPERCALL, hypercall);
+ }
+diff --git a/tools/libs/call/minios.c b/tools/libs/call/minios.c
+index 9f7a96995f..3f33b83578 100644
+--- a/tools/libs/call/minios.c
++++ b/tools/libs/call/minios.c
+@@ -38,7 +38,7 @@ int osdep_xencall_close(xencall_handle *xcall)
+     return 0;
+ }
+ 
+-int osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
++long osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+ {
+     multicall_entry_t call;
+     int i, ret;
+diff --git a/tools/libs/call/netbsd.c b/tools/libs/call/netbsd.c
+index 4dcc2919ba..91ae68357e 100644
+--- a/tools/libs/call/netbsd.c
++++ b/tools/libs/call/netbsd.c
+@@ -96,7 +96,7 @@ void osdep_free_pages(xencall_handle *xcall, void *ptr, size_t npages)
+     free(ptr);
+ }
+ 
+-int osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
++long osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+ {
+     int fd = xcall->fd;
+     int error = ioctl(fd, IOCTL_PRIVCMD_HYPERCALL, hypercall);
+diff --git a/tools/libs/call/private.h b/tools/libs/call/private.h
+index 7944ac5baf..9c3aa432ef 100644
+--- a/tools/libs/call/private.h
++++ b/tools/libs/call/private.h
+@@ -55,7 +55,7 @@ struct xencall_handle {
+ int osdep_xencall_open(xencall_handle *xcall);
+ int osdep_xencall_close(xencall_handle *xcall);
+ 
+-int osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall);
++long osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall);
+ 
+ void *osdep_alloc_pages(xencall_handle *xcall, size_t nr_pages);
+ void osdep_free_pages(xencall_handle *xcall, void *p, size_t nr_pages);
+diff --git a/tools/libs/call/solaris.c b/tools/libs/call/solaris.c
+index c63b6a329a..304262bd05 100644
+--- a/tools/libs/call/solaris.c
++++ b/tools/libs/call/solaris.c
+@@ -80,7 +80,7 @@ void osdep_free_hypercall_buffer(xencall_handle *xcall, void *ptr,
+     free(ptr);
+ }
+ 
+-int do_xen_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
++long osdep_hypercall(xencall_handle *xcall, privcmd_hypercall_t *hypercall)
+ {
+     int fd = xcall->fd;
+     return ioctl(fd, IOCTL_PRIVCMD_HYPERCALL, hypercall);
+-- 
+2.30.2
+

@@ -1,0 +1,34 @@
+From d0127881376baeea1e4eb71d0f7b56d942147124 Mon Sep 17 00:00:00 2001
+From: Ayan Kumar Halder <ayan.kumar.halder@amd.com>
+Date: Tue, 7 Feb 2023 17:00:47 +0100
+Subject: [PATCH] ns16550: fix an incorrect assignment to uart->io_size
+
+uart->io_size represents the size in bytes. Thus, when serial_port.bit_width
+is assigned to it, it should be converted to size in bytes.
+
+Fixes: 17b516196c ("ns16550: add ACPI support for ARM only")
+Reported-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Ayan Kumar Halder <ayan.kumar.halder@amd.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+master commit: 352c89f72ddb67b8d9d4e492203f8c77f85c8df1
+master date: 2023-01-24 16:54:38 +0100
+---
+ xen/drivers/char/ns16550.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/drivers/char/ns16550.c b/xen/drivers/char/ns16550.c
+index 01a05c9aa8..ce013fb6a5 100644
+--- a/xen/drivers/char/ns16550.c
++++ b/xen/drivers/char/ns16550.c
+@@ -1875,7 +1875,7 @@ static int __init ns16550_acpi_uart_init(const void *data)
+     uart->parity = spcr->parity;
+     uart->stop_bits = spcr->stop_bits;
+     uart->io_base = spcr->serial_port.address;
+-    uart->io_size = spcr->serial_port.bit_width;
++    uart->io_size = DIV_ROUND_UP(spcr->serial_port.bit_width, BITS_PER_BYTE);
+     uart->reg_shift = spcr->serial_port.bit_offset;
+     uart->reg_width = spcr->serial_port.access_width;
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,32 @@
+From b8a3edba1f284323c8292a0ec372d8f79d39d4e8 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 7 Jun 2022 14:17:22 +0200
+Subject: [PATCH] tools/libs/guest: don't set errno to a negative value
+
+Setting errno to a negative error value makes no sense.
+
+Fixes: cb99a64029c9 ("libxc: arm: allow passing a device tree blob to the guest")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 438e96ab479495a932391a22e219ee62fa8c4f47
+master date: 2022-04-22 20:39:34 +0100
+---
+ tools/libs/guest/xg_dom_core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libs/guest/xg_dom_core.c b/tools/libs/guest/xg_dom_core.c
+index 98ef8e8fc9..8543a8fea8 100644
+--- a/tools/libs/guest/xg_dom_core.c
++++ b/tools/libs/guest/xg_dom_core.c
+@@ -856,7 +856,7 @@ int xc_dom_devicetree_file(struct xc_dom_image *dom, const char *filename)
+         return -1;
+     return 0;
+ #else
+-    errno = -EINVAL;
++    errno = EINVAL;
+     return -1;
+ #endif
+ }
+-- 
+2.30.2
+

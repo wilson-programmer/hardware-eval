@@ -1,0 +1,76 @@
+From 140a95dd0693b7feb810c23cdaee311f546256f8 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 8 Apr 2022 15:06:26 +0200
+Subject: [PATCH] VT-d: avoid infinite recursion on
+ domain_context_mapping_one() error path
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Despite the comment there infinite recursion was still possible, by
+flip-flopping between two domains. This is because prev_dom is derived
+from the DID found in the context entry, which was already updated by
+the time error recovery is invoked. Simply introduce yet another mode
+flag to prevent rolling back an in-progress roll-back of a prior
+mapping attempt.
+
+Also drop the existing recursion prevention for having been dead anyway:
+Earlier in the function we already bail when prev_dom == domain.
+
+Fixes: 8f41e481b485 ("VT-d: re-assign devices directly")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 99d829dba1390b98a3ca07b365713e62182ee7ca
+master date: 2022-04-07 12:31:16 +0200
+---
+ xen/drivers/passthrough/vtd/iommu.c | 9 ++++-----
+ xen/drivers/passthrough/vtd/vtd.h   | 3 ++-
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index 567ac62983..cc088cd9ff 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -1596,7 +1596,7 @@ int domain_context_mapping_one(
+     if ( !seg && !rc )
+         rc = me_wifi_quirk(domain, bus, devfn, domid, pgd_maddr, mode);
+ 
+-    if ( rc )
++    if ( rc && !(mode & MAP_ERROR_RECOVERY) )
+     {
+         if ( !prev_dom ||
+              /*
+@@ -1606,13 +1606,12 @@ int domain_context_mapping_one(
+               */
+              (prev_dom == dom_io && !pdev) )
+             ret = domain_context_unmap_one(domain, iommu, bus, devfn);
+-        else if ( prev_dom != domain ) /* Avoid infinite recursion. */
++        else
+             ret = domain_context_mapping_one(prev_dom, iommu, bus, devfn, pdev,
+                                              DEVICE_DOMID(prev_dom, pdev),
+                                              DEVICE_PGTABLE(prev_dom, pdev),
+-                                             mode & MAP_WITH_RMRR) < 0;
+-        else
+-            ret = 1;
++                                             (mode & MAP_WITH_RMRR) |
++                                             MAP_ERROR_RECOVERY) < 0;
+ 
+         if ( !ret && pdev && pdev->devfn == devfn )
+             check_cleanup_domid_map(domain, pdev, iommu);
+diff --git a/xen/drivers/passthrough/vtd/vtd.h b/xen/drivers/passthrough/vtd/vtd.h
+index e4ab242fee..cb2df76eed 100644
+--- a/xen/drivers/passthrough/vtd/vtd.h
++++ b/xen/drivers/passthrough/vtd/vtd.h
+@@ -29,7 +29,8 @@
+ #define MAP_WITH_RMRR         (1u << 0)
+ #define MAP_OWNER_DYING       (1u << 1)
+ #define MAP_SINGLE_DEVICE     (1u << 2)
+-#define UNMAP_ME_PHANTOM_FUNC (1u << 3)
++#define MAP_ERROR_RECOVERY    (1u << 3)
++#define UNMAP_ME_PHANTOM_FUNC (1u << 4)
+ 
+ /* Allow for both IOAPIC and IOSAPIC. */
+ #define IO_xAPIC_route_entry IO_APIC_route_entry
+-- 
+2.30.2
+

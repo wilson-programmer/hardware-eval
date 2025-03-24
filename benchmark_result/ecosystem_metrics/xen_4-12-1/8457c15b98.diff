@@ -1,0 +1,51 @@
+From 8457c15b981ba04c0709e6f25af3b76beb34cafa Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Wed, 15 May 2019 09:40:45 +0200
+Subject: [PATCH] x86/vmx: Fixup removals of MSR load/save list entries
+
+Commit 540d5422 ("x86/vmx: Support removing MSRs from the host/guest
+load/save lists") introduced infrastructure finally exposed by
+commit fd32dcfe ("x86/vmx: Don't leak EFER.NXE into guest context")
+that led to a functional regression on Harpertown and earlier cores
+(Gen 1 VT-x) due to MSR count being incorrectly set in VMCS.
+As the result, as soon as guest EFER becomes equal to Xen EFER
+(which eventually happens in almost every 64-bit VM) and its MSR
+entry is supposed to be removed, a stale version of EFER is loaded
+into a guest instead causing almost immediate guest failure.
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Kevin Tian <kevin.tian@intel.com>
+master commit: e28c0ee3356f52f589bbae54e89aaed25c1f599d
+master date: 2019-04-09 10:58:18 +0100
+---
+ xen/arch/x86/hvm/vmx/vmcs.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmcs.c b/xen/arch/x86/hvm/vmx/vmcs.c
+index 74f2a08cfd..45d18493df 100644
+--- a/xen/arch/x86/hvm/vmx/vmcs.c
++++ b/xen/arch/x86/hvm/vmx/vmcs.c
+@@ -1490,15 +1490,15 @@ int vmx_del_msr(struct vcpu *v, uint32_t msr, enum vmx_msr_list_type type)
+     switch ( type )
+     {
+     case VMX_MSR_HOST:
+-        __vmwrite(VM_EXIT_MSR_LOAD_COUNT, vmx->host_msr_count--);
++        __vmwrite(VM_EXIT_MSR_LOAD_COUNT, --vmx->host_msr_count);
+         break;
+ 
+     case VMX_MSR_GUEST:
+-        __vmwrite(VM_EXIT_MSR_STORE_COUNT, vmx->msr_save_count--);
++        __vmwrite(VM_EXIT_MSR_STORE_COUNT, --vmx->msr_save_count);
+ 
+         /* Fallthrough */
+     case VMX_MSR_GUEST_LOADONLY:
+-        __vmwrite(VM_ENTRY_MSR_LOAD_COUNT, vmx->msr_load_count--);
++        __vmwrite(VM_ENTRY_MSR_LOAD_COUNT, --vmx->msr_load_count);
+         break;
+     }
+ 
+-- 
+2.30.2
+

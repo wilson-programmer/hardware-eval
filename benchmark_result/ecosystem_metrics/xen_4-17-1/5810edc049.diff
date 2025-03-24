@@ -1,0 +1,60 @@
+From 5810edc049cd5828c2628a377ca8443610e54f82 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 20 Dec 2022 13:44:38 +0100
+Subject: [PATCH] x86/Viridian: don't mark IRQ vectors as pending when vLAPIC
+ is disabled
+
+In software-disabled state an LAPIC does not accept any interrupt
+requests and hence no IRR bit would newly become set while in this
+state. As a result it is also wrong for us to mark Viridian IPI or timer
+vectors as having a pending request when the vLAPIC is in this state.
+Such interrupts are simply lost.
+
+Introduce a local variable in send_ipi() to help readability.
+
+Fixes: fda96b7382ea ("viridian: add implementation of the HvSendSyntheticClusterIpi hypercall")
+Fixes: 26fba3c85571 ("viridian: add implementation of synthetic timers")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+master commit: 831419f82913417dee4e5b0f80769c5db590540b
+master date: 2022-12-02 10:35:32 +0100
+---
+ xen/arch/x86/hvm/viridian/synic.c    | 2 +-
+ xen/arch/x86/hvm/viridian/viridian.c | 7 ++++++-
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/viridian/synic.c b/xen/arch/x86/hvm/viridian/synic.c
+index e18538c60a..856bb898b8 100644
+--- a/xen/arch/x86/hvm/viridian/synic.c
++++ b/xen/arch/x86/hvm/viridian/synic.c
+@@ -359,7 +359,7 @@ bool viridian_synic_deliver_timer_msg(struct vcpu *v, unsigned int sintx,
+     BUILD_BUG_ON(sizeof(payload) > sizeof(msg->u.payload));
+     memcpy(msg->u.payload, &payload, sizeof(payload));
+ 
+-    if ( !vs->masked )
++    if ( !vs->masked && vlapic_enabled(vcpu_vlapic(v)) )
+         vlapic_set_irq(vcpu_vlapic(v), vs->vector, 0);
+ 
+     return true;
+diff --git a/xen/arch/x86/hvm/viridian/viridian.c b/xen/arch/x86/hvm/viridian/viridian.c
+index 25dca93e8b..2937ddd3a8 100644
+--- a/xen/arch/x86/hvm/viridian/viridian.c
++++ b/xen/arch/x86/hvm/viridian/viridian.c
+@@ -811,7 +811,12 @@ static void send_ipi(struct hypercall_vpmask *vpmask, uint8_t vector)
+         cpu_raise_softirq_batch_begin();
+ 
+     for_each_vp ( vpmask, vp )
+-        vlapic_set_irq(vcpu_vlapic(currd->vcpu[vp]), vector, 0);
++    {
++        struct vlapic *vlapic = vcpu_vlapic(currd->vcpu[vp]);
++
++        if ( vlapic_enabled(vlapic) )
++            vlapic_set_irq(vlapic, vector, 0);
++    }
+ 
+     if ( nr > 1 )
+         cpu_raise_softirq_batch_finish();
+-- 
+2.30.2
+

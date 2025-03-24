@@ -1,0 +1,55 @@
+From 5200791dfbe0af2f49a9c0226520c2aef0413d5a Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 3 May 2019 11:01:24 +0200
+Subject: [PATCH] x86/mm: fix #GP(0) in switch_cr3_cr4()
+
+With "pcid=no-xpti" and opposite XPTI settings in two 64-bit PV domains
+(achievable with one of "xpti=no-dom0" or "xpti=no-domu"), switching
+from a PCID-disabled to a PCID-enabled 64-bit PV domain fails to set
+CR4.PCIDE in time, as CR4.PGE would not be set in either (see
+pv_fixup_guest_cr4(), in particular as used by write_ptbase()), and
+hence the early CR4 write would be skipped.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: fdc2056767ba74346dfd8bbe868bb22521ba1418
+master date: 2019-03-05 17:02:36 +0100
+---
+ xen/arch/x86/flushtlb.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/xen/arch/x86/flushtlb.c b/xen/arch/x86/flushtlb.c
+index 2f1899277c..fc4c29ca97 100644
+--- a/xen/arch/x86/flushtlb.c
++++ b/xen/arch/x86/flushtlb.c
+@@ -112,6 +112,7 @@ void switch_cr3_cr4(unsigned long cr3, unsigned long cr4)
+         write_cr4(old_cr4);
+     }
+     else if ( use_invpcid )
++    {
+         /*
+          * Flushing the TLB via INVPCID is necessary only in case PCIDs are
+          * in use, which is true only with INVPCID being available.
+@@ -122,6 +123,19 @@ void switch_cr3_cr4(unsigned long cr3, unsigned long cr4)
+          */
+         invpcid_flush_all_nonglobals();
+ 
++        /*
++         * CR4.PCIDE needs to be set before the CR3 write below. Otherwise
++         * - the CR3 write will fault when CR3.NOFLUSH is set (which is the
++         *   case normally),
++         * - the subsequent CR4 write will fault if CR3.PCID != 0.
++         */
++        if ( (old_cr4 & X86_CR4_PCIDE) < (cr4 & X86_CR4_PCIDE) )
++        {
++            write_cr4(cr4);
++            old_cr4 = cr4;
++        }
++    }
++
+     /*
+      * If we don't change PCIDs, the CR3 write below needs to flush this very
+      * PCID, even when a full flush was performed above, as we are currently
+-- 
+2.30.2
+

@@ -1,0 +1,58 @@
+From 2b694dd2932be78431b14257f23b738f2fc8f6a1 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 11 Oct 2022 15:00:33 +0200
+Subject: [PATCH] Config.mk: correct PIE-related option(s) in
+ EMBEDDED_EXTRA_CFLAGS
+
+I haven't been able to find evidence of "-nopie" ever having been a
+supported compiler option. The correct spelling is "-no-pie".
+Furthermore like "-pie" this is an option which is solely passed to the
+linker. The compiler only recognizes "-fpie" / "-fPIE" / "-fno-pie", and
+it doesn't infer these options from "-pie" / "-no-pie".
+
+Add the compiler recognized form, but for the possible case of the
+variable also being used somewhere for linking keep the linker option as
+well (with corrected spelling).
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+
+Build: Drop -no-pie from EMBEDDED_EXTRA_CFLAGS
+
+This breaks all Clang builds, as demostrated by Gitlab CI.
+
+Contrary to the description in ecd6b9759919, -no-pie is not even an option
+passed to the linker.  GCC's actual behaviour is to inhibit the passing of
+-pie to the linker, as well as selecting different cr0 artefacts to be linked.
+
+EMBEDDED_EXTRA_CFLAGS is not used for $(CC)-doing-linking, and not liable to
+gain such a usecase.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Tested-by: Stefano Stabellini <sstabellini@kernel.org>
+Fixes: ecd6b9759919 ("Config.mk: correct PIE-related option(s) in EMBEDDED_EXTRA_CFLAGS")
+master commit: ecd6b9759919fa6335b0be1b5fc5cce29a30c4f1
+master date: 2022-09-08 09:25:26 +0200
+master commit: 13a7c0074ac8fb31f6c0485429b7a20a1946cb22
+master date: 2022-09-27 15:40:42 -0700
+---
+ Config.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Config.mk b/Config.mk
+index 46de3cd1e0..6f95067b8d 100644
+--- a/Config.mk
++++ b/Config.mk
+@@ -197,7 +197,7 @@ endif
+ APPEND_LDFLAGS += $(foreach i, $(APPEND_LIB), -L$(i))
+ APPEND_CFLAGS += $(foreach i, $(APPEND_INCLUDES), -I$(i))
+ 
+-EMBEDDED_EXTRA_CFLAGS := -nopie -fno-stack-protector -fno-stack-protector-all
++EMBEDDED_EXTRA_CFLAGS := -fno-pie -fno-stack-protector -fno-stack-protector-all
+ EMBEDDED_EXTRA_CFLAGS += -fno-exceptions -fno-asynchronous-unwind-tables
+ 
+ XEN_EXTFILES_URL ?= http://xenbits.xen.org/xen-extfiles
+-- 
+2.30.2
+

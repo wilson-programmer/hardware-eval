@@ -1,0 +1,53 @@
+From ac75ea8b670a5b4029909b38987da996b8a94dae Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Thu, 9 Apr 2020 09:08:17 +0200
+Subject: [PATCH] iommu: fix check for autotranslated hardware domain
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The current position of the check_hwdom_reqs is wrong, as there's a
+is_iommu_enabled at the top of the function that will prevent getting
+to the check on systems without an IOMMU, because the hardware domain
+won't have the XEN_DOMCTL_CDF_iommu flag set.
+
+Move the position of the check so it's done before the
+is_iommu_enabled one, and thus attempts to create a translated
+hardware domain without an IOMMU can be detected.
+
+Fixes: f89f555827a ('remove late (on-demand) construction of IOMMU page tables')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: faf0d606a6eb911449075b83ea0ad085960c9acb
+master date: 2020-03-05 10:43:46 +0100
+---
+ xen/drivers/passthrough/iommu.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/drivers/passthrough/iommu.c b/xen/drivers/passthrough/iommu.c
+index 05e740757a..bab7a3d099 100644
+--- a/xen/drivers/passthrough/iommu.c
++++ b/xen/drivers/passthrough/iommu.c
+@@ -171,6 +171,9 @@ int iommu_domain_init(struct domain *d, unsigned int opts)
+     struct domain_iommu *hd = dom_iommu(d);
+     int ret = 0;
+ 
++    if ( is_hardware_domain(d) )
++        check_hwdom_reqs(d); /* may modify iommu_hwdom_strict */
++
+     if ( !is_iommu_enabled(d) )
+         return 0;
+ 
+@@ -187,9 +190,6 @@ int iommu_domain_init(struct domain *d, unsigned int opts)
+     if ( ret || is_system_domain(d) )
+         return ret;
+ 
+-    if ( is_hardware_domain(d) )
+-        check_hwdom_reqs(d); /* may modify iommu_hwdom_strict */
+-
+     /*
+      * Use shared page tables for HAP and IOMMU if the global option
+      * is enabled (from which we can infer the h/w is capable) and
+-- 
+2.30.2
+

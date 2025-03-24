@@ -1,0 +1,77 @@
+From c552d976e1fdfb2a49f97865b69d0f568fb7f1e8 Mon Sep 17 00:00:00 2001
+From: Bertrand Marquis <bertrand.marquis@arm.com>
+Date: Tue, 24 Nov 2020 11:12:15 +0000
+Subject: [PATCH] xen/arm: Add workaround for Cortex-A55 erratum #1530923
+
+On the Cortex A55, TLB entries can be allocated by a speculative AT
+instruction. If this is happening during a guest context switch with an
+inconsistent page table state in the guest, TLBs with wrong values might
+be allocated.
+The ARM64_WORKAROUND_AT_SPECULATE workaround is used as for erratum
+1165522 on Cortex A76 or Neoverse N1.
+
+This change is also introducing the MIDR identifier for the Cortex-A55.
+
+Signed-off-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Reviewed-by: Rahul Singh <rahul.singh@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit fd7479b9aec25885cc17d33b326b9babae59faee)
+---
+ docs/misc/arm/silicon-errata.txt | 1 +
+ xen/arch/arm/cpuerrata.c         | 6 ++++++
+ xen/include/asm-arm/processor.h  | 2 ++
+ 3 files changed, 9 insertions(+)
+
+diff --git a/docs/misc/arm/silicon-errata.txt b/docs/misc/arm/silicon-errata.txt
+index 552c4151d3..a15290285f 100644
+--- a/docs/misc/arm/silicon-errata.txt
++++ b/docs/misc/arm/silicon-errata.txt
+@@ -45,6 +45,7 @@ stable hypervisors.
+ | ARM            | Cortex-A53      | #827319         | ARM64_ERRATUM_827319    |
+ | ARM            | Cortex-A53      | #824069         | ARM64_ERRATUM_824069    |
+ | ARM            | Cortex-A53      | #819472         | ARM64_ERRATUM_819472    |
++| ARM            | Cortex-A55      | #1530923        | N/A                     |
+ | ARM            | Cortex-A57      | #852523         | N/A                     |
+ | ARM            | Cortex-A57      | #832075         | ARM64_ERRATUM_832075    |
+ | ARM            | Cortex-A57      | #834220         | ARM64_ERRATUM_834220    |
+diff --git a/xen/arch/arm/cpuerrata.c b/xen/arch/arm/cpuerrata.c
+index 12063c9001..f94bcf74cc 100644
+--- a/xen/arch/arm/cpuerrata.c
++++ b/xen/arch/arm/cpuerrata.c
+@@ -505,6 +505,12 @@ static const struct arm_cpu_capabilities arm_errata[] = {
+         .capability = ARM64_WORKAROUND_AT_SPECULATE,
+         MIDR_ALL_VERSIONS(MIDR_CORTEX_A57),
+     },
++    {
++        /* Cortex-A55 (All versions as erratum is open in SDEN v14) */
++        .desc = "ARM erratum 1530923",
++        .capability = ARM64_WORKAROUND_AT_SPECULATE,
++        MIDR_ALL_VERSIONS(MIDR_CORTEX_A55),
++    },
+     {},
+ };
+ 
+diff --git a/xen/include/asm-arm/processor.h b/xen/include/asm-arm/processor.h
+index d3d12a9d19..87c8136022 100644
+--- a/xen/include/asm-arm/processor.h
++++ b/xen/include/asm-arm/processor.h
+@@ -53,6 +53,7 @@
+ #define ARM_CPU_PART_CORTEX_A17     0xC0E
+ #define ARM_CPU_PART_CORTEX_A15     0xC0F
+ #define ARM_CPU_PART_CORTEX_A53     0xD03
++#define ARM_CPU_PART_CORTEX_A55     0xD05
+ #define ARM_CPU_PART_CORTEX_A57     0xD07
+ #define ARM_CPU_PART_CORTEX_A72     0xD08
+ #define ARM_CPU_PART_CORTEX_A73     0xD09
+@@ -64,6 +65,7 @@
+ #define MIDR_CORTEX_A17 MIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A17)
+ #define MIDR_CORTEX_A15 MIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A15)
+ #define MIDR_CORTEX_A53 MIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A53)
++#define MIDR_CORTEX_A55 MIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A55)
+ #define MIDR_CORTEX_A57 MIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A57)
+ #define MIDR_CORTEX_A72 MIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A72)
+ #define MIDR_CORTEX_A73 MIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A73)
+-- 
+2.30.2
+

@@ -1,0 +1,56 @@
+From 7e1fe95c79d55a1c1a65f71a078b8e31c69ffe94 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 31 Mar 2023 08:39:49 +0200
+Subject: [PATCH] x86/shadow: Fix build with no PG_log_dirty
+
+Gitlab Randconfig found:
+
+  arch/x86/mm/shadow/common.c: In function 'shadow_prealloc':
+  arch/x86/mm/shadow/common.c:1023:18: error: implicit declaration of function
+      'paging_logdirty_levels'; did you mean 'paging_log_dirty_init'? [-Werror=implicit-function-declaration]
+   1023 |         count += paging_logdirty_levels();
+        |                  ^~~~~~~~~~~~~~~~~~~~~~
+        |                  paging_log_dirty_init
+  arch/x86/mm/shadow/common.c:1023:18: error: nested extern declaration of 'paging_logdirty_levels' [-Werror=nested-externs]
+
+The '#if PG_log_dirty' expression is currently SHADOW_PAGING && !HVM &&
+PV_SHIM_EXCLUSIVE.  Move the declaration outside.
+
+Fixes: 33fb3a661223 ("x86/shadow: account for log-dirty mode when pre-allocating")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 6d14cb105b1c54ad7b4228d858ae85aa8a672bbd
+master date: 2023-03-24 12:16:31 +0000
+---
+ xen/include/asm-x86/paging.h | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/xen/include/asm-x86/paging.h b/xen/include/asm-x86/paging.h
+index c6b429c691..43abaa5bd1 100644
+--- a/xen/include/asm-x86/paging.h
++++ b/xen/include/asm-x86/paging.h
+@@ -154,6 +154,10 @@ struct paging_mode {
+ /*****************************************************************************
+  * Log dirty code */
+ 
++#define paging_logdirty_levels() \
++    (DIV_ROUND_UP(PADDR_BITS - PAGE_SHIFT - (PAGE_SHIFT + 3), \
++                  PAGE_SHIFT - ilog2(sizeof(mfn_t))) + 1)
++
+ #if PG_log_dirty
+ 
+ /* get the dirty bitmap for a specific range of pfns */
+@@ -192,10 +196,6 @@ int paging_mfn_is_dirty(struct domain *d, mfn_t gmfn);
+ #define L4_LOGDIRTY_IDX(pfn) ((pfn_x(pfn) >> (PAGE_SHIFT + 3 + PAGETABLE_ORDER * 2)) & \
+                               (LOGDIRTY_NODE_ENTRIES-1))
+ 
+-#define paging_logdirty_levels() \
+-    (DIV_ROUND_UP(PADDR_BITS - PAGE_SHIFT - (PAGE_SHIFT + 3), \
+-                  PAGE_SHIFT - ilog2(sizeof(mfn_t))) + 1)
+-
+ #ifdef CONFIG_HVM
+ /* VRAM dirty tracking support */
+ struct sh_dirty_vram {
+-- 
+2.30.2
+

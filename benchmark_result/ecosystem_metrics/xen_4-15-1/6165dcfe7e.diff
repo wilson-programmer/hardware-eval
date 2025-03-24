@@ -1,0 +1,79 @@
+From 6165dcfe7e5283c7776f3f40cc905f29ed39486c Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Tue, 11 May 2021 10:28:06 +0100
+Subject: [PATCH] libxl: Use -device for cd-rom drives
+
+This allows to set an `id` on the device instead of only the drive. We
+are going to need the `id` with the "eject" and
+"blockdev-change-media" QMP command as using `device` parameter on
+those is deprecated. (`device` is the `id` of the `-drive` on the
+command line).
+
+We set the same `id` on both -device and -drive as QEMU doesn't
+complain and we can then either do "eject id=$id" or "eject
+device=$id".
+
+Using "-drive + -device" instead of only "-drive" has been
+available since at least QEMU 0.15, and seems to be the preferred way as it
+separates the host part (-drive which describe the disk image location
+and format) from the guest part (-device which describe the emulated
+device). More information in qemu.git/docs/qdev-device-use.txt .
+
+Changing the command line during migration for the cdrom seems fine.
+Also the documentation about migration in QEMU explains that the device
+state ID is "been formed from a bus name and device address", so
+second IDE bus and first device address on bus is still thus and
+doesn't matter if written "-drive if=ide,index=2" or "-drive
+ide-cd,bus=ide.1,unit=0".
+See qemu.git/docs/devel/migration.rst .
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+
+Backport-requested-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Ian Jackson <iwj@xenproject.org>
+---
+ tools/libs/light/libxl_dm.c | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/tools/libs/light/libxl_dm.c b/tools/libs/light/libxl_dm.c
+index 21fe33d3e2..1e16f9e5b6 100644
+--- a/tools/libs/light/libxl_dm.c
++++ b/tools/libs/light/libxl_dm.c
+@@ -1913,6 +1913,7 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
+             }
+ 
+             if (disks[i].is_cdrom) {
++                const char *drive_id;
+                 if (disk > 4) {
+                     LOGD(WARN, guest_domid, "Emulated CDROM can be only one of the first 4 disks.\n"
+                          "Disk %s will be available via PV drivers but not as an "
+@@ -1920,13 +1921,22 @@ static int libxl__build_device_model_args_new(libxl__gc *gc,
+                          disks[i].vdev);
+                     continue;
+                 }
+-                drive = libxl__sprintf(gc,
+-                         "if=ide,index=%d,readonly=on,media=cdrom,id=ide-%i",
+-                         disk, dev_number);
++
++                drive_id = GCSPRINTF("ide-%i", dev_number);
++                drive = GCSPRINTF("if=none,readonly=on,id=%s", drive_id);
+ 
+                 if (target_path)
+                     drive = libxl__sprintf(gc, "%s,file=%s,format=%s",
+                                            drive, target_path, format);
++
++                flexarray_vappend(dm_args,
++                    "-drive", drive,
++                    "-device",
++                    GCSPRINTF("ide-cd,id=%s,drive=%s,bus=ide.%u,unit=%u",
++                              drive_id, drive_id,
++                              disk / 2, disk % 2),
++                    NULL);
++                continue;
+             } else {
+                 /*
+                  * Explicit sd disks are passed through as is.
+-- 
+2.30.2
+

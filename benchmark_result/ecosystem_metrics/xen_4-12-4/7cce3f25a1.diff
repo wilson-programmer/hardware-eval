@@ -1,0 +1,74 @@
+From 7cce3f25a13715eef16d55fe716c0a850b85573d Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Fri, 7 Aug 2020 17:29:41 +0200
+Subject: [PATCH] mm: fix public declaration of struct xen_mem_acquire_resource
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+XENMEM_acquire_resource and it's related structure is currently inside
+a __XEN__ or __XEN_TOOLS__ guarded section to limit it's scope to the
+hypervisor or the toolstack only. This is wrong as the hypercall is
+already being used by the Linux kernel at least, and as such needs to
+be public.
+
+Also switch the usage of uint64_aligned_t to plain uint64_t, as
+uint64_aligned_t is only to be used by the toolstack. Doing such
+change will reduce the size of the structure on 32bit x86 by 4bytes,
+since there will be no padding added after the frame_list handle.
+
+This is fine, as users of the previous layout will allocate 4bytes of
+padding that won't be read by Xen, and users of the new layout won't
+allocate those, which is also fine since Xen won't try to access them.
+
+Note that the structure already has compat handling, and such handling
+will take care of copying the right size (ie: minus the padding) when
+called from a 32bit x86 context. This is true for the compat code both
+before and after this patch, since the structures in the memory.h
+compat header are subject to a pragma pack(4), which already removed
+the trailing padding that would otherwise be introduced by the
+alignment of the frame field to 8 bytes.
+
+Fixes: 3f8f12281dd20 ('x86/mm: add HYPERVISOR_memory_op to acquire guest resources')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 0e2e54966af556f4047c1048855c4a071028a32d
+master date: 2020-06-29 18:03:49 +0200
+---
+ xen/include/public/memory.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/xen/include/public/memory.h b/xen/include/public/memory.h
+index 8638023e4a..2d2cd446be 100644
+--- a/xen/include/public/memory.h
++++ b/xen/include/public/memory.h
+@@ -599,6 +599,8 @@ struct xen_reserved_device_memory_map {
+ typedef struct xen_reserved_device_memory_map xen_reserved_device_memory_map_t;
+ DEFINE_XEN_GUEST_HANDLE(xen_reserved_device_memory_map_t);
+ 
++#endif /* defined(__XEN__) || defined(__XEN_TOOLS__) */
++
+ /*
+  * Get the pages for a particular guest resource, so that they can be
+  * mapped directly by a tools domain.
+@@ -646,7 +648,7 @@ struct xen_mem_acquire_resource {
+      * IN - the index of the initial frame to be mapped. This parameter
+      *      is ignored if nr_frames is 0.
+      */
+-    uint64_aligned_t frame;
++    uint64_t frame;
+ 
+ #define XENMEM_resource_ioreq_server_frame_bufioreq 0
+ #define XENMEM_resource_ioreq_server_frame_ioreq(n) (1 + (n))
+@@ -667,8 +669,6 @@ struct xen_mem_acquire_resource {
+ typedef struct xen_mem_acquire_resource xen_mem_acquire_resource_t;
+ DEFINE_XEN_GUEST_HANDLE(xen_mem_acquire_resource_t);
+ 
+-#endif /* defined(__XEN__) || defined(__XEN_TOOLS__) */
+-
+ /*
+  * XENMEM_get_vnumainfo used by guest to get
+  * vNUMA topology from hypervisor.
+-- 
+2.30.2
+

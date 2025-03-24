@@ -1,0 +1,31 @@
+From 1ec05c22562c779d3389d7817abe1c41111805a0 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Mon, 23 Sep 2019 14:35:40 +0200
+Subject: [PATCH] xen/sched: fix memory leak in credit2
+
+csched2_deinit() is leaking the run-queue memory.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 70f9dff51ee873cf65246d3e95b27e2e92ca137b
+master date: 2019-08-07 17:21:14 +0100
+---
+ xen/common/sched_credit2.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/common/sched_credit2.c b/xen/common/sched_credit2.c
+index c6f1c26dba..d532972af0 100644
+--- a/xen/common/sched_credit2.c
++++ b/xen/common/sched_credit2.c
+@@ -4075,6 +4075,8 @@ csched2_deinit(struct scheduler *ops)
+ 
+     prv = csched2_priv(ops);
+     ops->sched_data = NULL;
++    if ( prv )
++        xfree(prv->rqd);
+     xfree(prv);
+ }
+ 
+-- 
+2.30.2
+

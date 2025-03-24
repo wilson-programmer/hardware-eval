@@ -1,0 +1,60 @@
+From d5e3494e313b07c9b5fac6f96dba73bfad836255 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Tue, 9 Apr 2019 13:01:58 +0100
+Subject: [PATCH] tools/xl: use libxl_domain_info to get domain type for
+ vcpu-pin
+
+Parsing the config seems to be an overkill for this particular task
+and the config might simply be absent. Type returned from libxl_domain_info
+should be either LIBXL_DOMAIN_TYPE_HVM or LIBXL_DOMAIN_TYPE_PV but in
+that context distinction between PVH and HVM should be irrelevant.
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Acked-by: Wei Liu <wei.liu2@citrix.com>
+(cherry picked from commit 48dab9767d2eb173495707cb1fd8ceaf73604ac1)
+(cherry picked from commit c59579d8319b776ae6243da1999737e2b4737710)
+(cherry picked from commit 989a2ec4f3ba9343eaeded847513202470d7be1e)
+---
+ tools/xl/xl_vcpu.c | 15 +++++----------
+ 1 file changed, 5 insertions(+), 10 deletions(-)
+
+diff --git a/tools/xl/xl_vcpu.c b/tools/xl/xl_vcpu.c
+index c877f2595f..ef995137c9 100644
+--- a/tools/xl/xl_vcpu.c
++++ b/tools/xl/xl_vcpu.c
+@@ -78,7 +78,6 @@ void apply_global_affinity_masks(libxl_domain_type type,
+ 
+     switch (type) {
+     case LIBXL_DOMAIN_TYPE_HVM:
+-    case LIBXL_DOMAIN_TYPE_PVH:
+         type_mask = &global_hvm_affinity_mask;
+         break;
+     case LIBXL_DOMAIN_TYPE_PV:
+@@ -283,19 +282,15 @@ int main_vcpupin(int argc, char **argv)
+ 
+     /* Only hard affinity matters here */
+     if (!ignore_masks) {
+-        libxl_domain_config d_config;
++        libxl_dominfo dominfo;
+ 
+-        libxl_domain_config_init(&d_config);
+-        rc = libxl_retrieve_domain_configuration(ctx, domid, &d_config);
+-        if (rc) {
+-            fprintf(stderr, "Could not retrieve domain configuration\n");
+-            libxl_domain_config_dispose(&d_config);
++        if (libxl_domain_info(ctx, &dominfo, domid)) {
++            fprintf(stderr, "Could not get domain info\n");
+             goto out;
+         }
+ 
+-        apply_global_affinity_masks(d_config.b_info.type, hard, 1);
+-
+-        libxl_domain_config_dispose(&d_config);
++        /* HVM and PVH domains use the same global affinity mask */
++        apply_global_affinity_masks(dominfo.domain_type, hard, 1);
+     }
+ 
+     if (force) {
+-- 
+2.30.2
+

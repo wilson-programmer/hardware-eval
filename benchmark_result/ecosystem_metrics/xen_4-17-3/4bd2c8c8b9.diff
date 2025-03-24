@@ -1,0 +1,36 @@
+From 4bd2c8c8b9dc1ce823a93d48e431deeb38fa1c50 Mon Sep 17 00:00:00 2001
+From: Tamas K Lengyel <tamas@tklengyel.com>
+Date: Tue, 14 Nov 2023 14:00:20 +0100
+Subject: [PATCH] x86/mem_sharing: add missing m2p entry when mapping
+ shared_info page
+
+When mapping in the shared_info page to a fork the m2p entry wasn't set
+resulting in the shared_info being reset even when the fork reset was called
+with only reset_state and not reset_memory. This results in an extra
+unnecessary TLB flush.
+
+Fixes: 1a0000ac775 ("mem_sharing: map shared_info page to same gfn during fork")
+Signed-off-by: Tamas K Lengyel <tamas@tklengyel.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 23eb39acf011ef9bbe02ed4619c55f208fbcd39b
+master date: 2023-10-31 16:10:14 +0000
+---
+ xen/arch/x86/mm/mem_sharing.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/xen/arch/x86/mm/mem_sharing.c b/xen/arch/x86/mm/mem_sharing.c
+index 5b3449db7a..90ffb10401 100644
+--- a/xen/arch/x86/mm/mem_sharing.c
++++ b/xen/arch/x86/mm/mem_sharing.c
+@@ -1860,6 +1860,8 @@ static int copy_special_pages(struct domain *cd, struct domain *d)
+                                 p2m_ram_rw, p2m->default_access, -1);
+             if ( rc )
+                 return rc;
++
++            set_gpfn_from_mfn(mfn_x(new_mfn), gfn_x(old_gfn));
+         }
+     }
+ 
+-- 
+2.30.2
+

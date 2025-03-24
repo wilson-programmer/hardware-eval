@@ -1,0 +1,43 @@
+From 8a0df40718c2a2fce0dd4b3801b4921d7a1333f3 Mon Sep 17 00:00:00 2001
+From: Kevin Wolf <kwolf@redhat.com>
+Date: Thu, 11 Oct 2018 17:30:39 +0200
+Subject: [PATCH] gtk: Don't vte_terminal_set_encoding() on new VTE versions
+
+The function vte_terminal_set_encoding() is deprecated since VTE 0.54,
+so stop calling it from that version on. This fixes a build error
+because of our use of warning flags [-Werror=deprecated-declarations].
+
+Fixes: https://bugs.launchpad.net/bugs/1794939
+Reported-by: Bastian Koppelmann <kbastian@mail.uni-paderborn.de>
+Signed-off-by: Kevin Wolf <kwolf@redhat.com>
+Message-id: 20181011153039.2324-1-kwolf@redhat.com
+Signed-off-by: Gerd Hoffmann <kraxel@redhat.com>
+(cherry picked from commit 6415994ffcc6d22b3f5add67f63fe77e4b9711f4)
+---
+ ui/gtk.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/ui/gtk.c b/ui/gtk.c
+index 342e96fbe9..9076d25045 100644
+--- a/ui/gtk.c
++++ b/ui/gtk.c
+@@ -1831,12 +1831,14 @@ static GSList *gd_vc_vte_init(GtkDisplayState *s, VirtualConsole *vc,
+     g_signal_connect(vc->vte.terminal, "commit", G_CALLBACK(gd_vc_in), vc);
+ 
+     /* The documentation says that the default is UTF-8, but actually it is
+-     * 7-bit ASCII at least in VTE 0.38.
+-     */
++     * 7-bit ASCII at least in VTE 0.38. The function is deprecated since
++     * VTE 0.54 (only UTF-8 is supported now). */
++#if !VTE_CHECK_VERSION(0, 54, 0)
+ #if VTE_CHECK_VERSION(0, 38, 0)
+     vte_terminal_set_encoding(VTE_TERMINAL(vc->vte.terminal), "UTF-8", NULL);
+ #else
+     vte_terminal_set_encoding(VTE_TERMINAL(vc->vte.terminal), "UTF-8");
++#endif
+ #endif
+ 
+     vte_terminal_set_scrollback_lines(VTE_TERMINAL(vc->vte.terminal), -1);
+-- 
+2.30.2
+

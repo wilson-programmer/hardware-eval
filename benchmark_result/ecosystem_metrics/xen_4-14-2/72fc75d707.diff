@@ -1,0 +1,35 @@
+From 72fc75d707ed1ab4b12189aacfcc237f8578590d Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 5 Mar 2021 15:29:52 +0100
+Subject: [PATCH] x86/string: correct memmove()'s forwarding to memcpy()
+
+With memcpy() expanding to the compiler builtin, we may not hand it
+overlapping source and destination. We strictly mean to forward to our
+own implementation (a few lines up in the same source file).
+
+Fixes: 78825e1c60fa ("x86/string: Clean up x86/string.h")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 7b93d92a35dc7c0a6e5f1f79b3c887aa3e66ddc0
+master date: 2021-02-04 13:59:56 +0100
+---
+ xen/arch/x86/string.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/string.c b/xen/arch/x86/string.c
+index e2f84638c4..bda24b14ac 100644
+--- a/xen/arch/x86/string.c
++++ b/xen/arch/x86/string.c
+@@ -43,7 +43,8 @@ void *(memmove)(void *dest, const void *src, size_t n)
+         return dest;
+ 
+     if ( dest < src )
+-        return memcpy(dest, src, n);
++        /* Depends on Xen's implementation operating forwards. */
++        return (memcpy)(dest, src, n);
+ 
+     asm volatile (
+         "   std         ; "
+-- 
+2.30.2
+

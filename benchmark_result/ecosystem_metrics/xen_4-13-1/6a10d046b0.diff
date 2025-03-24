@@ -1,0 +1,23 @@
+From 6a10d046b0ab9231714ffccea7a59036f52df1a7 Mon Sep 17 00:00:00 2001
+From: Ian Jackson <ian.jackson@eu.citrix.com>
+Date: Mon, 23 Dec 2019 10:58:34 +0000
+Subject: [PATCH] README: Fix slightly botched ascii-art
+
+Signed-off-by: Ian Jackson <ian.jackson@eu.citrix.com>
+---
+ README | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/README b/README
+index 7f31e6b817..c5021eedcf 100644
+--- a/README
++++ b/README
+@@ -1,4 +1,4 @@
+-g################
++#################
+  _  _    _ _____
+ | || |  / |___ /
+ | || |_ | | |_ \
+-- 
+2.30.2
+

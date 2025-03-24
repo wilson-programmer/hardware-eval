@@ -1,0 +1,36 @@
+seq_write_throughput: (g=0): rw=write, bs=(R) 1024KiB-1024KiB, (W) 1024KiB-1024KiB, (T) 1024KiB-1024KiB, ioengine=libaio, iodepth=64
+...
+fio-3.1
+Starting 4 processes
+seq_write_throughput: Laying out IO file (1 file / 100MiB)
+seq_write_throughput: Laying out IO file (1 file / 100MiB)
+seq_write_throughput: Laying out IO file (1 file / 100MiB)
+seq_write_throughput: Laying out IO file (1 file / 100MiB)
+
+seq_write_throughput: (groupid=0, jobs=4): err= 0: pid=15637: Tue Jun  4 01:11:49 2024
+  write: IOPS=449, BW=453MiB/s (475MB/s)(26.6GiB/60010msec)
+    slat (usec): min=334, max=3620.4k, avg=8798.75, stdev=124173.29
+    clat (usec): min=1424, max=4017.0k, avg=556715.20, stdev=1002647.16
+     lat (msec): min=6, max=4023, avg=565.48, stdev=1009.70
+    clat percentiles (msec):
+     |  1.00th=[  116],  5.00th=[  144], 10.00th=[  157], 20.00th=[  174],
+     | 30.00th=[  186], 40.00th=[  197], 50.00th=[  207], 60.00th=[  218],
+     | 70.00th=[  232], 80.00th=[  255], 90.00th=[ 3004], 95.00th=[ 3373],
+     | 99.00th=[ 3876], 99.50th=[ 3910], 99.90th=[ 3977], 99.95th=[ 4010],
+     | 99.99th=[ 4010]
+   bw (  KiB/s): min= 2048, max=462848, per=50.09%, avg=232537.21, stdev=114413.57, samples=238
+   iops        : min=    2, max=  452, avg=226.90, stdev=111.67, samples=238
+  lat (msec)   : 2=0.01%, 10=0.04%, 20=0.07%, 50=0.20%, 100=0.46%
+  lat (msec)   : 250=78.56%, 500=10.25%, 750=0.09%, 2000=0.04%, >=2000=11.22%
+  cpu          : usr=2.19%, sys=6.49%, ctx=44845, majf=0, minf=12
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.1%, 16=0.2%, 32=0.5%, >=64=108.2%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.1%, >=64=0.0%
+     issued rwt: total=0,26952,0, short=0,0,0, dropped=0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=64
+
+Run status group 0 (all jobs):
+  WRITE: bw=453MiB/s (475MB/s), 453MiB/s-453MiB/s (475MB/s-475MB/s), io=26.6GiB (28.5GB), run=60010-60010msec
+
+Disk stats (read/write):
+  xvda: ios=1/235522, merge=0/77, ticks=8/3858116, in_queue=1626884, util=44.15%

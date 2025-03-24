@@ -1,0 +1,50 @@
+From 2cf13721414dc5b380dc3c60e0f20c9cb416dbb3 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Thu, 29 Sep 2022 13:07:35 +0200
+Subject: [PATCH] SUPPORT.md: clarify support of untrusted driver domains with
+ oxenstored
+
+Add a support statement for the scope of support regarding different
+Xenstore variants. Especially oxenstored does not (yet) have security
+support of untrusted driver domains, as those might drive oxenstored
+out of memory by creating lots of watch events for the guests they are
+servicing.
+
+Add a statement regarding Live Update support of oxenstored.
+
+This is part of XSA-326.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: George Dunlap <george.dunlap@citrix.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Christian Lindig <christian.lindig@citrix.com>
+(cherry picked from commit c7bc20d8d123851a468402bbfc9e3330efff21ec)
+---
+ SUPPORT.md | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/SUPPORT.md b/SUPPORT.md
+index c45390a245..dd9702bfe4 100644
+--- a/SUPPORT.md
++++ b/SUPPORT.md
+@@ -175,6 +175,17 @@ Support for running qemu-xen device model in a linux stubdomain.
+ 
+     Status: Tech Preview
+ 
++## Xenstore
++
++### C xenstored daemon
++
++    Status: Supported
++
++### OCaml xenstored daemon
++
++    Status: Supported
++    Status, untrusted driver domains: Supported, not security supported
++
+ ## Toolstack/3rd party
+ 
+ ### libvirt driver for xl
+-- 
+2.30.2
+

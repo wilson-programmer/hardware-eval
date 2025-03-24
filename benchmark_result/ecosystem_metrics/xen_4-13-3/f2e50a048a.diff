@@ -1,0 +1,42 @@
+From f2e50a048a1430117f14fa42bde75c31ff85a7aa Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Fri, 15 Jan 2021 19:38:58 +0000
+Subject: [PATCH] tools/oxenstored: mkdir conflicts were sometimes missed
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Due to how set_write_lowpath was used here it didn't detect create/delete
+conflicts.  When we create an entry we must mark our parent as modified
+(this is what creating a new node via write does).
+
+Otherwise we can have 2 transactions one creating, and another deleting a node
+both succeeding depending on timing.  Or one transaction reading an entry,
+concluding it doesn't exist, do some other work based on that information and
+successfully commit even if another transaction creates the node via mkdir
+meanwhile.
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+Release-Acked-by: Ian Jackson <iwj@xenproject.org>
+(cherry picked from commit 45dee7d92b493bb531e7e77a6f9c0180ab152f87)
+---
+ tools/ocaml/xenstored/transaction.ml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/ocaml/xenstored/transaction.ml b/tools/ocaml/xenstored/transaction.ml
+index 25bc8c3b4a..17b1bdf2ea 100644
+--- a/tools/ocaml/xenstored/transaction.ml
++++ b/tools/ocaml/xenstored/transaction.ml
+@@ -165,7 +165,7 @@ let write t perm path value =
+ 
+ let mkdir ?(with_watch=true) t perm path =
+ 	Store.mkdir t.store perm path;
+-	set_write_lowpath t path;
++	set_write_lowpath t (Store.Path.get_parent path);
+ 	if with_watch then
+ 		add_wop t Xenbus.Xb.Op.Mkdir path
+ 
+-- 
+2.30.2
+

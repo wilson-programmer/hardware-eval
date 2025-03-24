@@ -1,0 +1,82 @@
+From 946f345547b9810045e754ea4b73b4e8c5e7935b Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 20 Nov 2018 15:30:25 +0100
+Subject: [PATCH] AMD/IOMMU: suppress PTE merging after initial table creation
+
+The logic is not fit for this purpose, so simply disable its use until
+it can be fixed / replaced. Note that this re-enables merging for the
+table creation case, which was disabled as a (perhaps unintended) side
+effect of the earlier "amd/iommu: fix flush checks". It relies on no
+page getting mapped more than once (with different properties) in this
+process, as that would still be beyond what the merging logic can cope
+with. But arch_iommu_populate_page_table() guarantees this afaict.
+
+This is part of XSA-275.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+master commit: 937ef32565fa3a81fdb37b9dd5aa99a1b87afa75
+master date: 2018-11-20 14:55:14 +0100
+---
+ xen/drivers/passthrough/amd/iommu_map.c | 25 +++++++++++++++++++++----
+ xen/include/asm-x86/iommu.h             |  1 +
+ 2 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_map.c b/xen/drivers/passthrough/amd/iommu_map.c
+index 8537bbea4c..3191da91ef 100644
+--- a/xen/drivers/passthrough/amd/iommu_map.c
++++ b/xen/drivers/passthrough/amd/iommu_map.c
+@@ -702,11 +702,24 @@ int amd_iommu_map_page(struct domain *d, unsigned long gfn, unsigned long mfn,
+                                        !!(flags & IOMMUF_writable),
+                                        !!(flags & IOMMUF_readable));
+ 
+-    /* Do not increase pde count if io mapping has not been changed */
+-    if ( !need_flush )
+-        goto out;
++    if ( need_flush )
++    {
++        amd_iommu_flush_pages(d, gfn, 0);
++        /* No further merging, as the logic doesn't cope. */
++        hd->arch.no_merge = true;
++    }
+ 
+-    amd_iommu_flush_pages(d, gfn, 0);
++    /*
++     * Suppress merging of non-R/W mappings or after initial table creation,
++     * as the merge logic does not cope with this.
++     */
++    if ( hd->arch.no_merge || flags != (IOMMUF_writable | IOMMUF_readable) )
++        goto out;
++    if ( d->creation_finished )
++    {
++        hd->arch.no_merge = true;
++        goto out;
++    }
+ 
+     for ( merge_level = IOMMU_PAGING_MODE_LEVEL_2;
+           merge_level <= hd->arch.paging_mode; merge_level++ )
+@@ -780,6 +793,10 @@ int amd_iommu_unmap_page(struct domain *d, unsigned long gfn)
+ 
+     /* mark PTE as 'page not present' */
+     clear_iommu_pte_present(pt_mfn[1], gfn);
++
++    /* No further merging in amd_iommu_map_page(), as the logic doesn't cope. */
++    hd->arch.no_merge = true;
++
+     spin_unlock(&hd->arch.mapping_lock);
+ 
+     amd_iommu_flush_pages(d, gfn, 0);
+diff --git a/xen/include/asm-x86/iommu.h b/xen/include/asm-x86/iommu.h
+index 14ad0489a6..dcf2e21402 100644
+--- a/xen/include/asm-x86/iommu.h
++++ b/xen/include/asm-x86/iommu.h
+@@ -40,6 +40,7 @@ struct arch_iommu
+ 
+     /* amd iommu support */
+     int paging_mode;
++    bool no_merge;
+     struct page_info *root_table;
+     struct guest_iommu *g_iommu;
+ };
+-- 
+2.30.2
+

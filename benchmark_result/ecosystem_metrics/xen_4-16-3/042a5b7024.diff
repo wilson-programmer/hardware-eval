@@ -1,0 +1,51 @@
+From 042a5b7024e7b27f5806914b9d42099a48c8f893 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 20 Oct 2022 12:14:30 +0100
+Subject: [PATCH] xen/arm: Correct the p2m pool size calculations
+
+Allocating or freeing p2m pages doesn't alter the size of the mempool; only
+the split between free and used pages.
+
+Right now, the hypercalls operate on the free subset of the pool, meaning that
+XEN_DOMCTL_get_paging_mempool_size varies with time as the guest shuffles its
+physmap, and XEN_DOMCTL_set_paging_mempool_size ignores the used subset of the
+pool and lets the guest grow unbounded.
+
+This fixes test-pagign-mempool on ARM so that the behaviour matches x86.
+
+This is part of XSA-409 / CVE-2022-33747.
+
+Fixes: cbea5a1149ca ("xen/arm: Allocate and free P2M pages from the P2M pool")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Julien Grall <jgrall@amazon.com>
+Release-acked-by: Henry Wang <Henry.Wang@arm.com>
+---
+ xen/arch/arm/p2m.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/xen/arch/arm/p2m.c b/xen/arch/arm/p2m.c
+index 6f87e17c1d..eba443ab23 100644
+--- a/xen/arch/arm/p2m.c
++++ b/xen/arch/arm/p2m.c
+@@ -78,7 +78,6 @@ static struct page_info *p2m_alloc_page(struct domain *d)
+             spin_unlock(&d->arch.paging.lock);
+             return NULL;
+         }
+-        d->arch.paging.p2m_total_pages--;
+     }
+     spin_unlock(&d->arch.paging.lock);
+ 
+@@ -91,10 +90,7 @@ static void p2m_free_page(struct domain *d, struct page_info *pg)
+     if ( is_hardware_domain(d) )
+         free_domheap_page(pg);
+     else
+-    {
+-        d->arch.paging.p2m_total_pages++;
+         page_list_add_tail(pg, &d->arch.paging.p2m_freelist);
+-    }
+     spin_unlock(&d->arch.paging.lock);
+ }
+ 
+-- 
+2.30.2
+

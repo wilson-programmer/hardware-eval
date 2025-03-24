@@ -1,0 +1,61 @@
+From 1e6ab8e2d44b3723642479944a1c7ad871d19dd1 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 4 Jun 2019 15:38:17 +0200
+Subject: [PATCH] x86/IRQ: avoid UB (or worse) in trace_irq_mask()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Dynamically allocated CPU mask objects may be smaller than cpumask_t, so
+copying has to be restricted to the actual allocation size. This is
+particulary important since the function doesn't bail early when tracing
+is not active, so even production builds would be affected by potential
+misbehavior here.
+
+Take the opportunity and also
+- use initializers instead of assignment + memset(),
+- constify the cpumask_t input pointer,
+- u32 -> uint32_t.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: George Dunlap <george.dunlap@citrix.com>
+master commit: 6fafb8befa99620a2d7323b9eca5c387bad1f59f
+master date: 2019-05-13 16:41:03 +0200
+---
+ xen/arch/x86/irq.c | 15 +++++++++------
+ 1 file changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/x86/irq.c b/xen/arch/x86/irq.c
+index 23b4f423e6..9e3a60ef26 100644
+--- a/xen/arch/x86/irq.c
++++ b/xen/arch/x86/irq.c
+@@ -99,16 +99,19 @@ void unlock_vector_lock(void)
+     spin_unlock(&vector_lock);
+ }
+ 
+-static void trace_irq_mask(u32 event, int irq, int vector, cpumask_t *mask)
++static void trace_irq_mask(uint32_t event, int irq, int vector,
++                           const cpumask_t *mask)
+ {
+     struct {
+         unsigned int irq:16, vec:16;
+         unsigned int mask[6];
+-    } d;
+-    d.irq = irq;
+-    d.vec = vector;
+-    memset(d.mask, 0, sizeof(d.mask));
+-    memcpy(d.mask, mask, min(sizeof(d.mask), sizeof(cpumask_t)));
++    } d = {
++       .irq = irq,
++       .vec = vector,
++    };
++
++    memcpy(d.mask, mask,
++           min(sizeof(d.mask), BITS_TO_LONGS(nr_cpu_ids) * sizeof(long)));
+     trace_var(event, 1, sizeof(d), &d);
+ }
+ 
+-- 
+2.30.2
+

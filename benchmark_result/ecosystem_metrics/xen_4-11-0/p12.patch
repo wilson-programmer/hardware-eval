@@ -1,0 +1,90 @@
+From 988d66cb78c35c620c2a0eb01bac842e4e99bf0e Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Mon, 18 Jun 2018 09:18:56 +0200
+Subject: [PATCH] tools/libxc: retry hypercall in case of EFAULT
+
+A hypercall issued via the privcmd driver can very rarely return
+-EFAULT even if the hypercall buffers are locked in memory. This
+happens for hypercall buffers in user memory when the Linux kernel
+is doing memory scans e.g. for page migration or compaction.
+
+Retry the getpageframeinfo3 hypercall up to 2 times in case
+-EFAULT is returned and the hypervisor might see invalid PTEs for
+user hypercall buffers (which should be the case only if the kernel
+doesn't offer a /dev/xen/hypercall node).
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Ian Jackson <ian.jackson@eu.citrix.com>
+---
+ tools/libxc/xc_private.c |  2 +-
+ tools/libxc/xc_private.h | 25 ++++++++++++++++++++++---
+ 2 files changed, 23 insertions(+), 4 deletions(-)
+
+diff --git a/tools/libxc/xc_private.c b/tools/libxc/xc_private.c
+index fcda981744..e6e3d9913c 100644
+--- a/tools/libxc/xc_private.c
++++ b/tools/libxc/xc_private.c
+@@ -224,7 +224,7 @@ int xc_get_pfn_type_batch(xc_interface *xch, uint32_t dom,
+     domctl.domain = dom;
+     domctl.u.getpageframeinfo3.num = num;
+     set_xen_guest_handle(domctl.u.getpageframeinfo3.array, arr);
+-    rc = do_domctl(xch, &domctl);
++    rc = do_domctl_retry_efault(xch, &domctl);
+     xc_hypercall_bounce_post(xch, arr);
+     return rc;
+ }
+diff --git a/tools/libxc/xc_private.h b/tools/libxc/xc_private.h
+index 03bc9a7776..03bdfca7d4 100644
+--- a/tools/libxc/xc_private.h
++++ b/tools/libxc/xc_private.h
+@@ -254,9 +254,13 @@ out1:
+     return ret;
+ }
+ 
+-static inline int do_domctl(xc_interface *xch, struct xen_domctl *domctl)
++static inline int do_domctl_maybe_retry_efault(xc_interface *xch,
++                                               struct xen_domctl *domctl,
++                                               unsigned int retries)
+ {
+     int ret = -1;
++    unsigned int retry_cnt = 0;
++
+     DECLARE_HYPERCALL_BOUNCE(domctl, sizeof(*domctl), XC_HYPERCALL_BUFFER_BOUNCE_BOTH);
+ 
+     domctl->interface_version = XEN_DOMCTL_INTERFACE_VERSION;
+@@ -267,8 +271,11 @@ static inline int do_domctl(xc_interface *xch, struct xen_domctl *domctl)
+         goto out1;
+     }
+ 
+-    ret = xencall1(xch->xcall, __HYPERVISOR_domctl,
+-                   HYPERCALL_BUFFER_AS_ARG(domctl));
++    do {
++        ret = xencall1(xch->xcall, __HYPERVISOR_domctl,
++                       HYPERCALL_BUFFER_AS_ARG(domctl));
++    } while ( ret < 0 && errno == EFAULT && retry_cnt++ < retries );
++
+     if ( ret < 0 )
+     {
+         if ( errno == EACCES )
+@@ -281,6 +288,18 @@ static inline int do_domctl(xc_interface *xch, struct xen_domctl *domctl)
+     return ret;
+ }
+ 
++static inline int do_domctl(xc_interface *xch, struct xen_domctl *domctl)
++{
++    return do_domctl_maybe_retry_efault(xch, domctl, 0);
++}
++
++static inline int do_domctl_retry_efault(xc_interface *xch, struct xen_domctl *domctl)
++{
++    unsigned int retries = xencall_buffers_never_fault(xch->xcall) ? 0 : 2;
++
++    return do_domctl_maybe_retry_efault(xch, domctl, retries);
++}
++
+ static inline int do_sysctl(xc_interface *xch, struct xen_sysctl *sysctl)
+ {
+     int ret = -1;
+-- 
+2.30.2
+

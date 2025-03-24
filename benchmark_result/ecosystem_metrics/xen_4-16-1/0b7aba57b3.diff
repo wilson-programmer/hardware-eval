@@ -1,0 +1,27 @@
+From 0b7aba57b310cfc41287a88c4f9198739706dd71 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 3 Feb 2022 13:06:01 +0100
+Subject: [PATCH] MAINTAINERS: Anthony is stable branch tools maintainer
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Anthony PERARD <anthony.perard@citrix.com>
+---
+ MAINTAINERS | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index fab396b4e1..863eef827c 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -60,7 +60,7 @@ The maintainer for this branch is:
+ 
+ Tools backport requests should also be copied to:
+ 
+-	TODO - Loooking for new tools stable maintainer
++	Anthony Perard <anthony.perard@citrix.com>
+ 
+ 
+ 	Unstable Subsystem Maintainers
+-- 
+2.30.2
+

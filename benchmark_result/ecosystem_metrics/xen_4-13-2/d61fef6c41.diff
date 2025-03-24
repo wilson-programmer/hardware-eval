@@ -1,0 +1,37 @@
+From d61fef6c411362876337fd4f473fbdef67ed00a5 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 24 Jun 2020 16:25:29 +0200
+Subject: [PATCH] x86/PVH: PHYSDEVOP_pci_mmcfg_reserved should not blindly
+ register a region
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The op has a "is reserved" flag, and hence registration shouldn't
+happen unilaterally.
+
+Fixes: eb3dd90e4089 ("x86/physdev: enable PHYSDEVOP_pci_mmcfg_reserved for PVH Dom0")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: b539eeffc737d859dd1814c2e529e0ed0feba7a7
+master date: 2020-05-14 07:53:55 +0200
+---
+ xen/arch/x86/physdev.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/physdev.c b/xen/arch/x86/physdev.c
+index 3a3c15890b..23465bcd00 100644
+--- a/xen/arch/x86/physdev.c
++++ b/xen/arch/x86/physdev.c
+@@ -556,7 +556,7 @@ ret_t do_physdev_op(int cmd, XEN_GUEST_HANDLE_PARAM(void) arg)
+ 
+         ret = pci_mmcfg_reserved(info.address, info.segment,
+                                  info.start_bus, info.end_bus, info.flags);
+-        if ( !ret && has_vpci(currd) )
++        if ( !ret && has_vpci(currd) && (info.flags & XEN_PCI_MMCFG_RESERVED) )
+         {
+             /*
+              * For HVM (PVH) domains try to add the newly found MMCFG to the
+-- 
+2.30.2
+

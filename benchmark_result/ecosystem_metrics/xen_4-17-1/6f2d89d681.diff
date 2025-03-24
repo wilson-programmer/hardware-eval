@@ -1,0 +1,46 @@
+From 6f2d89d68175e74aca9c67761aa87ffc8f5ffed1 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 31 Mar 2023 08:30:41 +0200
+Subject: [PATCH] x86/shadow: fix and improve sh_page_has_multiple_shadows()
+
+While no caller currently invokes the function without first making sure
+there is at least one shadow [1], we'd better eliminate UB here:
+find_first_set_bit() requires input to be non-zero to return a well-
+defined result.
+
+Further, using find_first_set_bit() isn't very efficient in the first
+place for the intended purpose.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+
+[1] The function has exactly two uses, and both are from OOS code, which
+    is HVM-only. For HVM (but not for PV) sh_mfn_is_a_page_table(),
+    guarding the call to sh_unsync(), guarantees at least one shadow.
+    Hence even if sh_page_has_multiple_shadows() returned a bogus value
+    when invoked for a PV domain, the subsequent is_hvm_vcpu() and
+    oos_active checks (the former being redundant with the latter) will
+    compensate. (Arguably that oos_active check should come first, for
+    both clarity and efficiency reasons.)
+master commit: 2896224a4e294652c33f487b603d20bd30955f21
+master date: 2023-03-24 11:07:08 +0100
+---
+ xen/arch/x86/mm/shadow/private.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/mm/shadow/private.h b/xen/arch/x86/mm/shadow/private.h
+index 85bb26c7ea..c2bb1ed3c3 100644
+--- a/xen/arch/x86/mm/shadow/private.h
++++ b/xen/arch/x86/mm/shadow/private.h
+@@ -324,7 +324,7 @@ static inline int sh_page_has_multiple_shadows(struct page_info *pg)
+         return 0;
+     shadows = pg->shadow_flags & SHF_page_type_mask;
+     /* More than one type bit set in shadow-flags? */
+-    return ( (shadows & ~(1UL << find_first_set_bit(shadows))) != 0 );
++    return shadows && (shadows & (shadows - 1));
+ }
+ 
+ #if (SHADOW_OPTIMIZATIONS & SHOPT_OUT_OF_SYNC)
+-- 
+2.30.2
+

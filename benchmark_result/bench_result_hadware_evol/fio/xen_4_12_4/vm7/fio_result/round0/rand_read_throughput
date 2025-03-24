@@ -1,0 +1,37 @@
+rand_read_throughput: (g=0): rw=randread, bs=(R) 1024KiB-1024KiB, (W) 1024KiB-1024KiB, (T) 1024KiB-1024KiB, ioengine=libaio, iodepth=64
+...
+fio-3.1
+Starting 4 processes
+rand_read_throughput: Laying out IO file (1 file / 100MiB)
+rand_read_throughput: Laying out IO file (1 file / 100MiB)
+rand_read_throughput: Laying out IO file (1 file / 100MiB)
+rand_read_throughput: Laying out IO file (1 file / 100MiB)
+
+rand_read_throughput: (groupid=0, jobs=4): err= 0: pid=16551: Mon Jun 24 03:15:41 2024
+   read: IOPS=2097, BW=2102MiB/s (2204MB/s)(123GiB/60011msec)
+    slat (usec): min=83, max=37388, avg=1620.81, stdev=2945.35
+    clat (usec): min=37, max=420715, avg=120118.05, stdev=53169.09
+     lat (usec): min=1244, max=422400, avg=121791.59, stdev=53634.30
+    clat percentiles (msec):
+     |  1.00th=[   34],  5.00th=[   40], 10.00th=[   52], 20.00th=[   74],
+     | 30.00th=[   90], 40.00th=[  104], 50.00th=[  118], 60.00th=[  131],
+     | 70.00th=[  144], 80.00th=[  161], 90.00th=[  186], 95.00th=[  211],
+     | 99.00th=[  279], 99.50th=[  309], 99.90th=[  363], 99.95th=[  384],
+     | 99.99th=[  409]
+   bw (  KiB/s): min=184689, max=1518486, per=25.00%, avg=538117.93, stdev=175891.13, samples=480
+   iops        : min=  180, max= 1482, avg=525.25, stdev=171.73, samples=480
+  lat (usec)   : 50=0.01%, 1000=0.01%
+  lat (msec)   : 2=0.01%, 4=0.01%, 10=0.01%, 20=0.03%, 50=9.29%
+  lat (msec)   : 100=28.01%, 250=60.91%, 500=1.94%
+  cpu          : usr=7.25%, sys=35.69%, ctx=76584, majf=0, minf=11
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.1%, 16=0.1%, 32=0.1%, >=64=102.9%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.1%, >=64=0.0%
+     issued rwt: total=125883,0,0, short=0,0,0, dropped=0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=64
+
+Run status group 0 (all jobs):
+   READ: bw=2102MiB/s (2204MB/s), 2102MiB/s-2102MiB/s (2204MB/s-2204MB/s), io=123GiB (132GB), run=60011-60011msec
+
+Disk stats (read/write):
+  xvda: ios=1038207/95, merge=0/22, ticks=1673444/40, in_queue=1597340, util=99.08%

@@ -1,0 +1,46 @@
+From 478a0ecb1a1fe6b56eb4a03b58ea1c5b1d31469b Mon Sep 17 00:00:00 2001
+From: Nicholas Tsirakis <tsirakisn@ainfosec.com>
+Date: Fri, 26 Jul 2019 10:59:05 +0200
+Subject: [PATCH] argo: warn sendv() caller when ring is full
+
+In its current state, if the destination ring is full, sendv()
+will requeue the message and return the rc of pending_requeue(),
+which will return 0 on success. This prevents the caller from
+distinguishing the difference between a successful write and a
+message that needs to be resent at a later time.
+
+Instead, capture the -EAGAIN value returned from ringbuf_insert()
+and *only* overwrite it if the rc of pending_requeue() is non-zero.
+This allows the caller to make intelligent decisions on -EAGAIN and
+still be alerted if the pending message fails to requeue.
+
+Signed-off-by: Nicholas Tsirakis <tsirakisn@ainfosec.com>
+Reviewed-by: Christopher Clark <christopher.w.clark@gmail.com>
+master commit: 480800c76969b38f13b6909eb679b23571417538
+master date: 2019-06-11 20:27:28 +0100
+---
+ xen/common/argo.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/xen/common/argo.c b/xen/common/argo.c
+index 13052b9239..2f874a570d 100644
+--- a/xen/common/argo.c
++++ b/xen/common/argo.c
+@@ -2048,9 +2048,13 @@ sendv(struct domain *src_d, xen_argo_addr_t *src_addr,
+                              message_type, &len);
+         if ( ret == -EAGAIN )
+         {
++            int rc;
++
+             argo_dprintk("argo_ringbuf_sendv failed, EAGAIN\n");
+             /* requeue to issue a notification when space is there */
+-            ret = pending_requeue(dst_d, ring_info, src_id.domain_id, len);
++            rc = pending_requeue(dst_d, ring_info, src_id.domain_id, len);
++            if ( rc )
++                ret = rc;
+         }
+ 
+         spin_unlock(&ring_info->L3_lock);
+-- 
+2.30.2
+

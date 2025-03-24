@@ -1,0 +1,33 @@
+From a1dab05393ec5654e2a88be296cc973595ffb1d0 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 5 Mar 2021 15:36:27 +0100
+Subject: [PATCH] x86/dmop: Properly fail for PV guests
+
+The current code has an early exit for PV guests, but it returns 0 having done
+nothing.
+
+Fixes: 524a98c2ac5 ("public / x86: introduce __HYPERCALL_dm_op...")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Ian Jackson <iwj@xenproject.org>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 615367b5275a5b0123f1f1ee86c985fab234a5a4
+master date: 2021-02-26 12:28:52 +0000
+---
+ xen/arch/x86/hvm/dm.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/xen/arch/x86/hvm/dm.c b/xen/arch/x86/hvm/dm.c
+index e3f845165d..7586952633 100644
+--- a/xen/arch/x86/hvm/dm.c
++++ b/xen/arch/x86/hvm/dm.c
+@@ -370,6 +370,7 @@ static int dm_op(const struct dmop_args *op_args)
+     if ( rc )
+         return rc;
+ 
++    rc = -EINVAL;
+     if ( !is_hvm_domain(d) )
+         goto out;
+ 
+-- 
+2.30.2
+

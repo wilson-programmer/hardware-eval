@@ -1,0 +1,54 @@
+From 4fe70a180c53df0ad0092ef8d65e8ce9439b254e Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Wed, 15 May 2019 17:16:13 +0100
+Subject: [PATCH] xen/arm: traps: Avoid using BUG_ON() in _show_registers()
+
+At the moment, _show_registers() is using a BUG_ON() to assert only
+userspace will run 32-bit code in a 64-bit domain.
+
+Such extra precaution is not necessary and could be avoided by only
+checking the CPU mode to decide whether show_registers_64() or
+show_reigsters_32() should be called.
+
+This has also the nice advantage to avoid nested if in the code.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Volodymyr Babchuk <volodymyr_babchuk@epam.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit e04818b46d6b08ae22d4ef05fa4dc685bba42f57)
+---
+ xen/arch/arm/traps.c | 16 +++-------------
+ 1 file changed, 3 insertions(+), 13 deletions(-)
+
+diff --git a/xen/arch/arm/traps.c b/xen/arch/arm/traps.c
+index 8741aa1d59..eaed29b06b 100644
+--- a/xen/arch/arm/traps.c
++++ b/xen/arch/arm/traps.c
+@@ -914,21 +914,11 @@ static void _show_registers(const struct cpu_user_regs *regs,
+ 
+     if ( guest_mode )
+     {
+-        if ( is_32bit_domain(v->domain) )
++        if ( psr_mode_is_32bit(regs->cpsr) )
+             show_registers_32(regs, ctxt, guest_mode, v);
+ #ifdef CONFIG_ARM_64
+-        else if ( is_64bit_domain(v->domain) )
+-        {
+-            if ( psr_mode_is_32bit(regs->cpsr) )
+-            {
+-                BUG_ON(!usr_mode(regs));
+-                show_registers_32(regs, ctxt, guest_mode, v);
+-            }
+-            else
+-            {
+-                show_registers_64(regs, ctxt, guest_mode, v);
+-            }
+-        }
++        else
++            show_registers_64(regs, ctxt, guest_mode, v);
+ #endif
+     }
+     else
+-- 
+2.30.2
+

@@ -1,0 +1,52 @@
+From 48b67651746f3124b0d5d30147180f1238d2e9c6 Mon Sep 17 00:00:00 2001
+From: Dmytro Semenets <dmytro_semenets@epam.com>
+Date: Thu, 23 Jun 2022 10:44:28 +0300
+Subject: [PATCH] xen: arm: Don't use stop_cpu() in halt_this_cpu()
+
+When shutting down (or rebooting) the platform, Xen will call stop_cpu()
+on all the CPUs but one. The last CPU will then request the system to
+shutdown/restart.
+
+On platform using PSCI, stop_cpu() will call PSCI CPU off. Per the spec
+(section 5.5.2 DEN0022D.b), the call could return DENIED if the Trusted
+OS is resident on the CPU that is about to be turned off.
+
+As Xen doesn't migrate off the trusted OS (which BTW may not be
+migratable), it would be possible to hit the panic().
+
+In the ideal situation, Xen should migrate the trusted OS or make sure
+the CPU off is not called. However, when shutting down (or rebooting)
+the platform, it is pointless to try to turn off all the CPUs (per
+section 5.10.2, it is only required to put the core in a known state).
+
+So solve the problem by open-coding stop_cpu() in halt_this_cpu() and
+not call PSCI CPU off.
+
+Signed-off-by: Dmytro Semenets <dmytro_semenets@epam.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit ee11f092b515bf3c926eaad053d12d3f2b6e593e)
+---
+ xen/arch/arm/shutdown.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/shutdown.c b/xen/arch/arm/shutdown.c
+index 3dc6819d56..a9aea19e8e 100644
+--- a/xen/arch/arm/shutdown.c
++++ b/xen/arch/arm/shutdown.c
+@@ -8,7 +8,12 @@
+ 
+ static void noreturn halt_this_cpu(void *arg)
+ {
+-    stop_cpu();
++    local_irq_disable();
++    /* Make sure the write happens before we sleep forever */
++    dsb(sy);
++    isb();
++    while ( 1 )
++        wfi();
+ }
+ 
+ void machine_halt(void)
+-- 
+2.30.2
+

@@ -1,0 +1,69 @@
+From b971da679ea06223330315dd6ad4fb46af5a3ce2 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Tue, 24 Sep 2019 12:28:51 +0100
+Subject: [PATCH] xen/arm: Move ARCH_PATCH_INSN_SIZE out of the header
+ livepatch.h
+
+At the moment, ARCH_PATCH_INSN_SIZE is defined in the header
+livepatch.h. However, this is also used in the alternative code.
+
+Rather than including livepatch.h just for using the define, move it in
+the header insn.h which seems more suitable.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Volodymyr Babchuk <volodymyr_babchuk@epam.com>
+Reviewed-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 6378a4c24050d47f0c6f77f65c98dbe2e0249c4a)
+---
+ xen/arch/arm/alternative.c      | 2 --
+ xen/include/asm-arm/insn.h      | 3 +++
+ xen/include/asm-arm/livepatch.h | 4 +---
+ 3 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/arm/alternative.c b/xen/arch/arm/alternative.c
+index 52ed7edf69..237c4e5642 100644
+--- a/xen/arch/arm/alternative.c
++++ b/xen/arch/arm/alternative.c
+@@ -30,8 +30,6 @@
+ #include <asm/byteorder.h>
+ #include <asm/cpufeature.h>
+ #include <asm/insn.h>
+-/* XXX: Move ARCH_PATCH_INSN_SIZE out of livepatch.h */
+-#include <asm/livepatch.h>
+ #include <asm/page.h>
+ 
+ /* Override macros from asm/page.h to make them work with mfn_t */
+diff --git a/xen/include/asm-arm/insn.h b/xen/include/asm-arm/insn.h
+index 3489179826..19277212e1 100644
+--- a/xen/include/asm-arm/insn.h
++++ b/xen/include/asm-arm/insn.h
+@@ -11,6 +11,9 @@
+ # error "unknown ARM variant"
+ #endif
+ 
++/* On ARM32,64 instructions are always 4 bytes long. */
++#define ARCH_PATCH_INSN_SIZE 4
++
+ #endif /* !__ARCH_ARM_INSN */
+ /*
+  * Local variables:
+diff --git a/xen/include/asm-arm/livepatch.h b/xen/include/asm-arm/livepatch.h
+index 6bca79deb9..026af5e7dc 100644
+--- a/xen/include/asm-arm/livepatch.h
++++ b/xen/include/asm-arm/livepatch.h
+@@ -7,9 +7,7 @@
+ #define __XEN_ARM_LIVEPATCH_H__
+ 
+ #include <xen/sizes.h> /* For SZ_* macros. */
+-
+-/* On ARM32,64 instructions are always 4 bytes long. */
+-#define ARCH_PATCH_INSN_SIZE 4
++#include <asm/insn.h>
+ 
+ /*
+  * The va of the hypervisor .text region. We need this as the
+-- 
+2.30.2
+

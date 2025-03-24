@@ -1,0 +1,40 @@
+From 971a9d14667448427ddea1cf15fd7fd409205c58 Mon Sep 17 00:00:00 2001
+From: Wei Liu <wl@xen.org>
+Date: Fri, 3 Jul 2020 20:10:01 +0000
+Subject: [PATCH] kdd: fix build again
+
+Restore Tim's patch. The one that was committed was recreated by me
+because git didn't accept my saved copy. I made some mistakes while
+recreating that patch and here we are.
+
+Fixes: 3471cafbdda3 ("kdd: stop using [0] arrays to access packet contents")
+Reported-by: Michael Young <m.a.young@durham.ac.uk>
+Signed-off-by: Wei Liu <wl@xen.org>
+Reviewed-by: Tim Deegan <tim@xen.org>
+Release-acked-by: Paul Durrant <paul@xen.org>
+(cherry picked from commit d44cbbe0f3243afcc56e47dcfa97bbfe23e46fbb)
+---
+ tools/debugger/kdd/kdd.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/debugger/kdd/kdd.c b/tools/debugger/kdd/kdd.c
+index 87f18559bf..30eb4408a7 100644
+--- a/tools/debugger/kdd/kdd.c
++++ b/tools/debugger/kdd/kdd.c
+@@ -67,11 +67,11 @@ typedef struct {
+ /* State of the debugger stub */
+ typedef struct {
+     union {
+-        uint8_t txb[sizeof (kdd_hdr)];           /* Marshalling area for tx */
++        uint8_t txb[sizeof (kdd_pkt)];           /* Marshalling area for tx */
+         kdd_pkt txp;                 /* Also readable as a packet structure */
+     };
+     union {
+-        uint8_t rxb[sizeof (kdd_hdr)];           /* Marshalling area for rx */
++        uint8_t rxb[sizeof (kdd_pkt)];           /* Marshalling area for rx */
+         kdd_pkt rxp;                 /* Also readable as a packet structure */
+     };
+     unsigned int cur;       /* Offset into rx where we'll put the next byte */
+-- 
+2.30.2
+

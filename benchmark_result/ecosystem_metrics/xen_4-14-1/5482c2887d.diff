@@ -1,0 +1,36 @@
+From 5482c2887d89bf742fd982b8c47510617a5096ef Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 11 Sep 2020 14:08:09 +0200
+Subject: [PATCH] build: work around bash issue
+
+Older bash (observed with 3.2.57(2)) fails to honor "set -e" for certain
+built-in commands ("while" here), despite the command's status correctly
+being non-zero. The subsequent objcopy invocation now being separated by
+a semicolon results in no failure. Insert an explicit "exit" (replacing
+; by && ought to be another possible workaround).
+
+Fixes: e321576f4047 ("xen/build: start using if_changed")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 5132a0a37190b73c99dbbecf48dc4fb214feaf14
+master date: 2020-08-07 13:12:00 +0200
+---
+ xen/Rules.mk | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/Rules.mk b/xen/Rules.mk
+index ebfd40caff..62e9fabe7a 100644
+--- a/xen/Rules.mk
++++ b/xen/Rules.mk
+@@ -193,7 +193,7 @@ define cmd_obj_init_o
+             echo "Error: size of $<:$$name is 0x$$sz" >&2; \
+             exit $$(expr $$idx + 1);; \
+         esac; \
+-    done; \
++    done || exit $$?; \
+     $(OBJCOPY) $(foreach s,$(SPECIAL_DATA_SECTIONS),--rename-section .$(s)=.init.$(s)) $< $@
+ endef
+ 
+-- 
+2.30.2
+

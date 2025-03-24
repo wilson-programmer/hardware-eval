@@ -1,0 +1,56 @@
+From 56767b7c4dc8d62da4d14fb9133b9057dc8d9d42 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Thu, 31 Oct 2019 17:14:24 +0100
+Subject: [PATCH] xen/arm: p2m: Don't check the return of
+ p2m_get_root_pointer() with BUG_ON()
+
+It turns out that the BUG_ON() was actually reachable with well-crafted
+hypercalls. The BUG_ON() is here to prevent catch logical error, so
+crashing Xen is a bit over the top.
+
+While all the holes should now be fixed, it would be better to downgrade
+the BUG_ON() to something less fatal to prevent any more DoS.
+
+The BUG_ON() in p2m_get_entry() is now replaced by ASSERT_UNREACHABLE()
+to catch mistake in debug build and return INVALID_MFN for production
+build. The interface also requires to set page_order to give an idea of
+the size of "hole". So 'level' is now set so we report a hole of size of
+the an entry of the root page-table. This stays inline with what happen
+when the GFN is higher than p2m->max_mapped_gfn.
+
+The BUG_ON() in p2m_resolve_translation_fault() is now replaced by
+ASSERT_UNREACHABLE() to catch mistake in debug build and just report a
+fault for producion build.
+
+This is part of XSA-301.
+
+Reported-by: Julien Grall <Julien.Grall@arm.com>
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+master commit: 31b4f4ab6634f85163656b470dffc6d974917853
+master date: 2019-10-31 16:19:14 +0100
+---
+ xen/arch/arm/p2m.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/p2m.c b/xen/arch/arm/p2m.c
+index 0899432b4e..b1fcd727eb 100644
+--- a/xen/arch/arm/p2m.c
++++ b/xen/arch/arm/p2m.c
+@@ -318,7 +318,12 @@ mfn_t p2m_get_entry(struct p2m_domain *p2m, gfn_t gfn,
+      * the table should always be non-NULL because the gfn is below
+      * p2m->max_mapped_gfn and the root table pages are always present.
+      */
+-    BUG_ON(table == NULL);
++    if ( !table )
++    {
++        ASSERT_UNREACHABLE();
++        level = P2M_ROOT_LEVEL;
++        goto out;
++    }
+ 
+     for ( level = P2M_ROOT_LEVEL; level < 3; level++ )
+     {
+-- 
+2.30.2
+

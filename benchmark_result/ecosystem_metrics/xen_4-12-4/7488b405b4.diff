@@ -1,0 +1,30 @@
+From 7488b405b4b35540d99e938975fb8f10079b652b Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 20 Oct 2020 15:05:29 +0200
+Subject: [PATCH] x86/vLAPIC: don't leak regs page from vlapic_init() upon
+ error
+
+Fixes: 8a981e0bf25e ("Make map_domain_page_global fail")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 8a62dee9ceff3056c7e0bd9632bac39bee2a51b3
+master date: 2020-10-09 17:20:11 +0100
+---
+ xen/arch/x86/hvm/vlapic.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/xen/arch/x86/hvm/vlapic.c b/xen/arch/x86/hvm/vlapic.c
+index f12fe976cd..393255d555 100644
+--- a/xen/arch/x86/hvm/vlapic.c
++++ b/xen/arch/x86/hvm/vlapic.c
+@@ -1608,6 +1608,7 @@ int vlapic_init(struct vcpu *v)
+         vlapic->regs = __map_domain_page_global(vlapic->regs_page);
+         if ( vlapic->regs == NULL )
+         {
++            free_domheap_page(vlapic->regs_page);
+             dprintk(XENLOG_ERR, "map vlapic regs error: %d/%d\n",
+                     v->domain->domain_id, v->vcpu_id);
+             return -ENOMEM;
+-- 
+2.30.2
+

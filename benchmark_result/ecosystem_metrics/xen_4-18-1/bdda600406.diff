@@ -1,0 +1,58 @@
+From bdda600406e5f5c35bcb17b2f9458e2138d7ad46 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 2 Feb 2024 00:39:42 +0000
+Subject: [PATCH] xen: Swap order of actions in the FREE*() macros
+
+Wherever possible, it is a good idea to NULL out the visible reference to an
+object prior to freeing it.  The FREE*() macros already collect together both
+parts, making it easy to adjust.
+
+This has a marginal code generation improvement, as some of the calls to the
+free() function can be tailcall optimised.
+
+No functional change.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit c4f427ec879e7c0df6d44d02561e8bee838a293e)
+---
+ xen/include/xen/mm.h      | 3 ++-
+ xen/include/xen/xmalloc.h | 7 ++++---
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/xen/include/xen/mm.h b/xen/include/xen/mm.h
+index 8b9618609f..8bc5f4249d 100644
+--- a/xen/include/xen/mm.h
++++ b/xen/include/xen/mm.h
+@@ -91,8 +91,9 @@ bool scrub_free_pages(void);
+ 
+ /* Free an allocation, and zero the pointer to it. */
+ #define FREE_XENHEAP_PAGES(p, o) do { \
+-    free_xenheap_pages(p, o);         \
++    void *_ptr_ = (p);                \
+     (p) = NULL;                       \
++    free_xenheap_pages(_ptr_, o);     \
+ } while ( false )
+ #define FREE_XENHEAP_PAGE(p) FREE_XENHEAP_PAGES(p, 0)
+ 
+diff --git a/xen/include/xen/xmalloc.h b/xen/include/xen/xmalloc.h
+index 16979a117c..d857298011 100644
+--- a/xen/include/xen/xmalloc.h
++++ b/xen/include/xen/xmalloc.h
+@@ -66,9 +66,10 @@
+ extern void xfree(void *);
+ 
+ /* Free an allocation, and zero the pointer to it. */
+-#define XFREE(p) do { \
+-    xfree(p);         \
+-    (p) = NULL;       \
++#define XFREE(p) do {                       \
++    void *_ptr_ = (p);                      \
++    (p) = NULL;                             \
++    xfree(_ptr_);                           \
+ } while ( false )
+ 
+ /* Underlying functions */
+-- 
+2.30.2
+

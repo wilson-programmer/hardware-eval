@@ -1,0 +1,32 @@
+From 1ed3661879ce85188b8ef295f4e388221292b3f9 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Thu, 15 Jul 2021 09:34:03 +0200
+Subject: [PATCH] build: fix %.s: %.S rule
+
+Fixes: e321576f4047 ("xen/build: start using if_changed")
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: d468f9522174114ab06239894b6079c0a487e408
+master date: 2021-07-05 16:47:51 +0200
+---
+ xen/Rules.mk | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/Rules.mk b/xen/Rules.mk
+index 62e9fabe7a..93f49af2eb 100644
+--- a/xen/Rules.mk
++++ b/xen/Rules.mk
+@@ -206,8 +206,8 @@ cmd_cpp_i_c = $(CPP) $(filter-out -Wa$(comma)%,$(c_flags)) -MQ $@ -o $@ $<
+ quiet_cmd_cc_s_c = CC      $@
+ cmd_cc_s_c = $(CC) $(filter-out -Wa$(comma)%,$(c_flags)) -S $< -o $@
+ 
+-quiet_cmd_s_S = CPP     $@
+-cmd_s_S = $(CPP) $(filter-out -Wa$(comma)%,$(a_flags)) -MQ $@ -o $@ $<
++quiet_cmd_cpp_s_S = CPP     $@
++cmd_cpp_s_S = $(CPP) $(filter-out -Wa$(comma)%,$(a_flags)) -MQ $@ -o $@ $<
+ 
+ %.i: %.c FORCE
+ 	$(call if_changed,cpp_i_c)
+-- 
+2.30.2
+

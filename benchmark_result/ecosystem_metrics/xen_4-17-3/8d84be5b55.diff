@@ -1,0 +1,45 @@
+From 8d84be5b557b27e9cc53e48285aebad28a48468c Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Mon, 21 Aug 2023 15:53:47 +0200
+Subject: [PATCH] libxl: Use XEN_LIB_DIR to store bootloader from pygrub
+
+In osstest, the jobs using pygrub on arm64 on the branch linux-linus
+started to fails with:
+    [Errno 28] No space left on device
+    Error writing temporary copy of ramdisk
+
+This is because /var/run is small when dom0 has only 512MB to work
+with, /var/run is only 40MB. The size of both kernel and ramdisk on
+this jobs is now about 42MB, so not enough space in /var/run.
+
+So, to avoid writing a big binary in ramfs, we will use /var/lib
+instead, like we already do when saving the device model state on
+migration.
+
+Reported-by: Jan Beulich <jbeulich@suse.com>
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Reviewed-by: Jason Andryuk <jandryuk@gmail.com>
+master commit: ad89640ad766d3cb6c92fc8b6406ca6bbab44136
+master date: 2023-08-08 09:45:20 +0200
+---
+ tools/libs/light/libxl_bootloader.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/libs/light/libxl_bootloader.c b/tools/libs/light/libxl_bootloader.c
+index 1bc6e51827..108329b4a5 100644
+--- a/tools/libs/light/libxl_bootloader.c
++++ b/tools/libs/light/libxl_bootloader.c
+@@ -245,8 +245,8 @@ static void bootloader_cleanup(libxl__egc *egc, libxl__bootloader_state *bl)
+ static void bootloader_setpaths(libxl__gc *gc, libxl__bootloader_state *bl)
+ {
+     uint32_t domid = bl->domid;
+-    bl->outputdir = GCSPRINTF(XEN_RUN_DIR "/bootloader.%"PRIu32".d", domid);
+-    bl->outputpath = GCSPRINTF(XEN_RUN_DIR "/bootloader.%"PRIu32".out", domid);
++    bl->outputdir = GCSPRINTF(XEN_LIB_DIR "/bootloader.%"PRIu32".d", domid);
++    bl->outputpath = GCSPRINTF(XEN_LIB_DIR "/bootloader.%"PRIu32".out", domid);
+ }
+ 
+ /* Callbacks */
+-- 
+2.30.2
+

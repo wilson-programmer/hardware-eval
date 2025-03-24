@@ -1,0 +1,80 @@
+From 658cd63002fc169750b88c9a180291360d1c1274 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 19 Jul 2019 16:08:28 +0200
+Subject: [PATCH] tools: re-sync CPUID leaf 7 tables
+
+Bring libxl's in line with the public header, and update xen-cpuid's to
+the latest information available in Intel's documentation (SDM ver 068
+and ISA extensions ver 035), with (as before) the exception on MAWAU.
+
+Some pre-existing strings get changed to match SDM naming. This should
+be benign in xen-cpuid, and I hope it's also acceptable in libxl, where
+people actually using the slightly wrong names would have to update
+their guest config files.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+[Backport restricted to just xen-cpuid.c]
+master commit: 787619a0640ed79650305fc21f70d48e0726e7c7
+master date: 2019-03-14 16:38:39 +0100
+---
+ tools/misc/xen-cpuid.c | 22 ++++++++++++++++------
+ 1 file changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/tools/misc/xen-cpuid.c b/tools/misc/xen-cpuid.c
+index f67ecd3f1d..40b739d20d 100644
+--- a/tools/misc/xen-cpuid.c
++++ b/tools/misc/xen-cpuid.c
+@@ -104,8 +104,8 @@ static const char *str_7b0[32] =
+     [14] = "mpx",      [15] = "pqe",
+     [16] = "avx512f",  [17] = "avx512dq",
+     [18] = "rdseed",   [19] = "adx",
+-    [20] = "smap",     [21] = "avx512ifma",
+-    [22] = "pcomit",   [23] = "clflushopt",
++    [20] = "smap",     [21] = "avx512-ifma",
++    [22] = "pcommit",  [23] = "clflushopt",
+     [24] = "clwb",     [25] = "pt",
+     [26] = "avx512pf", [27] = "avx512er",
+     [28] = "avx512cd", [29] = "sha",
+@@ -120,13 +120,20 @@ static const char *str_Da1[32] =
+ 
+ static const char *str_7c0[32] =
+ {
+-    [ 0] = "prechwt1", [ 1] = "avx512vbmi",
+-    [ 2] = "umip",     [ 3] = "pku",
+-    [ 4] = "ospke",
+-
++    [ 0] = "prefetchwt1",      [ 1] = "avx512_vbmi",
++    [ 2] = "umip",             [ 3] = "pku",
++    [ 4] = "ospke",            [ 5] = "waitpkg",
++    [ 6] = "avx512_vbmi2",
++    [ 8] = "gfni",             [ 9] = "vaes",
++    [10] = "vpclmulqdq",       [11] = "avx512_vnni",
++    [12] = "avx512_bitalg",
+     [14] = "avx512_vpopcntdq",
+ 
+     [22] = "rdpid",
++    /* 24 */                   [25] = "cldemote",
++    /* 26 */                   [27] = "movdiri",
++    [28] = "movdir64b",
++    [30] = "sgx_lc",
+ };
+ 
+ static const char *str_e7d[32] =
+@@ -145,10 +152,13 @@ static const char *str_e8b[32] =
+ static const char *str_7d0[32] =
+ {
+     [ 2] = "avx512_4vnniw", [ 3] = "avx512_4fmaps",
++    [ 4] = "fsrm",
+ 
+     [10] = "md-clear",
+     /* 12 */                [13] = "tsx-force-abort",
+ 
++    [18] = "pconfig",
++
+     [26] = "ibrsb",         [27] = "stibp",
+     [28] = "l1d_flush",     [29] = "arch_caps",
+     /* 30 */                [31] = "ssbd",
+-- 
+2.30.2
+

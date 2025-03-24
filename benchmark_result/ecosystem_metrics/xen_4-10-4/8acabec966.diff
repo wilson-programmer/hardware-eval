@@ -1,0 +1,60 @@
+From 8acabec966263f90ad493e4af2642947c0c43d23 Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Wed, 22 May 2019 15:09:32 +0100
+Subject: [PATCH] xen_disk: Disable file locking for the PV disk backend
+
+Since QEMU 2.10 (or qemu-xen-4.10), qemu locks disk images to avoid
+them been re-opened in a different qemu process.
+
+With Xen, there are two issues:
+- For HVM guests, a disk image can be open twice! One by the
+  emulation driver, and one by the PV backend.
+- During migration, the qemu process of the newly spawned domain may
+  attempt to access the disk image before the domain been migrated
+  and the qemu process are been completely destroyed.
+
+Migration of HVM guest as been taken care of in libxl, but migration
+of PV guest with qdisk and HVM guest attempting to access the PV disk
+before unplugging the emulated disk are still an issue.
+
+For these reasons, we don't want to have QEMU use a locking mechanism
+with the PV backend.
+
+This is already done by db9ff46eeb in QEMU upstream, or QEMU 4.0.
+
+Affected version of QEMU are:
+- qemu-xen of Xen 4.10 and 4.11
+- QEMU 2.10, 2.11, 2.12, 3.0 and 3.1
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+---
+ hw/block/xen_disk.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/hw/block/xen_disk.c b/hw/block/xen_disk.c
+index 536e2ee735..74ac01b960 100644
+--- a/hw/block/xen_disk.c
++++ b/hw/block/xen_disk.c
+@@ -1090,11 +1090,18 @@ static int blk_connect(struct XenDevice *xendev)
+         Error *local_err = NULL;
+         QDict *options = NULL;
+ 
++        options = qdict_new();
++
+         if (strcmp(blkdev->fileproto, "<unset>")) {
+-            options = qdict_new();
+             qdict_put_str(options, "driver", blkdev->fileproto);
+         }
+ 
++        /*
++         * It is necessary to turn file locking off as an emulated device
++         * may have already opened the same image file.
++         */
++        qdict_put_str(options, "file.locking", "off");
++
+         /* setup via xenbus -> create new block driver instance */
+         xen_pv_printf(&blkdev->xendev, 2, "create new bdrv (xenbus setup)\n");
+         blkdev->blk = blk_new_open(blkdev->filename, NULL, options,
+-- 
+2.30.2
+

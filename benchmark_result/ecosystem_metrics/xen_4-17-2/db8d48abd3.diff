@@ -1,0 +1,48 @@
+From db8d48abd38e20abe162fcb0cba2c244b9c6adba Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edwin.torok@cloud.com>
+Date: Thu, 3 Aug 2023 16:29:05 +0200
+Subject: [PATCH] ocaml/libs/xc: Fix NULL dereference with physinfo_arch_caps()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+`Tag_cons` is `0` and is meant to be used as the tag argument for
+`caml_alloc`/`caml_alloc_small` when constructing a non-empty list.
+
+The empty list is `Val_emptylist` instead, which is really just `Val_int(0)`.
+
+Assigning `0` to a list value like this is equivalent to assigning the naked
+pointer `NULL` to the field.  Naked pointers are not valid in OCaml 5, however
+even in OCaml <5.x any attempt to iterate on the list will lead to a segfault.
+
+The list currently only has an opaque type, so no code would have reason to
+iterate on it currently, but we shouldn't construct invalid OCaml values that
+might lead to a crash when exploring the type.
+
+`Val_emptylist` is available since OCaml 3.01 as a constant.
+
+Fixes: e5ac68a0110c ("x86/hvm: Revert per-domain APIC acceleration support")
+Signed-off-by: Edwin TÃ¶rÃ¶k <edwin.torok@cloud.com>
+Acked-by: Christian Lindig <christian.lindig@cloud.com>
+master commit: 99e45548934923f0d2c1d52ae1239ffe4ef17a06
+master date: 2023-07-13 11:06:07 +0100
+---
+ tools/ocaml/libs/xc/xenctrl_stubs.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/ocaml/libs/xc/xenctrl_stubs.c b/tools/ocaml/libs/xc/xenctrl_stubs.c
+index facb561577..7de2ff5444 100644
+--- a/tools/ocaml/libs/xc/xenctrl_stubs.c
++++ b/tools/ocaml/libs/xc/xenctrl_stubs.c
+@@ -748,7 +748,7 @@ CAMLprim value stub_xc_physinfo(value xch)
+ 	Store_field(physinfo, 9, Val_int(c_physinfo.max_cpu_id + 1));
+ 
+ #if defined(__i386__) || defined(__x86_64__)
+-	arch_cap_list = Tag_cons;
++	arch_cap_list = Val_emptylist;
+ 
+ 	arch_cap_flags_tag = 1; /* tag x86 */
+ #else
+-- 
+2.30.2
+

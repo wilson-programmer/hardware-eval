@@ -1,0 +1,100 @@
+From fe02a5342d3ef372ac8eea12dcdbdf3ff7c47379 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Alex=20Benn=C3=A9e?= <alex.bennee@linaro.org>
+Date: Thu, 28 Apr 2022 11:34:10 +0100
+Subject: [PATCH] xen/arm: p2m don't fall over on FEAT_LPA enabled hw
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+When we introduced FEAT_LPA to QEMU's -cpu max we discovered older
+kernels had a bug where the physical address was copied directly from
+ID_AA64MMFR0_EL1.PARange field. The early cpu_init code of Xen commits
+the same error by blindly copying across the max supported range.
+
+Unsurprisingly when the page tables aren't set up for these greater
+ranges hilarity ensues and the hypervisor crashes fairly early on in
+the boot-up sequence. This happens when we write to the control
+register in enable_mmu().
+
+Attempt to fix this the same way as the Linux kernel does by gating
+PARange to the maximum the hypervisor can handle. I also had to fix up
+code in p2m which panics when it sees an "invalid" entry in PARange.
+
+Signed-off-by: Alex BennÃ©e <alex.bennee@linaro.org>
+Cc: Richard Henderson <richard.henderson@linaro.org>
+Cc: Stefano Stabellini <sstabellini@kernel.org>
+Cc: Julien Grall <julien@xen.org>
+Cc: Volodymyr Babchuk <Volodymyr_Babchuk@epam.com>
+Cc: Bertrand Marquis <bertrand.marquis@arm.com>
+Tested-by: Luca Fancellu <luca.fancellu@arm.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 407b13a71e324aba76b11e5f66f59ce4a304a088)
+---
+ xen/arch/arm/arm64/head.S |  6 ++++++
+ xen/arch/arm/p2m.c        | 10 +++++-----
+ 2 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/xen/arch/arm/arm64/head.S b/xen/arch/arm/arm64/head.S
+index aa1f88c764..057dd5d925 100644
+--- a/xen/arch/arm/arm64/head.S
++++ b/xen/arch/arm/arm64/head.S
+@@ -473,6 +473,12 @@ cpu_init:
+         ldr   x0, =(TCR_RES1|TCR_SH0_IS|TCR_ORGN0_WBWA|TCR_IRGN0_WBWA|TCR_T0SZ(64-48))
+         /* ID_AA64MMFR0_EL1[3:0] (PARange) corresponds to TCR_EL2[18:16] (PS) */
+         mrs   x1, ID_AA64MMFR0_EL1
++        /* Limit to 48 bits, 256TB PA range (#5) */
++        ubfm  x1, x1, #0, #3
++        mov   x2, #5
++        cmp   x1, x2
++        csel  x1, x1, x2, lt
++
+         bfi   x0, x1, #16, #3
+ 
+         msr   tcr_el2, x0
+diff --git a/xen/arch/arm/p2m.c b/xen/arch/arm/p2m.c
+index fb71fa4c1c..3349b464a3 100644
+--- a/xen/arch/arm/p2m.c
++++ b/xen/arch/arm/p2m.c
+@@ -32,10 +32,10 @@ static unsigned int __read_mostly max_vmid = MAX_VMID_8_BIT;
+ #define P2M_ROOT_PAGES    (1<<P2M_ROOT_ORDER)
+ 
+ /*
+- * Set larger than any possible value, so the number of IPA bits can be
++ * Set to the maximum configured support for IPA bits, so the number of IPA bits can be
+  * restricted by external entity (e.g. IOMMU).
+  */
+-unsigned int __read_mostly p2m_ipa_bits = 64;
++unsigned int __read_mostly p2m_ipa_bits = PADDR_BITS;
+ 
+ /* Helpers to lookup the properties of each level */
+ static const paddr_t level_masks[] =
+@@ -2030,7 +2030,7 @@ void __init setup_virt_paging(void)
+         unsigned int root_order; /* Page order of the root of the p2m */
+         unsigned int sl0;    /* Desired SL0, maximum in comment */
+     } pa_range_info[] = {
+-        /* T0SZ minimum and SL0 maximum from ARM DDI 0487A.b Table D4-5 */
++        /* T0SZ minimum and SL0 maximum from ARM DDI 0487H.a Table D5-6 */
+         /*      PA size, t0sz(min), root-order, sl0(max) */
+         [0] = { 32,      32/*32*/,  0,          1 },
+         [1] = { 36,      28/*28*/,  0,          1 },
+@@ -2038,7 +2038,7 @@ void __init setup_virt_paging(void)
+         [3] = { 42,      22/*22*/,  3,          1 },
+         [4] = { 44,      20/*20*/,  0,          2 },
+         [5] = { 48,      16/*16*/,  0,          2 },
+-        [6] = { 0 }, /* Invalid */
++        [6] = { 52,      12/*12*/,  3,          3 },
+         [7] = { 0 }  /* Invalid */
+     };
+ 
+@@ -2069,7 +2069,7 @@ void __init setup_virt_paging(void)
+         }
+     }
+ 
+-    /* pa_range is 4 bits, but the defined encodings are only 3 bits */
++    /* pa_range is 4 bits but we don't support all modes */
+     if ( pa_range >= ARRAY_SIZE(pa_range_info) || !pa_range_info[pa_range].pabits )
+         panic("Unknown encoding of ID_AA64MMFR0_EL1.PARange %x\n", pa_range);
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,54 @@
+From e312149348738d914aee08287be01a9ce0901ead Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Thu, 5 Mar 2020 10:53:21 +0100
+Subject: [PATCH] x86/time: update TSC stamp on restore from deep C-state
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+If ITSC is not available on CPU (e.g if running nested as PV shim)
+then X86_FEATURE_NONSTOP_TSC is not advertised in certain cases, i.e.
+all AMD and some old Intel processors. In which case TSC would need to
+be restored on CPU from platform time by Xen upon exiting C-states.
+
+As platform time might be behind the last TSC stamp recorded for the
+current CPU, invariant of TSC stamp being always behind local TSC counter
+is violated. This has an effect of get_s_time() going negative resulting
+in eventual system hang or crash.
+
+Fix this issue by updating local TSC stamp along with TSC counter write.
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: bbf283f853f8c0e4d29248dd44d3b0e0abc07629
+master date: 2020-01-17 16:11:20 +0100
+---
+ xen/arch/x86/time.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/time.c b/xen/arch/x86/time.c
+index 27a3a10250..07097c2337 100644
+--- a/xen/arch/x86/time.c
++++ b/xen/arch/x86/time.c
+@@ -857,10 +857,16 @@ u64 stime2tsc(s_time_t stime)
+ 
+ void cstate_restore_tsc(void)
+ {
++    struct cpu_time *t = &this_cpu(cpu_time);
++
+     if ( boot_cpu_has(X86_FEATURE_NONSTOP_TSC) )
+         return;
+ 
+-    write_tsc(stime2tsc(read_platform_stime(NULL)));
++    t->stamp.master_stime = read_platform_stime(NULL);
++    t->stamp.local_tsc = stime2tsc(t->stamp.master_stime);
++    t->stamp.local_stime = t->stamp.master_stime;
++
++    write_tsc(t->stamp.local_tsc);
+ }
+ 
+ /***************************************************************************
+-- 
+2.30.2
+

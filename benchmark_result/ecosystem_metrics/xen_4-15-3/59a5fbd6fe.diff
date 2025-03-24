@@ -1,0 +1,50 @@
+From 59a5fbd6fe7a23f95e5c9bef064f9548e32feea6 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 16 Feb 2022 16:02:34 +0100
+Subject: [PATCH] libxl: force netback to wait for hotplug execution before
+ connecting
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+By writing an empty "hotplug-status" xenstore node in the backend path
+libxl can force Linux netback to wait for hotplug script execution
+before proceeding to the 'connected' state.
+
+This is required so that netback doesn't skip state 2 (InitWait) and
+thus blocks libxl waiting for such state in order to launch the
+hotplug script (see libxl__wait_device_connection).
+
+Reported-by: James Dingwall <james-xen@dingwall.me.uk>
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Tested-by: James Dingwall <james-xen@dingwall.me.uk>
+Reviewed-by: Paul Durrant <paul@xen.org>
+Tested-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Wei Liu <wei.liu@kernel.org>
+master commit: 0bdc43c8dec993258e930b34855853c22b917519
+master date: 2022-01-27 13:51:19 +0100
+---
+ tools/libs/light/libxl_nic.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/tools/libs/light/libxl_nic.c b/tools/libs/light/libxl_nic.c
+index 0b45469dca..0b9e70c9d1 100644
+--- a/tools/libs/light/libxl_nic.c
++++ b/tools/libs/light/libxl_nic.c
+@@ -248,6 +248,13 @@ static int libxl__set_xenstore_nic(libxl__gc *gc, uint32_t domid,
+     flexarray_append(ro_front, "mtu");
+     flexarray_append(ro_front, GCSPRINTF("%u", nic->mtu));
+ 
++    /*
++     * Force backend to wait for hotplug script execution before switching to
++     * connected state.
++     */
++    flexarray_append(back, "hotplug-status");
++    flexarray_append(back, "");
++
+     return 0;
+ }
+ 
+-- 
+2.30.2
+

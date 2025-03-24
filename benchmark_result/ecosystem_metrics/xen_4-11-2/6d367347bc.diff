@@ -1,0 +1,77 @@
+From 6d367347bc175caedf66c8e68f66a23be8f298c2 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Fri, 30 Nov 2018 17:15:33 +0000
+Subject: [PATCH] xen/arm: gic: Make sure the number of interrupt lines is
+ valid before using it
+
+GICv2 and GICv3 supports up to 1020 interrupts. However, the value computed
+from GICD_TYPER.ITLinesNumber can be up to 1024. On GICv3, we will end up to
+write in reserved registers that are right after the IROUTERs one as the
+value is not capped early enough.
+
+Cap the number of interrupts as soon as we compute it so we know we can
+safely using it afterwards.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reported-by: Jan-Peter Larsson <Jan-Peter.Larsson@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+Release-Acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 30f5047b2c4e577436b505ba7627f34c3be02014)
+---
+ xen/arch/arm/gic-v2.c | 7 ++++---
+ xen/arch/arm/gic-v3.c | 7 ++++---
+ 2 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/xen/arch/arm/gic-v2.c b/xen/arch/arm/gic-v2.c
+index d2dcafb6a3..d01b9c6aab 100644
+--- a/xen/arch/arm/gic-v2.c
++++ b/xen/arch/arm/gic-v2.c
+@@ -353,6 +353,10 @@ static void __init gicv2_dist_init(void)
+ 
+     type = readl_gicd(GICD_TYPER);
+     nr_lines = 32 * ((type & GICD_TYPE_LINES) + 1);
++    /* Only 1020 interrupts are supported */
++    nr_lines = min(1020U, nr_lines);
++    gicv2_info.nr_lines = nr_lines;
++
+     gic_cpus = 1 + ((type & GICD_TYPE_CPUS) >> 5);
+     printk("GICv2: %d lines, %d cpu%s%s (IID %8.8x).\n",
+            nr_lines, gic_cpus, (gic_cpus == 1) ? "" : "s",
+@@ -377,9 +381,6 @@ static void __init gicv2_dist_init(void)
+     for ( i = 32; i < nr_lines; i += 32 )
+         writel_gicd(~0x0, GICD_ICENABLER + (i / 32) * 4);
+ 
+-    /* Only 1020 interrupts are supported */
+-    gicv2_info.nr_lines = min(1020U, nr_lines);
+-
+     /* Turn on the distributor */
+     writel_gicd(GICD_CTL_ENABLE, GICD_CTLR);
+ }
+diff --git a/xen/arch/arm/gic-v3.c b/xen/arch/arm/gic-v3.c
+index a6ed0d8f22..f53a3fe65e 100644
+--- a/xen/arch/arm/gic-v3.c
++++ b/xen/arch/arm/gic-v3.c
+@@ -609,6 +609,10 @@ static void __init gicv3_dist_init(void)
+     if ( type & GICD_TYPE_LPIS )
+         gicv3_lpi_init_host_lpis(GICD_TYPE_ID_BITS(type));
+ 
++    /* Only 1020 interrupts are supported */
++    nr_lines = min(1020U, nr_lines);
++    gicv3_info.nr_lines = nr_lines;
++
+     printk("GICv3: %d lines, (IID %8.8x).\n",
+            nr_lines, readl_relaxed(GICD + GICD_IIDR));
+ 
+@@ -648,9 +652,6 @@ static void __init gicv3_dist_init(void)
+ 
+     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i++ )
+         writeq_relaxed(affinity, GICD + GICD_IROUTER + i * 8);
+-
+-    /* Only 1020 interrupts are supported */
+-    gicv3_info.nr_lines = min(1020U, nr_lines);
+ }
+ 
+ static int gicv3_enable_redist(void)
+-- 
+2.30.2
+

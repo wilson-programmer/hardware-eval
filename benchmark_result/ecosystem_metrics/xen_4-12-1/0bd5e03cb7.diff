@@ -1,0 +1,164 @@
+From 0bd5e03cb75a3b1a2881f3162342064ceeae3c77 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Wed, 15 May 2019 09:40:00 +0200
+Subject: [PATCH] xen/timers: Fix memory leak with cpu unplug/plug
+
+timer_softirq_action() realloc's itself a larger timer heap whenever
+necessary, which includes bootstrapping from the empty dummy_heap.  Nothing
+ever freed this allocation.
+
+CPU plug and unplug has the side effect of zeroing the percpu data area, which
+clears ts->heap.  This in turn causes new timers to be put on the list rather
+than the heap, and for timer_softirq_action() to bootstrap itself again.
+
+This in practice leaks ts->heap every time a CPU is unplugged and replugged.
+
+Implement free_percpu_timers() which includes freeing ts->heap when
+appropriate, and update the notifier callback with the recent cpu parking
+logic and free-avoidance across suspend.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+
+xen/cpu: Fix ARM build following c/s 597fbb8
+
+c/s 597fbb8 "xen/timers: Fix memory leak with cpu unplug/plug" broke the ARM
+build by being the first patch to add park_offline_cpus to common code.
+
+While it is currently specific to Intel hardware (for reasons of being able to
+handle machine check exceptions without an immediate system reset), it isn't
+inherently architecture specific, so define it to be false on ARM for now.
+
+Add a comment in both smp.h headers explaining the intended behaviour of the
+option.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Wei Liu <wei.liu2@citrix.com>
+
+timers: move back migrate_timers_from_cpu() invocation
+
+Commit 597fbb8be6 ("xen/timers: Fix memory leak with cpu unplug/plug")
+went a little too far: Migrating timers away from a CPU being offlined
+needs to heppen independent of whether it get parked or fully offlined.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+
+xen/timers: Fix memory leak with cpu unplug/plug (take 2)
+
+Previous attempts to fix this leak failed to identify the root cause, and
+ultimately failed.  The cause is the CPU_UP_PREPARE case (re)initialising
+ts->heap back to dummy_heap, which leaks the previous allocation.
+
+Rearrange the logic to only initialise ts once.  This also avoids the
+redundant (but benign, due to ts->inactive always being empty) initialising of
+the other ts fields.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 597fbb8be6021440cd53493c14201c32671bade1
+master date: 2019-04-08 11:16:06 +0100
+master commit: a6448adfd3d537aacbbd784e5bf1777ab3ff5f85
+master date: 2019-04-09 10:12:57 +0100
+master commit: 1aec95350ac8261cba516371710d4d837c26f6a0
+master date: 2019-04-15 17:51:30 +0100
+master commit: e978e9ed9e1ff0dc326e72708ed03cac2ba41db8
+master date: 2019-05-13 10:35:37 +0100
+---
+ xen/common/timer.c        | 34 +++++++++++++++++++++++++++++++---
+ xen/include/asm-arm/smp.h |  6 ++++++
+ xen/include/asm-x86/smp.h |  4 ++++
+ 3 files changed, 41 insertions(+), 3 deletions(-)
+
+diff --git a/xen/common/timer.c b/xen/common/timer.c
+index 376581bd54..12fcd952fd 100644
+--- a/xen/common/timer.c
++++ b/xen/common/timer.c
+@@ -601,6 +601,20 @@ static void migrate_timers_from_cpu(unsigned int old_cpu)
+ 
+ static struct timer *dummy_heap;
+ 
++static void free_percpu_timers(unsigned int cpu)
++{
++    struct timers *ts = &per_cpu(timers, cpu);
++
++    ASSERT(GET_HEAP_SIZE(ts->heap) == 0);
++    if ( GET_HEAP_LIMIT(ts->heap) )
++    {
++        xfree(ts->heap);
++        ts->heap = &dummy_heap;
++    }
++    else
++        ASSERT(ts->heap == &dummy_heap);
++}
++
+ static int cpu_callback(
+     struct notifier_block *nfb, unsigned long action, void *hcpu)
+ {
+@@ -610,14 +624,28 @@ static int cpu_callback(
+     switch ( action )
+     {
+     case CPU_UP_PREPARE:
+-        INIT_LIST_HEAD(&ts->inactive);
+-        spin_lock_init(&ts->lock);
+-        ts->heap = &dummy_heap;
++        /* Only initialise ts once. */
++        if ( !ts->heap )
++        {
++            INIT_LIST_HEAD(&ts->inactive);
++            spin_lock_init(&ts->lock);
++            ts->heap = &dummy_heap;
++        }
+         break;
++
+     case CPU_UP_CANCELED:
+     case CPU_DEAD:
+         migrate_timers_from_cpu(cpu);
++
++        if ( !park_offline_cpus && system_state != SYS_STATE_suspend )
++            free_percpu_timers(cpu);
++        break;
++
++    case CPU_REMOVE:
++        if ( park_offline_cpus )
++            free_percpu_timers(cpu);
+         break;
++
+     default:
+         break;
+     }
+diff --git a/xen/include/asm-arm/smp.h b/xen/include/asm-arm/smp.h
+index 3c122681d7..fdbcefa241 100644
+--- a/xen/include/asm-arm/smp.h
++++ b/xen/include/asm-arm/smp.h
+@@ -14,6 +14,12 @@ DECLARE_PER_CPU(cpumask_var_t, cpu_core_mask);
+ 
+ #define raw_smp_processor_id() (get_processor_id())
+ 
++/*
++ * Do we, for platform reasons, need to actually keep CPUs online when we
++ * would otherwise prefer them to be off?
++ */
++#define park_offline_cpus false
++
+ extern void noreturn stop_cpu(void);
+ 
+ extern int arch_smp_init(void);
+diff --git a/xen/include/asm-x86/smp.h b/xen/include/asm-x86/smp.h
+index 09c55458df..9f533f9072 100644
+--- a/xen/include/asm-x86/smp.h
++++ b/xen/include/asm-x86/smp.h
+@@ -26,6 +26,10 @@ DECLARE_PER_CPU(cpumask_var_t, cpu_sibling_mask);
+ DECLARE_PER_CPU(cpumask_var_t, cpu_core_mask);
+ DECLARE_PER_CPU(cpumask_var_t, scratch_cpumask);
+ 
++/*
++ * Do we, for platform reasons, need to actually keep CPUs online when we
++ * would otherwise prefer them to be off?
++ */
+ extern bool park_offline_cpus;
+ 
+ void smp_send_nmi_allbutself(void);
+-- 
+2.30.2
+

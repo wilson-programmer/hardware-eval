@@ -1,0 +1,50 @@
+From 237c31b5a1d5aa88cdb59b8c31b1b62eb13e82d1 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 1 Jun 2018 14:08:59 +0100
+Subject: [PATCH] x86/traps: Fix error handling of the pv %dr7 shadow state
+
+c/s "x86/pv: Introduce and use x86emul_write_dr()" fixed a bug with IO shadow
+handling, in that it remained stale and visible until %dr7.L/G got set again.
+
+However, it neglected the -EPERM return inbetween these two hunks, introducing
+a different bug in which a write to %dr7 which tries to set IO breakpoints
+without %cr4.DE being set clobbers the IO state, rather than leaves it alone.
+
+Instead, move the zeroing slightly later, which guarentees that the shadow
+gets written exactly once, on a successful update to %dr7.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+---
+ xen/arch/x86/traps.c | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
+index 8a99174b67..e79ca883d7 100644
+--- a/xen/arch/x86/traps.c
++++ b/xen/arch/x86/traps.c
+@@ -2123,9 +2123,6 @@ long set_debugreg(struct vcpu *v, unsigned int reg, unsigned long value)
+         if ( value & DR_GENERAL_DETECT )
+             return -EPERM;
+ 
+-        /* Zero the IO shadow before recalculating the real %dr7 */
+-        v->arch.debugreg[5] = 0;
+-
+         /* DR7.{G,L}E = 0 => debugging disabled for this domain. */
+         if ( value & DR7_ACTIVE_MASK )
+         {
+@@ -2154,6 +2151,10 @@ long set_debugreg(struct vcpu *v, unsigned int reg, unsigned long value)
+                  !(v->arch.debugreg[7] & DR7_ACTIVE_MASK) )
+                 activate_debugregs(v);
+         }
++        else
++            /* Zero the emulated controls if %dr7 isn't active. */
++            v->arch.debugreg[5] = 0;
++
+         if ( v == curr )
+             write_debugreg(7, value);
+         break;
+-- 
+2.30.2
+

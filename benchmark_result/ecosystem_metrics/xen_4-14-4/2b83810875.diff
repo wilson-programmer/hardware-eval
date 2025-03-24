@@ -1,0 +1,96 @@
+From 2b8381087593c3df274baa94fadbe2b89cd28158 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 19 Nov 2021 09:39:46 +0100
+Subject: [PATCH] x86/shstk: Fix use of shadow stacks with XPTI active
+
+The call to setup_cpu_root_pgt(0) in smp_prepare_cpus() is too early.  It
+clones the BSP's stack while the .data mapping is still in use, causing all
+mappings to be fully read read/write (and with no guard pages either).  This
+ultimately causes #DF when trying to enter the dom0 kernel for the first time.
+
+Defer setting up BSPs XPTI pagetable until reinit_bsp_stack() after we've set
+up proper shadow stack permissions.
+
+Fixes: 60016604739b ("x86/shstk: Rework the stack layout to support shadow stacks")
+Fixes: b60ab42db2f0 ("x86/shstk: Activate Supervisor Shadow Stacks")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: b2851580b1f2ff121737a37cb25a370d7692ae3b
+master date: 2021-11-03 13:08:42 +0000
+---
+ xen/arch/x86/setup.c   | 5 +++++
+ xen/arch/x86/smpboot.c | 9 ++-------
+ xen/include/xen/smp.h  | 1 +
+ 3 files changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/xen/arch/x86/setup.c b/xen/arch/x86/setup.c
+index 01d58e4879..14654ee4df 100644
+--- a/xen/arch/x86/setup.c
++++ b/xen/arch/x86/setup.c
+@@ -658,6 +658,7 @@ static void noinline init_done(void)
+ static void __init noreturn reinit_bsp_stack(void)
+ {
+     unsigned long *stack = (void*)(get_stack_bottom() & ~(STACK_SIZE - 1));
++    int rc;
+ 
+     /* Update TSS and ISTs */
+     load_system_tables();
+@@ -668,6 +669,10 @@ static void __init noreturn reinit_bsp_stack(void)
+     stack_base[0] = stack;
+     memguard_guard_stack(stack);
+ 
++    rc = setup_cpu_root_pgt(0);
++    if ( rc )
++        panic("Error %d setting up PV root page table\n", rc);
++
+     if ( IS_ENABLED(CONFIG_XEN_SHSTK) && cpu_has_xen_shstk )
+     {
+         wrmsrl(MSR_PL0_SSP,
+diff --git a/xen/arch/x86/smpboot.c b/xen/arch/x86/smpboot.c
+index 67e727cebd..64503df8e1 100644
+--- a/xen/arch/x86/smpboot.c
++++ b/xen/arch/x86/smpboot.c
+@@ -785,7 +785,7 @@ static root_pgentry_t common_pgt;
+ 
+ extern const char _stextentry[], _etextentry[];
+ 
+-static int setup_cpu_root_pgt(unsigned int cpu)
++int setup_cpu_root_pgt(unsigned int cpu)
+ {
+     root_pgentry_t *rpt;
+     unsigned int off;
+@@ -1102,8 +1102,6 @@ static struct notifier_block cpu_smpboot_nfb = {
+ 
+ void __init smp_prepare_cpus(void)
+ {
+-    int rc;
+-
+     register_cpu_notifier(&cpu_smpboot_nfb);
+ 
+     mtrr_aps_sync_begin();
+@@ -1117,10 +1115,7 @@ void __init smp_prepare_cpus(void)
+ 
+     stack_base[0] = (void *)((unsigned long)stack_start & ~(STACK_SIZE - 1));
+ 
+-    rc = setup_cpu_root_pgt(0);
+-    if ( rc )
+-        panic("Error %d setting up PV root page table\n", rc);
+-    if ( per_cpu(root_pgt, 0) )
++    if ( opt_xpti_hwdom || opt_xpti_domu )
+     {
+         get_cpu_info()->pv_cr3 = 0;
+ 
+diff --git a/xen/include/xen/smp.h b/xen/include/xen/smp.h
+index d5a3644611..0a9219173f 100644
+--- a/xen/include/xen/smp.h
++++ b/xen/include/xen/smp.h
+@@ -70,5 +70,6 @@ int alloc_cpu_id(void);
+ extern void *stack_base[NR_CPUS];
+ 
+ void initialize_cpu_data(unsigned int cpu);
++int setup_cpu_root_pgt(unsigned int cpu);
+ 
+ #endif /* __XEN_SMP_H__ */
+-- 
+2.30.2
+

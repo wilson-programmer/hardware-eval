@@ -1,0 +1,87 @@
+From 65e1f3d289d7b35ee8eceaca1d5c4346d5562e04 Mon Sep 17 00:00:00 2001
+From: George Dunlap <george.dunlap@cloud.com>
+Date: Tue, 14 Nov 2023 13:52:27 +0100
+Subject: [PATCH] cxenstored: wait until after reset to notify dom0less domains
+
+Commit fc2b57c9a ("xenstored: send an evtchn notification on
+introduce_domain") introduced the sending of an event channel to the
+guest when first introduced, so that dom0less domains waiting for the
+connection would know that xenstore was ready to use.
+
+Unfortunately, it was introduced in introduce_domain(), which 1) is
+called by other functions, where such functionality is unneeded, and
+2) after the main XS_INTRODUCE call, calls domain_conn_reset().  This
+introduces a race condition, whereby if xenstored is delayed, a domain
+can wake up, send messages to the buffer, only to have them deleted by
+xenstore before finishing its processing of the XS_INTRODUCE message.
+
+Move the connect-and-notfy call into do_introduce() instead, after the
+domain_conn_rest(); predicated on the state being in the
+XENSTORE_RECONNECT state.
+
+(We don't need to check for "restoring", since that value is always
+passed as "false" from do_domain_introduce()).
+
+Also take the opportunity to add a missing wmb barrier after resetting
+the indexes of the ring in domain_conn_reset.
+
+This change will also remove an extra event channel notification for
+dom0 (because the notification is now done by do_introduce which is not
+called for dom0.) The extra dom0 event channel notification was only
+introduced by fc2b57c9a and was never present before. It is not needed
+because dom0 is the one to tell xenstored the connection parameters, so
+dom0 has to know that the ring page is setup correctly by the time
+xenstored starts looking at it. It is dom0 that performs the ring page
+init.
+
+Signed-off-by: George Dunlap <george.dunlap@cloud.com>
+Signed-off-by: Stefano Stabellini <stefano.stabellini@amd.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+master commit: e58bd71c097d04f001e0c6c2868a0aec03d25c63
+master date: 2023-10-17 13:56:55 -0700
+---
+ tools/xenstore/xenstored_domain.c | 14 ++++++++------
+ 1 file changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/tools/xenstore/xenstored_domain.c b/tools/xenstore/xenstored_domain.c
+index 6074df210c..ec91334c83 100644
+--- a/tools/xenstore/xenstored_domain.c
++++ b/tools/xenstore/xenstored_domain.c
+@@ -558,6 +558,7 @@ static void domain_conn_reset(struct domain *domain)
+ 
+ 	domain->interface->req_cons = domain->interface->req_prod = 0;
+ 	domain->interface->rsp_cons = domain->interface->rsp_prod = 0;
++	xen_wmb();
+ }
+ 
+ /*
+@@ -623,12 +624,6 @@ static struct domain *introduce_domain(const void *ctx,
+ 		/* Now domain belongs to its connection. */
+ 		talloc_steal(domain->conn, domain);
+ 
+-		if (!restore) {
+-			/* Notify the domain that xenstore is available */
+-			interface->connection = XENSTORE_CONNECTED;
+-			xenevtchn_notify(xce_handle, domain->port);
+-		}
+-
+ 		if (!is_master_domain && !restore)
+ 			fire_watches(NULL, ctx, "@introduceDomain", NULL,
+ 				     true, NULL);
+@@ -669,6 +664,13 @@ int do_introduce(const void *ctx, struct connection *conn,
+ 
+ 	domain_conn_reset(domain);
+ 
++	if (domain->interface != NULL &&
++	    domain->interface->connection == XENSTORE_RECONNECT) {
++		/* Notify the domain that xenstore is available */
++		domain->interface->connection = XENSTORE_CONNECTED;
++		xenevtchn_notify(xce_handle, domain->port);
++	}
++
+ 	send_ack(conn, XS_INTRODUCE);
+ 
+ 	return 0;
+-- 
+2.30.2
+

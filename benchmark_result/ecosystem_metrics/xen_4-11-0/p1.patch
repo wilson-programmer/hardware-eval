@@ -1,0 +1,48 @@
+From eb17ff9ce6a99a8761d3f4768703691f34043356 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 28 Jun 2018 09:39:45 +0200
+Subject: [PATCH] x86: guard against #NM
+
+Just in case we still don't get CR0.TS handling right, prevent a host
+crash by honoring exception fixups in do_device_not_available(). This
+would in particular cover emulator stubs raising #NM.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+master commit: 00cebd6f22beb6d5fa65ed2d8d1ff9acf59bce61
+master date: 2018-06-28 09:08:04 +0200
+---
+ xen/arch/x86/traps.c | 16 +++++++++++++++-
+ 1 file changed, 15 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/traps.c b/xen/arch/x86/traps.c
+index 3e05cf172c..9f045a2045 100644
+--- a/xen/arch/x86/traps.c
++++ b/xen/arch/x86/traps.c
+@@ -1749,7 +1749,21 @@ void do_device_not_available(struct cpu_user_regs *regs)
+ {
+     struct vcpu *curr = current;
+ 
+-    BUG_ON(!guest_mode(regs));
++    if ( !guest_mode(regs) )
++    {
++        unsigned long fixup = search_exception_table(regs);
++
++        gprintk(XENLOG_ERR, "#NM: %p [%ps] -> %p\n",
++                _p(regs->rip), _p(regs->rip), _p(fixup));
++        /*
++         * We shouldn't be able to reach here, but for release builds have
++         * the recovery logic in place nevertheless.
++         */
++        ASSERT_UNREACHABLE();
++        BUG_ON(!fixup);
++        regs->rip = fixup;
++        return;
++    }
+ 
+     vcpu_restore_fpu_lazy(curr);
+ 
+-- 
+2.30.2
+

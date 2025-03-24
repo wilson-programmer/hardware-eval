@@ -1,0 +1,33 @@
+From 8502a2cdcc61542930b25ea3e4261cf4bf3b1a41 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Wed, 16 Oct 2019 12:12:51 +0100
+Subject: [PATCH] xen/arm: setup: Calculate correctly the size of Xen
+
+The current size of Xen is computed using _end - _start + 1. However,
+_end is pointing one past the end of Xen, so the size of Xen is
+off-by-one.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 08e2059facd78d5ffaf206ba06ac2017c4adeed4)
+---
+ xen/arch/arm/setup.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/setup.c b/xen/arch/arm/setup.c
+index ff949f545a..4cb87ac9a3 100644
+--- a/xen/arch/arm/setup.c
++++ b/xen/arch/arm/setup.c
+@@ -726,7 +726,7 @@ void __init start_xen(unsigned long boot_phys_offset,
+     /* Register Xen's load address as a boot module. */
+     xen_bootmodule = add_boot_module(BOOTMOD_XEN,
+                              (paddr_t)(uintptr_t)(_start + boot_phys_offset),
+-                             (paddr_t)(uintptr_t)(_end - _start + 1), NULL);
++                             (paddr_t)(uintptr_t)(_end - _start), NULL);
+     BUG_ON(!xen_bootmodule);
+ 
+     xen_paddr = get_xen_paddr();
+-- 
+2.30.2
+

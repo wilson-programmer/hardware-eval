@@ -1,0 +1,85 @@
+From cf395f82c90b59367f01f96a2532e444b4257b74 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Fri, 8 Apr 2022 15:03:15 +0200
+Subject: [PATCH] livepatch: do not ignore sections with 0 size
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+A side effect of ignoring such sections is that symbols belonging to
+them won't be resolved, and that could make relocations belonging to
+other sections that reference those symbols fail.
+
+For example it's likely to have an empty .altinstr_replacement with
+symbols pointing to it, and marking the section as ignored will
+prevent the symbols from being resolved, which in turn will cause any
+relocations against them to fail.
+
+In order to solve this do not ignore sections with 0 size, only ignore
+sections that don't have the SHF_ALLOC flag set.
+
+Special case such empty sections in move_payload so they are not taken
+into account in order to decide whether a livepatch can be safely
+re-applied after a revert.
+
+Fixes: 98b728a7b2 ('livepatch: Disallow applying after an revert')
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Tested-by: Bjoern Doebel <doebel@amazon.de>
+Reviewed-by: Ross Lagerwall <ross.lagerwall@citrix.com>
+master commit: 0dc1f929e8fed681dec09ca3ea8de38202d5bf30
+master date: 2022-04-08 10:24:10 +0200
+---
+ xen/common/livepatch.c          | 16 +++++++++++-----
+ xen/include/xen/livepatch_elf.h |  2 +-
+ 2 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/xen/common/livepatch.c b/xen/common/livepatch.c
+index 329b01c1e8..65c7e37c4f 100644
+--- a/xen/common/livepatch.c
++++ b/xen/common/livepatch.c
+@@ -301,9 +301,6 @@ static int move_payload(struct payload *payload, struct livepatch_elf *elf)
+          * and .shstrtab. For the non-relocate we allocate and copy these
+          * via other means - and the .rel we can ignore as we only use it
+          * once during loading.
+-         *
+-         * Also ignore sections with zero size. Those can be for example:
+-         * data, or .bss.
+          */
+         if ( livepatch_elf_ignore_section(elf->sec[i].sec) )
+             offset[i] = UINT_MAX;
+@@ -362,8 +359,17 @@ static int move_payload(struct payload *payload, struct livepatch_elf *elf)
+             else if ( elf->sec[i].sec->sh_flags & SHF_WRITE )
+             {
+                 buf = rw_buf;
+-                rw_buf_sec = i;
+-                rw_buf_cnt++;
++                if ( elf->sec[i].sec->sh_size )
++                {
++                    /*
++                     * Special handling of RW empty regions: do not account for
++                     * them in order to decide whether a patch can safely be
++                     * re-applied, but assign them a load address so symbol
++                     * resolution and relocations work.
++                     */
++                    rw_buf_sec = i;
++                    rw_buf_cnt++;
++                }
+             }
+             else
+                 buf = ro_buf;
+diff --git a/xen/include/xen/livepatch_elf.h b/xen/include/xen/livepatch_elf.h
+index 9ad499ee8b..5b1ec469da 100644
+--- a/xen/include/xen/livepatch_elf.h
++++ b/xen/include/xen/livepatch_elf.h
+@@ -48,7 +48,7 @@ int livepatch_elf_perform_relocs(struct livepatch_elf *elf);
+ 
+ static inline bool livepatch_elf_ignore_section(const Elf_Shdr *sec)
+ {
+-    return !(sec->sh_flags & SHF_ALLOC) || sec->sh_size == 0;
++    return !(sec->sh_flags & SHF_ALLOC);
+ }
+ #endif /* __XEN_LIVEPATCH_ELF_H__ */
+ 
+-- 
+2.30.2
+

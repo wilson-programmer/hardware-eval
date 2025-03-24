@@ -1,0 +1,43 @@
+From 08f6c88405a4406cac5b90e8d9873258dc445006 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Mon, 31 Oct 2022 13:26:59 +0100
+Subject: [PATCH] x86/pv-shim: correctly ignore empty onlining requests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Mem-op requests may have zero extents. Such requests need treating as
+no-ops. pv_shim_online_memory(), however, would have tried to take 2Â³Â²-1
+order-sized pages from its balloon list (to then populate them),
+typically ending when the entire set of ballooned pages of this order
+was consumed.
+
+Note that pv_shim_offline_memory() does not have such an issue.
+
+Fixes: b2245acc60c3 ("xen/pvshim: memory hotplug")
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 9272225ca72801fd9fa5b268a2d1c5adebd19cd9
+master date: 2022-10-28 15:47:59 +0200
+---
+ xen/arch/x86/pv/shim.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/xen/arch/x86/pv/shim.c b/xen/arch/x86/pv/shim.c
+index d9704121a7..4146ee3f9c 100644
+--- a/xen/arch/x86/pv/shim.c
++++ b/xen/arch/x86/pv/shim.c
+@@ -944,6 +944,9 @@ void pv_shim_online_memory(unsigned int nr, unsigned int order)
+     struct page_info *page, *tmp;
+     PAGE_LIST_HEAD(list);
+ 
++    if ( !nr )
++        return;
++
+     spin_lock(&balloon_lock);
+     page_list_for_each_safe ( page, tmp, &balloon )
+     {
+-- 
+2.30.2
+

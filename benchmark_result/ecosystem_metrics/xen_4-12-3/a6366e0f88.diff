@@ -1,0 +1,125 @@
+From a6366e0f884db4302354ce7372ece93aeb95207f Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 27 Apr 2020 15:54:14 +0200
+Subject: [PATCH] x86: Enumeration for Control-flow Enforcement Technology
+
+The CET spec has been published and guest kernels are starting to get support.
+Introduce the CPUID and MSRs, and fully block the MSRs from guest use.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Wei Liu <wl@xen.org>
+master commit: 4803a67114279a656a54a23cebed646da32efeb6
+master date: 2020-04-21 16:52:03 +0100
+---
+ tools/libxl/libxl_cpuid.c                   | 2 ++
+ tools/misc/xen-cpuid.c                      | 3 ++-
+ xen/arch/x86/msr.c                          | 6 ++++++
+ xen/include/asm-x86/msr-index.h             | 8 ++++++++
+ xen/include/public/arch-x86/cpufeatureset.h | 2 ++
+ 5 files changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/tools/libxl/libxl_cpuid.c b/tools/libxl/libxl_cpuid.c
+index 5a1702d703..4cf0f0738d 100644
+--- a/tools/libxl/libxl_cpuid.c
++++ b/tools/libxl/libxl_cpuid.c
+@@ -199,10 +199,12 @@ int libxl_cpuid_parse_config(libxl_cpuid_policy_list *cpuid, const char* str)
+         {"umip",         0x00000007,  0, CPUID_REG_ECX,  2,  1},
+         {"pku",          0x00000007,  0, CPUID_REG_ECX,  3,  1},
+         {"ospke",        0x00000007,  0, CPUID_REG_ECX,  4,  1},
++        {"cet-ss",       0x00000007,  0, CPUID_REG_ECX,  7,  1},
+ 
+         {"avx512-4vnniw",0x00000007,  0, CPUID_REG_EDX,  2,  1},
+         {"avx512-4fmaps",0x00000007,  0, CPUID_REG_EDX,  3,  1},
+         {"md-clear",     0x00000007,  0, CPUID_REG_EDX, 10,  1},
++        {"cet-ibt",      0x00000007,  0, CPUID_REG_EDX, 20,  1},
+         {"ibrsb",        0x00000007,  0, CPUID_REG_EDX, 26,  1},
+         {"stibp",        0x00000007,  0, CPUID_REG_EDX, 27,  1},
+         {"l1d-flush",    0x00000007,  0, CPUID_REG_EDX, 28,  1},
+diff --git a/tools/misc/xen-cpuid.c b/tools/misc/xen-cpuid.c
+index 40b739d20d..2a00697643 100644
+--- a/tools/misc/xen-cpuid.c
++++ b/tools/misc/xen-cpuid.c
+@@ -123,7 +123,7 @@ static const char *str_7c0[32] =
+     [ 0] = "prefetchwt1",      [ 1] = "avx512_vbmi",
+     [ 2] = "umip",             [ 3] = "pku",
+     [ 4] = "ospke",            [ 5] = "waitpkg",
+-    [ 6] = "avx512_vbmi2",
++    [ 6] = "avx512_vbmi2",     [ 7] = "cet-ss",
+     [ 8] = "gfni",             [ 9] = "vaes",
+     [10] = "vpclmulqdq",       [11] = "avx512_vnni",
+     [12] = "avx512_bitalg",
+@@ -158,6 +158,7 @@ static const char *str_7d0[32] =
+     /* 12 */                [13] = "tsx-force-abort",
+ 
+     [18] = "pconfig",
++    [20] = "cet-ibt",
+ 
+     [26] = "ibrsb",         [27] = "stibp",
+     [28] = "l1d_flush",     [29] = "arch_caps",
+diff --git a/xen/arch/x86/msr.c b/xen/arch/x86/msr.c
+index 1e8a3b536a..4888fff16c 100644
+--- a/xen/arch/x86/msr.c
++++ b/xen/arch/x86/msr.c
+@@ -133,6 +133,9 @@ int guest_rdmsr(const struct vcpu *v, uint32_t msr, uint64_t *val)
+         /* Write-only */
+     case MSR_TSX_FORCE_ABORT:
+     case MSR_TSX_CTRL:
++    case MSR_U_CET:
++    case MSR_S_CET:
++    case MSR_PL0_SSP ... MSR_INTERRUPT_SSP_TABLE:
+         /* Not offered to guests. */
+         goto gp_fault;
+ 
+@@ -270,6 +273,9 @@ int guest_wrmsr(struct vcpu *v, uint32_t msr, uint64_t val)
+         /* Read-only */
+     case MSR_TSX_FORCE_ABORT:
+     case MSR_TSX_CTRL:
++    case MSR_U_CET:
++    case MSR_S_CET:
++    case MSR_PL0_SSP ... MSR_INTERRUPT_SSP_TABLE:
+         /* Not offered to guests. */
+         goto gp_fault;
+ 
+diff --git a/xen/include/asm-x86/msr-index.h b/xen/include/asm-x86/msr-index.h
+index 3971b992d3..7693c4a71a 100644
+--- a/xen/include/asm-x86/msr-index.h
++++ b/xen/include/asm-x86/msr-index.h
+@@ -179,6 +179,14 @@
+ #define MSR_IA32_VMX_TRUE_ENTRY_CTLS            0x490
+ #define MSR_IA32_VMX_VMFUNC                     0x491
+ 
++#define MSR_U_CET                           0x000006a0
++#define MSR_S_CET                           0x000006a2
++#define MSR_PL0_SSP                         0x000006a4
++#define MSR_PL1_SSP                         0x000006a5
++#define MSR_PL2_SSP                         0x000006a6
++#define MSR_PL3_SSP                         0x000006a7
++#define MSR_INTERRUPT_SSP_TABLE             0x000006a8
++
+ /* K7/K8 MSRs. Not complete. See the architecture manual for a more
+    complete list. */
+ #define MSR_K7_EVNTSEL0			0xc0010000
+diff --git a/xen/include/public/arch-x86/cpufeatureset.h b/xen/include/public/arch-x86/cpufeatureset.h
+index 55231d4b3b..865a435d2c 100644
+--- a/xen/include/public/arch-x86/cpufeatureset.h
++++ b/xen/include/public/arch-x86/cpufeatureset.h
+@@ -228,6 +228,7 @@ XEN_CPUFEATURE(AVX512VBMI,    6*32+ 1) /*A  AVX-512 Vector Byte Manipulation Ins
+ XEN_CPUFEATURE(UMIP,          6*32+ 2) /*S  User Mode Instruction Prevention */
+ XEN_CPUFEATURE(PKU,           6*32+ 3) /*H  Protection Keys for Userspace */
+ XEN_CPUFEATURE(OSPKE,         6*32+ 4) /*!  OS Protection Keys Enable */
++XEN_CPUFEATURE(CET_SS,        6*32+ 7) /*   CET - Shadow Stacks */
+ XEN_CPUFEATURE(AVX512_VPOPCNTDQ, 6*32+14) /*A  POPCNT for vectors of DW/QW */
+ XEN_CPUFEATURE(RDPID,         6*32+22) /*A  RDPID instruction */
+ 
+@@ -244,6 +245,7 @@ XEN_CPUFEATURE(AVX512_4VNNIW, 9*32+ 2) /*A  AVX512 Neural Network Instructions *
+ XEN_CPUFEATURE(AVX512_4FMAPS, 9*32+ 3) /*A  AVX512 Multiply Accumulation Single Precision */
+ XEN_CPUFEATURE(MD_CLEAR,      9*32+10) /*A  VERW clears microarchitectural buffers */
+ XEN_CPUFEATURE(TSX_FORCE_ABORT, 9*32+13) /* MSR_TSX_FORCE_ABORT.RTM_ABORT */
++XEN_CPUFEATURE(CET_IBT,       9*32+20) /*   CET - Indirect Branch Tracking */
+ XEN_CPUFEATURE(IBRSB,         9*32+26) /*A  IBRS and IBPB support (used by Intel) */
+ XEN_CPUFEATURE(STIBP,         9*32+27) /*A  STIBP */
+ XEN_CPUFEATURE(L1D_FLUSH,     9*32+28) /*S  MSR_FLUSH_CMD and L1D flush. */
+-- 
+2.30.2
+

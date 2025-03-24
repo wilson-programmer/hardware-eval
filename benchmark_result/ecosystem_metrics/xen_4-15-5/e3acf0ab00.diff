@@ -1,0 +1,83 @@
+From e3acf0ab009058e34a91b5d3ce1a41bf76c499fe Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 11 Jun 2021 11:37:53 +0100
+Subject: [PATCH] x86/msr: Expose MSR_ARCH_CAPS in the raw and host policies
+
+MSR_ARCH_CAPS is still not supported for guests yet (other than the hardware
+domain), until the toolstack learns how to construct an MSR policy.
+
+However, we want access to the host ARCH_CAPS_TSX_CTRL value in particular for
+testing purposes.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit b672695e748869b2e2e2cb03f671f12003d2b079)
+
+Also the remnants of:
+
+  x86: Expose more MSR_ARCH_CAPS to hwdom
+  (cherry picked from commit e83cd54611fec5b7a539fa1281a14319143490e6)
+
+  x86/spec-ctrl: Enumeration for PBRSB_NO
+  (cherry picked from commit b874e47eb13feb75be3ee7b5dc4ae9c97d80d774)
+
+which have both partially been backported already.
+---
+ xen/arch/x86/msr.c | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/xen/arch/x86/msr.c b/xen/arch/x86/msr.c
+index 9bced8d36c..cc8fe76203 100644
+--- a/xen/arch/x86/msr.c
++++ b/xen/arch/x86/msr.c
+@@ -48,8 +48,13 @@ struct msr_policy __read_mostly hvm_def_msr_policy;
+ 
+ static void __init calculate_raw_policy(void)
+ {
++    struct msr_policy *mp = &raw_msr_policy;
++
+     /* 0x000000ce  MSR_INTEL_PLATFORM_INFO */
+     /* Was already added by probe_cpuid_faulting() */
++
++    if ( cpu_has_arch_caps )
++        rdmsrl(MSR_ARCH_CAPABILITIES, mp->arch_caps.raw);
+ }
+ 
+ static void __init calculate_host_policy(void)
+@@ -61,6 +66,15 @@ static void __init calculate_host_policy(void)
+     /* 0x000000ce  MSR_INTEL_PLATFORM_INFO */
+     /* probe_cpuid_faulting() sanity checks presence of MISC_FEATURES_ENABLES */
+     mp->platform_info.cpuid_faulting = cpu_has_cpuid_faulting;
++
++    /* Temporary, until we have known_features[] for feature bits in MSRs. */
++    mp->arch_caps.raw &=
++        (ARCH_CAPS_RDCL_NO | ARCH_CAPS_IBRS_ALL | ARCH_CAPS_RSBA |
++         ARCH_CAPS_SKIP_L1DFL | ARCH_CAPS_SSB_NO | ARCH_CAPS_MDS_NO |
++         ARCH_CAPS_IF_PSCHANGE_MC_NO | ARCH_CAPS_TSX_CTRL | ARCH_CAPS_TAA_NO |
++         ARCH_CAPS_SBDR_SSDP_NO | ARCH_CAPS_FBSDP_NO | ARCH_CAPS_PSDP_NO |
++         ARCH_CAPS_FB_CLEAR | ARCH_CAPS_RRSBA | ARCH_CAPS_BHI_NO |
++         ARCH_CAPS_PBRSB_NO);
+ }
+ 
+ static void __init calculate_pv_max_policy(void)
+@@ -68,6 +82,8 @@ static void __init calculate_pv_max_policy(void)
+     struct msr_policy *mp = &pv_max_msr_policy;
+ 
+     *mp = host_msr_policy;
++
++    mp->arch_caps.raw = 0; /* Not supported yet. */
+ }
+ 
+ static void __init calculate_pv_def_policy(void)
+@@ -85,6 +101,8 @@ static void __init calculate_hvm_max_policy(void)
+ 
+     /* It's always possible to emulate CPUID faulting for HVM guests */
+     mp->platform_info.cpuid_faulting = true;
++
++    mp->arch_caps.raw = 0; /* Not supported yet. */
+ }
+ 
+ static void __init calculate_hvm_def_policy(void)
+-- 
+2.30.2
+

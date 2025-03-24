@@ -1,0 +1,80 @@
+From 6f814c377bb6959af0f8e74edc2582e14c427091 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 27 Jul 2022 09:14:32 +0200
+Subject: [PATCH] xl: relax freemem()'s retry calculation
+
+While in principle possible also under other conditions as long as other
+parallel operations potentially consuming memory aren't "locked out", in
+particular with IOMMU large page mappings used in Dom0 (for PV when in
+strict mode; for PVH when not sharing page tables with HAP) ballooning
+out of individual pages can actually lead to less free memory available
+afterwards. This is because to split a large page, one or more page
+table pages are necessary (one per level that is split).
+
+When rebooting a guest I've observed freemem() to fail: A single page
+was required to be ballooned out (presumably because of heap
+fragmentation in the hypervisor). This ballooning out of a single page
+of course went fast, but freemem() then found that it would require to
+balloon out another page. This repeating just another time leads to the
+function to signal failure to the caller - without having come anywhere
+near the designated 30s that the whole process is allowed to not make
+any progress at all.
+
+Convert from a simple retry count to actually calculating elapsed time,
+subtracting from an initial credit of 30s. Don't go as far as limiting
+the "wait_secs" value passed to libxl_wait_for_memory_target(), though.
+While this leads to the overall process now possibly taking longer (if
+the previous iteration ended very close to the intended 30s), this
+compensates to some degree for the value passed really meaning "allowed
+to run for this long without making progress".
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+master commit: e58370df76eacf1f7ca0340e9b96430c77b41a79
+master date: 2022-07-12 15:25:00 +0200
+---
+ tools/xl/xl_vmcontrol.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/tools/xl/xl_vmcontrol.c b/tools/xl/xl_vmcontrol.c
+index 435155a033..5dee7730ca 100644
+--- a/tools/xl/xl_vmcontrol.c
++++ b/tools/xl/xl_vmcontrol.c
+@@ -321,7 +321,8 @@ static int domain_wait_event(uint32_t domid, libxl_event **event_r)
+  */
+ static bool freemem(uint32_t domid, libxl_domain_config *d_config)
+ {
+-    int rc, retries = 3;
++    int rc;
++    double credit = 30;
+     uint64_t need_memkb, free_memkb;
+ 
+     if (!autoballoon)
+@@ -332,6 +333,8 @@ static bool freemem(uint32_t domid, libxl_domain_config *d_config)
+         return false;
+ 
+     do {
++        time_t start;
++
+         rc = libxl_get_free_memory(ctx, &free_memkb);
+         if (rc < 0)
+             return false;
+@@ -345,12 +348,13 @@ static bool freemem(uint32_t domid, libxl_domain_config *d_config)
+ 
+         /* wait until dom0 reaches its target, as long as we are making
+          * progress */
++        start = time(NULL);
+         rc = libxl_wait_for_memory_target(ctx, 0, 10);
+         if (rc < 0)
+             return false;
+ 
+-        retries--;
+-    } while (retries > 0);
++        credit -= difftime(time(NULL), start);
++    } while (credit > 0);
+ 
+     return false;
+ }
+-- 
+2.30.2
+

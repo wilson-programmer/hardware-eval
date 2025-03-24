@@ -1,0 +1,35 @@
+From 1540a9a20dd0c049345a00bfed0a3e8ea98d104b Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 15 Jul 2021 09:44:20 +0200
+Subject: [PATCH] x86/mem-sharing: ensure consistent lock order in
+ get_two_gfns()
+
+While the comment validly says "Sort by domain, if same domain by gfn",
+the implementation also included equal domain IDs in the first part of
+the check, thus rending the second part entirely dead and leaving
+deadlock potential when there's only a single domain involved.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Tamas K Lengyel <tamas@tklengyel.com>
+master commit: 09af2d01a2fe6a0af08598bdfe12c9707f4d82ba
+master date: 2021-07-07 12:35:12 +0200
+---
+ xen/include/asm-x86/p2m.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/asm-x86/p2m.h b/xen/include/asm-x86/p2m.h
+index 94285db1b4..2358954039 100644
+--- a/xen/include/asm-x86/p2m.h
++++ b/xen/include/asm-x86/p2m.h
+@@ -556,7 +556,7 @@ do {                                                    \
+     dest ## _t   = (source ## t)   ?: &scratch_t;       \
+ } while (0)
+ 
+-    if ( (rd->domain_id <= ld->domain_id) ||
++    if ( (rd->domain_id < ld->domain_id) ||
+          ((rd == ld) && (gfn_x(rgfn) <= gfn_x(lgfn))) )
+     {
+         assign_pointers(first, r);
+-- 
+2.30.2
+

@@ -1,0 +1,51 @@
+From b4dad09bb23c439f2e67ed2eb6d7bdd640b8bbae Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 21 Mar 2023 13:44:27 +0100
+Subject: [PATCH] x86/spec-ctrl: Add BHI controls to userspace components
+
+This was an oversight when adding the Xen parts.
+
+Fixes: cea9ae062295 ("x86/spec-ctrl: Enumeration for new Intel BHI controls")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: 9276e832aef60437da13d91e66fc259fd94d6f91
+master date: 2023-03-13 11:26:26 +0000
+---
+ tools/libs/light/libxl_cpuid.c | 3 +++
+ tools/misc/xen-cpuid.c         | 6 +++---
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/tools/libs/light/libxl_cpuid.c b/tools/libs/light/libxl_cpuid.c
+index d97a2f3338..55cfbc8f23 100644
+--- a/tools/libs/light/libxl_cpuid.c
++++ b/tools/libs/light/libxl_cpuid.c
+@@ -238,6 +238,9 @@ int libxl_cpuid_parse_config(libxl_cpuid_policy_list *cpuid, const char* str)
+         {"cet-sss",      0x00000007,  1, CPUID_REG_EDX, 18,  1},
+ 
+         {"intel-psfd",   0x00000007,  2, CPUID_REG_EDX,  0,  1},
++        {"ipred-ctrl",   0x00000007,  2, CPUID_REG_EDX,  1,  1},
++        {"rrsba-ctrl",   0x00000007,  2, CPUID_REG_EDX,  2,  1},
++        {"bhi-ctrl",     0x00000007,  2, CPUID_REG_EDX,  4,  1},
+         {"mcdt-no",      0x00000007,  2, CPUID_REG_EDX,  5,  1},
+ 
+         {"lahfsahf",     0x80000001, NA, CPUID_REG_ECX,  0,  1},
+diff --git a/tools/misc/xen-cpuid.c b/tools/misc/xen-cpuid.c
+index 0248eaef44..45e443f5d9 100644
+--- a/tools/misc/xen-cpuid.c
++++ b/tools/misc/xen-cpuid.c
+@@ -213,9 +213,9 @@ static const char *const str_7d1[32] =
+ 
+ static const char *const str_7d2[32] =
+ {
+-    [ 0] = "intel-psfd",
+-
+-    /* 4 */                 [ 5] = "mcdt-no",
++    [ 0] = "intel-psfd",    [ 1] = "ipred-ctrl",
++    [ 2] = "rrsba-ctrl",
++    [ 4] = "bhi-ctrl",      [ 5] = "mcdt-no",
+ };
+ 
+ static const struct {
+-- 
+2.30.2
+

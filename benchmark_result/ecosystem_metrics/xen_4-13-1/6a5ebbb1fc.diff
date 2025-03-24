@@ -1,0 +1,37 @@
+From 6a5ebbb1fcfa25a4f0aa4c16b4abd63c1e7718bf Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Thu, 9 Apr 2020 09:10:55 +0200
+Subject: [PATCH] sched: fix onlining cpu with core scheduling active
+
+When onlining a cpu cpupool_cpu_add() checks whether all siblings of
+the new cpu are free in order to decide whether to add it to cpupool0.
+In case the added cpu is not the last sibling to be onlined this test
+is wrong as it only checks for all online siblings to be free. The
+test should include the check for the number of siblings having
+reached the scheduling granularity of cpupool0, too.
+
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 4c7d340f75abc64f131b0f9bffd6d66d72e43528
+master date: 2020-03-24 17:36:44 +0100
+---
+ xen/common/cpupool.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/common/cpupool.c b/xen/common/cpupool.c
+index 5a90bdc9ff..b90bf42703 100644
+--- a/xen/common/cpupool.c
++++ b/xen/common/cpupool.c
+@@ -615,7 +615,8 @@ static int cpupool_cpu_add(unsigned int cpu)
+     get_sched_res(cpu)->cpupool = NULL;
+ 
+     cpus = sched_get_opt_cpumask(cpupool0->gran, cpu);
+-    if ( cpumask_subset(cpus, &cpupool_free_cpus) )
++    if ( cpumask_subset(cpus, &cpupool_free_cpus) &&
++         cpumask_weight(cpus) == cpupool_get_granularity(cpupool0) )
+         ret = cpupool_assign_cpu_locked(cpupool0, cpu);
+ 
+     rcu_read_unlock(&sched_res_rculock);
+-- 
+2.30.2
+

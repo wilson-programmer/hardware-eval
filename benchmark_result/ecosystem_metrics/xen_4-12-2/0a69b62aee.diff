@@ -1,0 +1,63 @@
+From 0a69b62aeec50add889d020dcd4eb69ed9cd6213 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Fri, 6 Dec 2019 12:37:18 +0100
+Subject: [PATCH] x86/tss: Fix clang build following c/s 7888440625
+
+Clang-3.5 from Debian Jessie fails with:
+
+  smpboot.c:829:29: error: statement expression not allowed at file scope
+          BUILD_BUG_ON(sizeof(this_cpu(tss_page)) != PAGE_SIZE);
+                              ^
+  /local/xen.git/xen/include/asm/percpu.h:14:7: note: expanded from macro
+          'this_cpu'
+      (*RELOC_HIDE(&per_cpu__##var, get_cpu_info()->per_cpu_offset))
+        ^
+  /local/xen.git/xen/include/xen/compiler.h:98:3: note: expanded from macro
+          'RELOC_HIDE'
+    ({ unsigned long __ptr;                       \
+    ^
+  /local/xen.git/xen/include/xen/lib.h:26:53: note: expanded from macro
+          'BUILD_BUG_ON'
+  #define BUILD_BUG_ON(cond) ((void)BUILD_BUG_ON_ZERO(cond))
+                                                      ^
+  /local/xen.git/xen/include/xen/lib.h:25:57: note: expanded from macro
+          'BUILD_BUG_ON_ZERO'
+  #define BUILD_BUG_ON_ZERO(cond) sizeof(struct { int:-!!(cond); })
+                                                          ^
+  1 error generated.
+  /local/xen.git/xen/Rules.mk:202: recipe for target 'smpboot.o' failed
+
+This is obviously a compiler bug because the BUILD_BUG_ON() is not at file
+scope.  However, it can be worked around by using a local variable.
+
+Spotted by Gitlab CI.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+master commit: 1722da6c0c6f6b7b320bdd239c46c0cb1048f804
+master date: 2019-08-14 12:04:20 +0100
+---
+ xen/arch/x86/smpboot.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/smpboot.c b/xen/arch/x86/smpboot.c
+index e21cf0a310..0f5c549898 100644
+--- a/xen/arch/x86/smpboot.c
++++ b/xen/arch/x86/smpboot.c
+@@ -833,9 +833,11 @@ static int setup_cpu_root_pgt(unsigned int cpu)
+         rc = clone_mapping(idt_tables[cpu], rpt);
+     if ( !rc )
+     {
+-        BUILD_BUG_ON(sizeof(this_cpu(tss_page)) != PAGE_SIZE);
++        struct tss_page *ptr = &per_cpu(tss_page, cpu);
+ 
+-        rc = clone_mapping(&per_cpu(tss_page, cpu).tss, rpt);
++        BUILD_BUG_ON(sizeof(*ptr) != PAGE_SIZE);
++
++        rc = clone_mapping(&ptr->tss, rpt);
+     }
+     if ( !rc )
+         rc = clone_mapping((void *)per_cpu(stubs.addr, cpu), rpt);
+-- 
+2.30.2
+

@@ -1,0 +1,29 @@
+From 429b0a5c62b9e9faf96456aefb5a176b6eb02921 Mon Sep 17 00:00:00 2001
+From: Richard Kojedzinszky <richard@kojedz.in>
+Date: Fri, 9 Jul 2021 10:06:45 +0200
+Subject: [PATCH] tools/libxenstat: fix populating vbd.rd_sect
+
+Fixes: 91c3e3dc91d6 ("tools/xentop: Display '-' when stats are not available.")
+Signed-off-by: Richard Kojedzinszky <richard@kojedz.in>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+(cherry picked from commit 89d57f291e37b4769ab26db919eba46548f2e13e)
+---
+ tools/libs/stat/xenstat_linux.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libs/stat/xenstat_linux.c b/tools/libs/stat/xenstat_linux.c
+index c00b26d4d8..1745be4285 100644
+--- a/tools/libs/stat/xenstat_linux.c
++++ b/tools/libs/stat/xenstat_linux.c
+@@ -475,7 +475,7 @@ int xenstat_collect_vbds(xenstat_node * node)
+ 				(read_attributes_vbd(dp->d_name, "statistics/wr_req", buf, 256)<=0) ||
+ 				((ret = sscanf(buf, "%llu", &vbd.wr_reqs)) != 1) ||
+ 				(read_attributes_vbd(dp->d_name, "statistics/rd_sect", buf, 256)<=0) ||
+-				((ret = sscanf(buf, "%llu", &vbd.wr_sects)) != 1) ||
++				((ret = sscanf(buf, "%llu", &vbd.rd_sects)) != 1) ||
+ 				(read_attributes_vbd(dp->d_name, "statistics/wr_sect", buf, 256)<=0) ||
+ 				((ret = sscanf(buf, "%llu", &vbd.wr_sects)) != 1))
+ 			{
+-- 
+2.30.2
+

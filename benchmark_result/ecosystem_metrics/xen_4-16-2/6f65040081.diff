@@ -1,0 +1,31 @@
+From 6f65040081b78662bf6ecde9a3b73ee04758d0e9 Mon Sep 17 00:00:00 2001
+From: Michal Orzel <michal.orzel@arm.com>
+Date: Fri, 10 Jun 2022 10:33:56 +0200
+Subject: [PATCH] xen/arm: traps: Fix reference to invalid erratum ID
+
+The correct erratum ID should be 834220.
+
+Fixes: 0a7ba2936457 ("xen/arm: arm64: Add Cortex-A57 erratum 834220 workaround")
+Signed-off-by: Michal Orzel <michal.orzel@arm.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit a6f7ed5fc7d5fb5001ef82db99d34bc8a85fc2b6)
+---
+ xen/arch/arm/traps.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/traps.c b/xen/arch/arm/traps.c
+index 219ab3c3fb..bbbd15e9fa 100644
+--- a/xen/arch/arm/traps.c
++++ b/xen/arch/arm/traps.c
+@@ -1862,7 +1862,7 @@ static inline bool hpfar_is_valid(bool s1ptw, uint8_t fsc)
+      *  1. the stage 2 fault happen during a stage 1 page table walk
+      *  (the bit ESR_EL2.S1PTW is set)
+      *  2. the fault was due to a translation fault and the processor
+-     *  does not carry erratum #8342220
++     *  does not carry erratum #834220
+      *
+      * Note that technically HPFAR is valid for other cases, but they
+      * are currently not supported by Xen.
+-- 
+2.30.2
+

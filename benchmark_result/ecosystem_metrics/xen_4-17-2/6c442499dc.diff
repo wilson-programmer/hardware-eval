@@ -1,0 +1,38 @@
+From 6c442499dc45425bb6dec0f97ca950abb0046081 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Thu, 3 Aug 2023 16:30:27 +0200
+Subject: [PATCH] tools/xenstore: fix XSA-417 patch
+
+The fix for XSA-417 had a bug: domain_alloc_permrefs() will not return
+a negative value in case of an error, but a plain errno value.
+
+Note this is not considered to be a security issue, as the only case
+where domain_alloc_permrefs() will return an error is a failed memory
+allocation. As a guest should not be able to drive Xenstore out of
+memory, this is NOT a problem a guest can trigger at will.
+
+Fixes: ab128218225d ("tools/xenstore: fix checking node permissions")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+master commit: 0c53c638e16278078371ce028c74693841d7738a
+master date: 2023-07-21 08:32:43 +0200
+---
+ tools/xenstore/xenstored_core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/xenstore/xenstored_core.c b/tools/xenstore/xenstored_core.c
+index 8907c6cb0b..09b5d0656f 100644
+--- a/tools/xenstore/xenstored_core.c
++++ b/tools/xenstore/xenstored_core.c
+@@ -1780,7 +1780,7 @@ static int do_set_perms(const void *ctx, struct connection *conn,
+ 	if (!xs_strings_to_perms(perms.p, perms.num, permstr))
+ 		return errno;
+ 
+-	if (domain_alloc_permrefs(&perms) < 0)
++	if (domain_alloc_permrefs(&perms))
+ 		return ENOMEM;
+ 	if (perms.p[0].perms & XS_PERM_IGNORE)
+ 		return ENOENT;
+-- 
+2.30.2
+

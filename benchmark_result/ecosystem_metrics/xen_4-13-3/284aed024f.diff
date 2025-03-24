@@ -1,0 +1,38 @@
+From 284aed024f58da4e1791bf4aa43ca19d9ac320c5 Mon Sep 17 00:00:00 2001
+From: Peng Fan <peng.fan@nxp.com>
+Date: Fri, 17 Apr 2020 15:16:09 -0700
+Subject: [PATCH] xen/arm: vgic-v3: fix GICD_ISACTIVER range
+
+The end should be GICD_ISACTIVERN not GICD_ISACTIVER.
+
+See https://marc.info/?l=xen-devel&m=158527653730795 for a discussion on
+what it would take to implement GICD_ISACTIVER/GICD_ICACTIVER properly.
+
+We chose v1 instead of v2 of this patch to avoid spamming the console:
+v2 adds a printk for every read, and reads can happen often.
+
+Signed-off-by: Peng Fan <peng.fan@nxp.com>
+[Stefano: improve commit message]
+Signed-off-by: Stefano Stabellini <stefano.stabellini@xilinx.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+(cherry picked from commit 0796cb907f2c31046427510a6da6f4941f678b76)
+---
+ xen/arch/arm/vgic-v3.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/vgic-v3.c b/xen/arch/arm/vgic-v3.c
+index 4e60ba15cc..fd8cfc156d 100644
+--- a/xen/arch/arm/vgic-v3.c
++++ b/xen/arch/arm/vgic-v3.c
+@@ -713,7 +713,7 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
+         goto read_as_zero;
+ 
+     /* Read the active status of an IRQ via GICD/GICR is not supported */
+-    case VRANGE32(GICD_ISACTIVER, GICD_ISACTIVER):
++    case VRANGE32(GICD_ISACTIVER, GICD_ISACTIVERN):
+     case VRANGE32(GICD_ICACTIVER, GICD_ICACTIVERN):
+         goto read_as_zero;
+ 
+-- 
+2.30.2
+

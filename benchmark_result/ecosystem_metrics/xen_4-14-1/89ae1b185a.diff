@@ -1,0 +1,31 @@
+From 89ae1b185a193fea8e86840c48a2711f04042415 Mon Sep 17 00:00:00 2001
+From: Olaf Hering <olaf@aepfle.de>
+Date: Wed, 23 Sep 2020 08:48:40 +0200
+Subject: [PATCH] tools/libxc: report malloc errors in writev_exact
+
+The caller of writev_exact should be notified about malloc errors
+when dealing with partial writes.
+
+Signed-off-by: Olaf Hering <olaf@aepfle.de>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Wei Liu <wl@xen.org>
+(cherry picked from commit 0d8d289af7a679c028462c4ed5d98586f9ef9648)
+---
+ tools/libxc/xc_private.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/libxc/xc_private.c b/tools/libxc/xc_private.c
+index 90974d572e..13a2c723c1 100644
+--- a/tools/libxc/xc_private.c
++++ b/tools/libxc/xc_private.c
+@@ -722,6 +722,7 @@ int writev_exact(int fd, const struct iovec *iov, int iovcnt)
+                     if ( !local_iov )
+                     {
+                         saved_errno = ENOMEM;
++                        rc = -1;
+                         goto out;
+                     }
+ 
+-- 
+2.30.2
+

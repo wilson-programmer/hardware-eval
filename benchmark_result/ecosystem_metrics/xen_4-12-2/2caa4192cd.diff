@@ -1,0 +1,54 @@
+From 2caa4192cd243a9e7258a6d97226e15e56756a28 Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Mon, 21 Oct 2019 13:28:36 +0100
+Subject: [PATCH] xen/arm: traps: Don't ignore invalid value for serrors=
+
+serrors= only supports 3 values "diverse", "forward" and "panic".
+
+The current implementation of parse_serrors_behavior() will default to
+"diverse" for any invalid value and not tell the users.
+
+Rather than ignore the invalid input, return an error to the caller so
+it can decides the be approach.
+
+This will be useful after a follow-up patch where the number of options
+will be reduced.
+
+Take the opportunity to initialize serrors_op to SERRORS_DIVERSE rather
+than relying on the item to be the first in the enum and therefore
+equal to 0.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellin <sstabellini@kernel.org>
+Release-acked-by: Juergen Gross <jgross@suse.com>
+(cherry picked from commit 92f91d283d8149dbd6a083589ec6d73c34c06459)
+---
+ xen/arch/arm/traps.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/traps.c b/xen/arch/arm/traps.c
+index ae7bab6c0e..d0f0189224 100644
+--- a/xen/arch/arm/traps.c
++++ b/xen/arch/arm/traps.c
+@@ -103,14 +103,16 @@ register_t get_default_hcr_flags(void)
+ static enum {
+     SERRORS_DIVERSE,
+     SERRORS_PANIC,
+-} serrors_op;
++} serrors_op = SERRORS_DIVERSE;
+ 
+ static int __init parse_serrors_behavior(const char *str)
+ {
+     if ( !strcmp(str, "panic") )
+         serrors_op = SERRORS_PANIC;
+-    else
++    else if ( !strcmp(str, "diverse") )
+         serrors_op = SERRORS_DIVERSE;
++    else
++        return -EINVAL;
+ 
+     return 0;
+ }
+-- 
+2.30.2
+

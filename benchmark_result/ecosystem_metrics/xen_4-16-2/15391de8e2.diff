@@ -1,0 +1,32 @@
+From 15391de8e2bb6153eadd483154c53044ab53d98d Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Tue, 7 Jun 2022 14:01:44 +0200
+Subject: [PATCH] tools/libs/light: don't set errno to a negative value
+
+Setting errno to a negative value makes no sense.
+
+Fixes: e78e8b9bb649 ("libxl: Add interface for querying hypervisor about PCI topology")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 2419a159fb943c24a6f2439604b9fdb1478fcd08
+master date: 2022-04-22 20:39:34 +0100
+---
+ tools/libs/light/libxl_linux.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libs/light/libxl_linux.c b/tools/libs/light/libxl_linux.c
+index 8d62dfd255..27f2bce718 100644
+--- a/tools/libs/light/libxl_linux.c
++++ b/tools/libs/light/libxl_linux.c
+@@ -288,7 +288,7 @@ int libxl__pci_topology_init(libxl__gc *gc,
+         if (i == num_devs) {
+             LOG(ERROR, "Too many devices");
+             err = ERROR_FAIL;
+-            errno = -ENOSPC;
++            errno = ENOSPC;
+             goto out;
+         }
+ 
+-- 
+2.30.2
+

@@ -1,0 +1,128 @@
+From 567a8e9996440cbb37717598c1ceac7fb07803f3 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 19 Nov 2021 09:32:06 +0100
+Subject: [PATCH] x86/IOMMU: mark IOMMU / intremap not in use when ACPI tables
+ are missing
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+x2apic_bsp_setup() gets called ahead of iommu_setup(), and since x2APIC
+mode (physical vs clustered) depends on iommu_intremap, that variable
+needs to be set to off as soon as we know we can't / won't enable
+interrupt remapping, i.e. in particular when parsing of the respective
+ACPI tables failed. Move the turning off of iommu_intremap from AMD
+specific code into acpi_iommu_init(), accompanying it by clearing of
+iommu_enable.
+
+Take the opportunity and also fully skip ACPI table parsing logic on
+VT-d when both "iommu=off" and "iommu=no-intremap" are in effect anyway,
+like was already the case for AMD.
+
+The tag below only references the commit uncovering a pre-existing
+anomaly.
+
+Fixes: d8bd82327b0f ("AMD/IOMMU: obtain IVHD type to use earlier")
+Reported-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 46c4061cd2bf69e8039021af615c2bdb94e50088
+master date: 2021-11-04 14:44:01 +0100
+---
+ xen/drivers/passthrough/amd/pci_amd_iommu.c |  6 ------
+ xen/drivers/passthrough/vtd/dmar.c          |  6 +-----
+ xen/drivers/passthrough/x86/iommu.c         | 18 ++++++++++++++++++
+ xen/include/asm-x86/acpi.h                  |  8 +-------
+ 4 files changed, 20 insertions(+), 18 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/pci_amd_iommu.c b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+index c8e76d4077..78dc72f5f7 100644
+--- a/xen/drivers/passthrough/amd/pci_amd_iommu.c
++++ b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+@@ -155,14 +155,8 @@ static void amd_iommu_setup_domain_device(
+ 
+ int __init acpi_ivrs_init(void)
+ {
+-    if ( !iommu_enable && !iommu_intremap )
+-        return 0;
+-
+     if ( (amd_iommu_detect_acpi() !=0) || (iommu_found() == 0) )
+-    {
+-        iommu_intremap = iommu_intremap_off;
+         return -ENODEV;
+-    }
+ 
+     iommu_init_ops = &_iommu_init_ops;
+ 
+diff --git a/xen/drivers/passthrough/vtd/dmar.c b/xen/drivers/passthrough/vtd/dmar.c
+index 36d909b06d..53f33fdb0a 100644
+--- a/xen/drivers/passthrough/vtd/dmar.c
++++ b/xen/drivers/passthrough/vtd/dmar.c
+@@ -759,11 +759,7 @@ static int __init acpi_parse_dmar(struct acpi_table_header *table)
+     dmar = (struct acpi_table_dmar *)table;
+     dmar_flags = dmar->flags;
+ 
+-    if ( !iommu_enable && !iommu_intremap )
+-    {
+-        ret = -EINVAL;
+-        goto out;
+-    }
++    ASSERT(iommu_enable || iommu_intremap);
+ 
+     if ( !dmar->width )
+     {
+diff --git a/xen/drivers/passthrough/x86/iommu.c b/xen/drivers/passthrough/x86/iommu.c
+index e83c6f2c61..fbc730a81c 100644
+--- a/xen/drivers/passthrough/x86/iommu.c
++++ b/xen/drivers/passthrough/x86/iommu.c
+@@ -40,6 +40,24 @@ enum iommu_intremap __read_mostly iommu_intremap = iommu_intremap_full;
+ bool __read_mostly iommu_intpost;
+ #endif
+ 
++void __init acpi_iommu_init(void)
++{
++    int ret;
++
++    if ( !iommu_enable && !iommu_intremap )
++        return;
++
++    ret = acpi_dmar_init();
++    if ( ret == -ENODEV )
++        ret = acpi_ivrs_init();
++
++    if ( ret )
++    {
++        iommu_enable = false;
++        iommu_intremap = iommu_intremap_off;
++    }
++}
++
+ int __init iommu_hardware_setup(void)
+ {
+     struct IO_APIC_route_entry **ioapic_entries = NULL;
+diff --git a/xen/include/asm-x86/acpi.h b/xen/include/asm-x86/acpi.h
+index 7032f3a001..9a9cc4c240 100644
+--- a/xen/include/asm-x86/acpi.h
++++ b/xen/include/asm-x86/acpi.h
+@@ -141,16 +141,10 @@ extern u32 x86_acpiid_to_apicid[];
+ extern u32 pmtmr_ioport;
+ extern unsigned int pmtmr_width;
+ 
++void acpi_iommu_init(void);
+ int acpi_dmar_init(void);
+ int acpi_ivrs_init(void);
+ 
+-static inline int acpi_iommu_init(void)
+-{
+-    int ret = acpi_dmar_init();
+-
+-    return ret == -ENODEV ? acpi_ivrs_init() : ret;
+-}
+-
+ void acpi_mmcfg_init(void);
+ 
+ /* Incremented whenever we transition through S3. Value is 1 during boot. */
+-- 
+2.30.2
+

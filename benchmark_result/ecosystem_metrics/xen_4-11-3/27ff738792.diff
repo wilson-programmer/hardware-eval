@@ -1,0 +1,70 @@
+From 27ff738792773c9cd720554d8fc1bbd1f198021f Mon Sep 17 00:00:00 2001
+From: Julien Grall <julien.grall@arm.com>
+Date: Mon, 28 Jan 2019 16:00:23 +0000
+Subject: [PATCH] xen/arm: irq: End cleanly spurious interrupt
+
+no_irq_type handlers are used when an IRQ does not have action attached.
+This is useful to detect misconfiguration between the interrupt
+controller and the software.
+
+Currently, all the handlers will do nothing on spurious interrupt. This
+means if such interrupt is received, the priority of the interrupt will
+not be dropped and the processor will lose the ability to receive any
+interrupt lower or equal to the priority.
+
+Spurious interrupt can happen while releasing interrupt assigned to
+guest (happen during domain destruction). The interaction is roughly
+
+CPU0                                CPU1
+release_guest_irq(A)
+spin_lock(&desc->lock)
+gic_remove_irq_from_guest
+                                    receive IRQ A
+                                    spin_lock(&desc->lock)
+    desc->handler->shutdown()
+      set_bit(IRQ_DISABLED)
+    desc->handler = &no_irq_type
+spin_unlock(&desc->lock)
+                                    desc->handler->end();
+                                    spin_unlock(&desc->lock)
+
+Because the no_irq_type.end callback is implemented as a NOP, CPU1 will
+not drop the priority of the interrupt. So the CPU will not be able to
+receive any interrupt route to any guest afterwards.
+
+The problem can be prevented by dropping the priority and deactivating
+the interrupt via gic_hw_ops->gic_host_irq->end().
+
+Note that, for now, interrupt used by Xen are safe because it is not
+using no_irq_type on release.
+
+Signed-off-by: Julien Grall <julien.grall@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 8aa276235b93eeb4f81095c638970900e19b31e5)
+---
+ xen/arch/arm/irq.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/irq.c b/xen/arch/arm/irq.c
+index aa4e832cae..6cf366e369 100644
+--- a/xen/arch/arm/irq.c
++++ b/xen/arch/arm/irq.c
+@@ -44,7 +44,14 @@ static void ack_none(struct irq_desc *irq)
+     printk("unexpected IRQ trap at irq %02x\n", irq->irq);
+ }
+ 
+-static void end_none(struct irq_desc *irq) { }
++static void end_none(struct irq_desc *irq)
++{
++    /*
++     * Still allow a CPU to end an interrupt if we receive a spurious
++     * interrupt. This will prevent the CPU to lose interrupt forever.
++     */
++    gic_hw_ops->gic_host_irq_type->end(irq);
++}
+ 
+ hw_irq_controller no_irq_type = {
+     .typename = "none",
+-- 
+2.30.2
+

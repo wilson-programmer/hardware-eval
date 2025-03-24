@@ -1,0 +1,45 @@
+From 55d65346d70b779f082b7764480e745cb51e675f Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 27 Apr 2020 15:53:26 +0200
+Subject: [PATCH] x86/vtd: relax EPT page table sharing check
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The EPT page tables can be shared with the IOMMU as long as the page
+sizes supported by EPT are also supported by the IOMMU.
+
+Current code checks that both the IOMMU and EPT support the same page
+sizes, but this is not strictly required, the IOMMU supporting more
+page sizes than EPT is fine and shouldn't block page table sharing.
+
+This is likely not a common case (IOMMU supporting more page sizes
+than EPT), but should still be fixed for correctness.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 3957e12c02670b97855ef0933b373f99993fa598
+master date: 2020-04-21 10:54:56 +0200
+---
+ xen/drivers/passthrough/vtd/iommu.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index 77ba8e14a6..ed50d34c91 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -1957,8 +1957,8 @@ static int __init vtd_ept_page_compatible(struct iommu *iommu)
+     if ( rdmsr_safe(MSR_IA32_VMX_EPT_VPID_CAP, ept_cap) != 0 ) 
+         return 0;
+ 
+-    return (ept_has_2mb(ept_cap) && opt_hap_2mb) == cap_sps_2mb(vtd_cap) &&
+-           (ept_has_1gb(ept_cap) && opt_hap_1gb) == cap_sps_1gb(vtd_cap);
++    return (ept_has_2mb(ept_cap) && opt_hap_2mb) <= cap_sps_2mb(vtd_cap) &&
++           (ept_has_1gb(ept_cap) && opt_hap_1gb) <= cap_sps_1gb(vtd_cap);
+ }
+ 
+ /*
+-- 
+2.30.2
+

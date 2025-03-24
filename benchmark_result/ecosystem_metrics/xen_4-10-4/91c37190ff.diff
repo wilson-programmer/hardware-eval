@@ -1,0 +1,42 @@
+From 91c37190ff97fb70629cad517698d3aaec064905 Mon Sep 17 00:00:00 2001
+From: Jason Wang <jasowang@redhat.com>
+Date: Wed, 30 May 2018 13:16:36 +0800
+Subject: [PATCH] net: ignore packet size greater than INT_MAX
+
+There should not be a reason for passing a packet size greater than
+INT_MAX. It's usually a hint of bug somewhere, so ignore packet size
+greater than INT_MAX in qemu_deliver_packet_iov()
+
+CC: qemu-stable@nongnu.org
+Reported-by: Daniel Shapira <daniel@twistlock.com>
+Reviewed-by: Michael S. Tsirkin <mst@redhat.com>
+Signed-off-by: Jason Wang <jasowang@redhat.com>
+(cherry picked from commit 1592a9947036d60dde5404204a5d45975133caf5)
+---
+ net/net.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/net/net.c b/net/net.c
+index 0e28099554..5b93527618 100644
+--- a/net/net.c
++++ b/net/net.c
+@@ -718,10 +718,15 @@ ssize_t qemu_deliver_packet_iov(NetClientState *sender,
+                                 void *opaque)
+ {
+     NetClientState *nc = opaque;
++    size_t size = iov_size(iov, iovcnt);
+     int ret;
+ 
++    if (size > INT_MAX) {
++        return size;
++    }
++
+     if (nc->link_down) {
+-        return iov_size(iov, iovcnt);
++        return size;
+     }
+ 
+     if (nc->receive_disabled) {
+-- 
+2.30.2
+

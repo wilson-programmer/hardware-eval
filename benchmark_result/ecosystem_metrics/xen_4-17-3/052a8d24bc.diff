@@ -1,0 +1,42 @@
+From 052a8d24bc670ab6503e21dfd2fb8bccfc22aa73 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Tue, 8 Aug 2023 14:53:42 +0100
+Subject: [PATCH] tools/vchan: Fix -Wsingle-bit-bitfield-constant-conversion
+
+Gitlab reports:
+
+  node.c:158:17: error: implicit truncation from 'int' to a one-bit wide bit-field changes value from 1 to -1 [-Werror,-Wsingle-bit-bitfield-constant-conversion]
+
+        ctrl->blocking = 1;
+                       ^ ~
+  1 error generated.
+  make[4]: *** [/builds/xen-project/people/andyhhp/xen/tools/vchan/../../tools/Rules.mk:188: node.o] Error 1
+
+In Xen 4.18, this was fixed with c/s 99ab02f63ea8 ("tools: convert bitfields
+to unsigned type") but this is an ABI change which can't be backported.
+
+Swich 1 for -1 to provide a minimally invasive way to fix the build.
+
+No functional change.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+---
+ tools/vchan/node.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/vchan/node.c b/tools/vchan/node.c
+index f1638f013d..a28293b720 100644
+--- a/tools/vchan/node.c
++++ b/tools/vchan/node.c
+@@ -155,7 +155,7 @@ int main(int argc, char **argv)
+ 		perror("libxenvchan_*_init");
+ 		exit(1);
+ 	}
+-	ctrl->blocking = 1;
++	ctrl->blocking = -1;
+ 
+ 	srand(seed);
+ 	fprintf(stderr, "seed=%d\n", seed);
+-- 
+2.30.2
+

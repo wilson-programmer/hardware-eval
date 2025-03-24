@@ -1,0 +1,53 @@
+From a514c5ef5bda0da4020b22037d921b845a151116 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 21 Jan 2021 16:17:21 +0100
+Subject: [PATCH] x86/hpet: Fix return value of hpet_setup()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+hpet_setup() is idempotent if the rate has already been calculated, and
+returns the cached value.  However, this only works correctly when the return
+statements are identical.
+
+Use a sensibly named local variable, rather than a dead one with a bad name.
+
+Fixes: a60bb68219 ("x86/time: reduce rounding errors in calculations")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 83736c567d6b64dbce98f251ca72e7870f556421
+master date: 2020-12-31 16:19:00 +0000
+---
+ xen/arch/x86/hpet.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/hpet.c b/xen/arch/x86/hpet.c
+index 154c67423b..f4951d7a20 100644
+--- a/xen/arch/x86/hpet.c
++++ b/xen/arch/x86/hpet.c
+@@ -769,7 +769,7 @@ u64 __init hpet_setup(void)
+ {
+     static u64 __initdata hpet_rate;
+     u32 hpet_id, hpet_period;
+-    unsigned int last;
++    unsigned int last, rem;
+ 
+     if ( hpet_rate )
+         return hpet_rate;
+@@ -799,9 +799,11 @@ u64 __init hpet_setup(void)
+     hpet_resume(hpet_boot_cfg);
+ 
+     hpet_rate = 1000000000000000ULL; /* 10^15 */
+-    last = do_div(hpet_rate, hpet_period);
++    rem = do_div(hpet_rate, hpet_period);
++    if ( (rem * 2) > hpet_period )
++        hpet_rate++;
+ 
+-    return hpet_rate + (last * 2 > hpet_period);
++    return hpet_rate;
+ }
+ 
+ void hpet_resume(u32 *boot_cfg)
+-- 
+2.30.2
+

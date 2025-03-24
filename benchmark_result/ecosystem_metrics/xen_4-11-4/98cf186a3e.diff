@@ -1,0 +1,48 @@
+From 98cf186a3eb07f19d8178ab309185b1376a18225 Mon Sep 17 00:00:00 2001
+From: Igor Druzhinin <igor.druzhinin@citrix.com>
+Date: Thu, 5 Mar 2020 11:37:01 +0100
+Subject: [PATCH] x86/time: report correct frequency of Xen PV clocksource
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+The value of the counter represents the number of nanoseconds
+since host boot. That means the correct frequency is always 1GHz.
+
+This inconsistency caused time to go slower in PV shim on most
+platforms.
+
+Signed-off-by: Igor Druzhinin <igor.druzhinin@citrix.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: c52bd545de461127f3ca67c48e8fef7145402035
+master date: 2020-02-14 18:01:52 +0000
+---
+ xen/arch/x86/time.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/xen/arch/x86/time.c b/xen/arch/x86/time.c
+index fd4c8bc4f0..44d3b75830 100644
+--- a/xen/arch/x86/time.c
++++ b/xen/arch/x86/time.c
+@@ -584,9 +584,7 @@ static int64_t __init init_xen_timer(struct platform_timesource *pts)
+     if ( !xen_guest )
+         return 0;
+ 
+-    pts->frequency = xen_timer_cpu_frequency();
+-
+-    return pts->frequency;
++    return xen_timer_cpu_frequency();
+ }
+ 
+ static always_inline uint64_t read_cycle(const struct vcpu_time_info *info,
+@@ -640,6 +638,7 @@ static struct platform_timesource __initdata plt_xen_timer =
+ {
+     .id = "xen",
+     .name = "XEN PV CLOCK",
++    .frequency = 1000000000ULL,
+     .read_counter = read_xen_timer,
+     .init = init_xen_timer,
+     .resume = resume_xen_timer,
+-- 
+2.30.2
+

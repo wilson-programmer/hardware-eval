@@ -1,0 +1,85 @@
+From 29b48aa27de1a40be45cb5ccd6e427ad63992ff3 Mon Sep 17 00:00:00 2001
+From: Laurentiu Tudor <laurentiu.tudor@nxp.com>
+Date: Fri, 2 Oct 2020 13:33:44 +0300
+Subject: [PATCH] arm,smmu: match start level of page table walk with P2M
+
+Don't hardcode the lookup start level of the page table walk to 1
+and instead match the one used in P2M. This should fix scenarios
+involving SMMU where the start level is different than 1.
+In order for the SMMU driver to also compile on arm32 move the
+P2M_ROOT_LEVEL in the p2m header file (while at it, for
+consistency also P2M_ROOT_ORDER) and use the macro in the smmu
+driver.
+
+Signed-off-by: Laurentiu Tudor <laurentiu.tudor@nxp.com>
+Acked-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 9ae1197582798b394d696cff94c4d742319bdbbf)
+---
+ xen/arch/arm/p2m.c                 |  9 ++-------
+ xen/drivers/passthrough/arm/smmu.c |  2 +-
+ xen/include/asm-arm/p2m.h          | 11 +++++++++++
+ 3 files changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/xen/arch/arm/p2m.c b/xen/arch/arm/p2m.c
+index ce59f2b503..4eeb867ca1 100644
+--- a/xen/arch/arm/p2m.c
++++ b/xen/arch/arm/p2m.c
+@@ -17,17 +17,12 @@
+ #define INVALID_VMID 0 /* VMID 0 is reserved */
+ 
+ #ifdef CONFIG_ARM_64
+-static unsigned int __read_mostly p2m_root_order;
+-static unsigned int __read_mostly p2m_root_level;
+-#define P2M_ROOT_ORDER    p2m_root_order
+-#define P2M_ROOT_LEVEL p2m_root_level
++unsigned int __read_mostly p2m_root_order;
++unsigned int __read_mostly p2m_root_level;
+ static unsigned int __read_mostly max_vmid = MAX_VMID_8_BIT;
+ /* VMID is by default 8 bit width on AArch64 */
+ #define MAX_VMID       max_vmid
+ #else
+-/* First level P2M is always 2 consecutive pages */
+-#define P2M_ROOT_LEVEL 1
+-#define P2M_ROOT_ORDER    1
+ /* VMID is always 8 bit width on AArch32 */
+ #define MAX_VMID        MAX_VMID_8_BIT
+ #endif
+diff --git a/xen/drivers/passthrough/arm/smmu.c b/xen/drivers/passthrough/arm/smmu.c
+index 94662a8501..4ba6d3ab94 100644
+--- a/xen/drivers/passthrough/arm/smmu.c
++++ b/xen/drivers/passthrough/arm/smmu.c
+@@ -1152,7 +1152,7 @@ static void arm_smmu_init_context_bank(struct arm_smmu_domain *smmu_domain)
+ 	      (TTBCR_RGN_WBWA << TTBCR_IRGN0_SHIFT);
+ 
+ 	if (!stage1)
+-		reg |= (TTBCR_SL0_LVL_1 << TTBCR_SL0_SHIFT);
++		reg |= (2 - P2M_ROOT_LEVEL) << TTBCR_SL0_SHIFT;
+ 
+ 	writel_relaxed(reg, cb_base + ARM_SMMU_CB_TTBCR);
+ 
+diff --git a/xen/include/asm-arm/p2m.h b/xen/include/asm-arm/p2m.h
+index 5fdb6e8183..28ca9a838e 100644
+--- a/xen/include/asm-arm/p2m.h
++++ b/xen/include/asm-arm/p2m.h
+@@ -13,6 +13,17 @@
+ /* Holds the bit size of IPAs in p2m tables.  */
+ extern unsigned int p2m_ipa_bits;
+ 
++#ifdef CONFIG_ARM_64
++extern unsigned int p2m_root_order;
++extern unsigned int p2m_root_level;
++#define P2M_ROOT_ORDER    p2m_root_order
++#define P2M_ROOT_LEVEL p2m_root_level
++#else
++/* First level P2M is always 2 consecutive pages */
++#define P2M_ROOT_ORDER    1
++#define P2M_ROOT_LEVEL 1
++#endif
++
+ struct domain;
+ 
+ extern void memory_type_changed(struct domain *);
+-- 
+2.30.2
+

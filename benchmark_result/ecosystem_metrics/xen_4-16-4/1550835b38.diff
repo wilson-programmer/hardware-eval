@@ -1,0 +1,38 @@
+From 1550835b381a18fc0e972e5d04925e02fab31553 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 7 Feb 2023 17:05:22 +0100
+Subject: [PATCH] x86/shadow: fix PAE check for top-level table unshadowing
+
+Clearly within the for_each_vcpu() the vCPU of this loop is meant, not
+the (loop invariant) one the fault occurred on.
+
+Fixes: 3d5e6a3ff383 ("x86 hvm: implement HVMOP_pagetable_dying")
+Fixes: ef3b0d8d2c39 ("x86/shadow: shadow_table[] needs only one entry for PV-only configs")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: f8fdceefbb1193ec81667eb40b83bc525cb71204
+master date: 2023-01-20 09:23:42 +0100
+---
+ xen/arch/x86/mm/shadow/multi.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/mm/shadow/multi.c b/xen/arch/x86/mm/shadow/multi.c
+index c07af0bd99..f7acd18a36 100644
+--- a/xen/arch/x86/mm/shadow/multi.c
++++ b/xen/arch/x86/mm/shadow/multi.c
+@@ -2665,10 +2665,10 @@ static int sh_page_fault(struct vcpu *v,
+ #if GUEST_PAGING_LEVELS == 3
+             unsigned int i;
+ 
+-            for_each_shadow_table(v, i)
++            for_each_shadow_table(tmp, i)
+             {
+                 mfn_t smfn = pagetable_get_mfn(
+-                                 v->arch.paging.shadow.shadow_table[i]);
++                                 tmp->arch.paging.shadow.shadow_table[i]);
+ 
+                 if ( mfn_valid(smfn) && (mfn_x(smfn) != 0) )
+                 {
+-- 
+2.30.2
+

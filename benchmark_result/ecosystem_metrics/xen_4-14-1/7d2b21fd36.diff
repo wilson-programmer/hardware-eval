@@ -1,0 +1,42 @@
+From 7d2b21fd36c2a47799eed71c67bae7faa1ec4272 Mon Sep 17 00:00:00 2001
+From: Julien Grall <jgrall@amazon.com>
+Date: Fri, 18 Sep 2020 18:11:16 +0100
+Subject: [PATCH] xen/arm: bootfdt: Ignore empty memory bank
+
+At the moment, Xen will stop processing the Device Tree if a memory
+bank is empty (size == 0).
+
+Unfortunately, some of the Device Tree (such as on Colibri imx8qxp)
+may contain such a bank. This means Xen will not be able to boot
+properly.
+
+Relax the check to just ignore the banks. FWIW this also seems to be the
+behavior adopted by Linux.
+
+Reported-by: Daniel Wagner <Daniel.Wagner2@itk-engineering.de>
+Signed-off-by: Julien Grall <jgrall@amazon.com>
+Reviewed-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Stefano Stabellini <sstabellini@kernel.org>
+(cherry picked from commit 5a37207df52066efefe419c677b089a654d37afc)
+---
+ xen/arch/arm/bootfdt.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/arm/bootfdt.c b/xen/arch/arm/bootfdt.c
+index 08fb59f4e7..dcff512648 100644
+--- a/xen/arch/arm/bootfdt.c
++++ b/xen/arch/arm/bootfdt.c
+@@ -163,8 +163,9 @@ static int __init process_memory_node(const void *fdt, int node,
+     for ( i = 0; i < banks && mem->nr_banks < NR_MEM_BANKS; i++ )
+     {
+         device_tree_get_reg(&cell, address_cells, size_cells, &start, &size);
++        /* Some DT may describe empty bank, ignore them */
+         if ( !size )
+-            return -EINVAL;
++            continue;
+         mem->bank[mem->nr_banks].start = start;
+         mem->bank[mem->nr_banks].size = size;
+         mem->nr_banks++;
+-- 
+2.30.2
+

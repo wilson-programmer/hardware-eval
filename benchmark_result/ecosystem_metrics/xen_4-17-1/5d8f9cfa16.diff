@@ -1,0 +1,41 @@
+From 5d8f9cfa166c55a308856e7b021d778350edbd6c Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Tue, 1 Nov 2022 17:59:17 +0000
+Subject: [PATCH] tools/ocaml/xenctrl: Use larger chunksize in
+ domain_getinfolist
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+domain_getinfolist() is quadratic with the number of domains, because of the
+behaviour of the underlying hypercall.  Nevertheless, getting domain info in
+blocks of 1024 is far more efficient than blocks of 2.
+
+In a scalability testing scenario with ~1000 VMs, a combination of this and
+the previous change takes xenopsd's wallclock time in domain_getinfolist()
+down from 88% to 0.02%
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Tested-by: Pau Ruiz Safont <pau.safont@citrix.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+(cherry picked from commit 95db09b1b154fb72fad861815ceae1f3fa49fc4e)
+---
+ tools/ocaml/libs/xc/xenctrl.ml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/ocaml/libs/xc/xenctrl.ml b/tools/ocaml/libs/xc/xenctrl.ml
+index 85b73a7f6f..aa650533f7 100644
+--- a/tools/ocaml/libs/xc/xenctrl.ml
++++ b/tools/ocaml/libs/xc/xenctrl.ml
+@@ -233,7 +233,7 @@ let rev_append_fold acc e = List.rev_append e acc
+ let rev_concat lst = List.fold_left rev_append_fold [] lst
+ 
+ let domain_getinfolist handle first_domain =
+-	let nb = 2 in
++	let nb = 1024 in
+ 	let rec __getlist lst from =
+ 		(* _domain_getinfolist returns domains in reverse order, largest first *)
+ 		match _domain_getinfolist handle from nb with
+-- 
+2.30.2
+

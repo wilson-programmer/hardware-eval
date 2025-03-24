@@ -1,0 +1,52 @@
+From 3774760ae0e3ecffb5a1d60133adc172702663b9 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Edwin=20T=C3=B6r=C3=B6k?= <edvin.torok@citrix.com>
+Date: Wed, 9 Nov 2022 10:48:33 +0100
+Subject: [PATCH] tools/ocaml/xenstored/store.ml: fix build error
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+Building with Dune in release mode fails with:
+```
+File "ocaml/xenstored/store.ml", line 464, characters 13-32:
+Warning 18: this type-based record disambiguation is not principal.
+File "ocaml/xenstored/store.ml", line 1:
+Error: Some fatal warnings were triggered (1 occurrences)
+```
+
+This is a warning to help keep the code futureproof, quoting from its
+documentation:
+> Check information path during type-checking, to make sure that all types are
+> derived in a principal way. When using labelled arguments and/or polymorphic
+> methods, this flag is required to ensure future versions of the compiler will
+> be able to infer types correctly, even if internal algorithms change. All
+> programs accepted in -principal mode are also accepted in the default mode with
+> equivalent types, but different binary signatures, and this may slow down type
+> checking; yet it is a good idea to use it once before publishing source code.
+
+Fixes: db471408edd46 "tools/ocaml/xenstored: Fix quota bypass on domain shutdown"
+
+Signed-off-by: Edwin TÃ¶rÃ¶k <edvin.torok@citrix.com>
+Acked-by: Christian Lindig <christian.lindig@citrix.com>
+Release-acked-by: Henry Wang <Henry.Wang@arm.com>
+(cherry picked from commit 124492eff8e4acdaaed939fa9406b108c55fec73)
+---
+ tools/ocaml/xenstored/store.ml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/ocaml/xenstored/store.ml b/tools/ocaml/xenstored/store.ml
+index 70f0c83de4..c94dbf3a62 100644
+--- a/tools/ocaml/xenstored/store.ml
++++ b/tools/ocaml/xenstored/store.ml
+@@ -461,7 +461,7 @@ let reset_permissions store domid =
+ 		| Some perms ->
+ 			if perms <> node.perms then
+ 				Logging.debug "store|node" "Changed permissions for node %s" (Node.get_name node);
+-			Some { node with perms }
++			Some { node with Node.perms }
+ 	) store.root
+ 
+ type ops = {
+-- 
+2.30.2
+

@@ -1,0 +1,445 @@
+From 46cfaece2fceea9b357607cc45b709fd2b256d95 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 5 Apr 2022 15:00:05 +0200
+Subject: [PATCH] IOMMU/x86: maintain a per-device pseudo domain ID
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+In order to subsequently enable per-device quarantine page tables, we'll
+need domain-ID-like identifiers to be inserted in the respective device
+(AMD) or context (Intel) table entries alongside the per-device page
+table root addresses.
+
+Make use of "real" domain IDs occupying only half of the value range
+coverable by domid_t.
+
+Note that in VT-d's iommu_alloc() I didn't want to introduce new memory
+leaks in case of error, but existing ones don't get plugged - that'll be
+the subject of a later change.
+
+The VT-d changes are slightly asymmetric, but this way we can avoid
+assigning pseudo domain IDs to devices which would never be mapped while
+still avoiding to add a new parameter to domain_context_unmap().
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul@xen.org>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 97af062b89d52c0ecf7af254b53345c97d438e33
+master date: 2022-04-05 14:19:10 +0200
+---
+ xen/drivers/passthrough/amd/iommu.h         |  1 +
+ xen/drivers/passthrough/amd/iommu_detect.c  |  8 +++
+ xen/drivers/passthrough/amd/pci_amd_iommu.c | 22 ++++++-
+ xen/drivers/passthrough/pci.c               |  9 ++-
+ xen/drivers/passthrough/vtd/iommu.c         | 69 +++++++++++++++++----
+ xen/drivers/passthrough/vtd/iommu.h         |  1 +
+ xen/drivers/passthrough/x86/iommu.c         | 47 ++++++++++++++
+ xen/include/asm-x86/iommu.h                 |  4 ++
+ xen/include/asm-x86/pci.h                   |  6 ++
+ 9 files changed, 152 insertions(+), 15 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu.h b/xen/drivers/passthrough/amd/iommu.h
+index 0723dce196..e4d13f6ef5 100644
+--- a/xen/drivers/passthrough/amd/iommu.h
++++ b/xen/drivers/passthrough/amd/iommu.h
+@@ -96,6 +96,7 @@ struct amd_iommu {
+     struct ring_buffer cmd_buffer;
+     struct ring_buffer event_log;
+     struct ring_buffer ppr_log;
++    unsigned long *domid_map;
+ 
+     int exclusion_enable;
+     int exclusion_allow_all;
+diff --git a/xen/drivers/passthrough/amd/iommu_detect.c b/xen/drivers/passthrough/amd/iommu_detect.c
+index d05bc6a5bb..b56127d41c 100644
+--- a/xen/drivers/passthrough/amd/iommu_detect.c
++++ b/xen/drivers/passthrough/amd/iommu_detect.c
+@@ -180,6 +180,11 @@ int __init amd_iommu_detect_one_acpi(
+     if ( rt )
+         goto out;
+ 
++    iommu->domid_map = iommu_init_domid();
++    rt = -ENOMEM;
++    if ( !iommu->domid_map )
++        goto out;
++
+     rt = pci_ro_device(iommu->seg, bus, PCI_DEVFN(dev, func));
+     if ( rt )
+         printk(XENLOG_ERR "Could not mark config space of %pp read-only (%d)\n",
+@@ -190,7 +195,10 @@ int __init amd_iommu_detect_one_acpi(
+ 
+  out:
+     if ( rt )
++    {
++        xfree(iommu->domid_map);
+         xfree(iommu);
++    }
+ 
+     return rt;
+ }
+diff --git a/xen/drivers/passthrough/amd/pci_amd_iommu.c b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+index 583ae5a810..3f7587b2ce 100644
+--- a/xen/drivers/passthrough/amd/pci_amd_iommu.c
++++ b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+@@ -508,6 +508,8 @@ static int amd_iommu_add_device(u8 devfn, struct pci_dev *pdev)
+     struct amd_iommu *iommu;
+     u16 bdf;
+     struct ivrs_mappings *ivrs_mappings;
++    bool fresh_domid = false;
++    int ret;
+ 
+     if ( !pdev->domain )
+         return -EINVAL;
+@@ -568,7 +570,22 @@ static int amd_iommu_add_device(u8 devfn, struct pci_dev *pdev)
+         spin_unlock_irqrestore(&iommu->lock, flags);
+     }
+ 
+-    return amd_iommu_setup_domain_device(pdev->domain, iommu, devfn, pdev);
++    if ( iommu_quarantine && pdev->arch.pseudo_domid == DOMID_INVALID )
++    {
++        pdev->arch.pseudo_domid = iommu_alloc_domid(iommu->domid_map);
++        if ( pdev->arch.pseudo_domid == DOMID_INVALID )
++            return -ENOSPC;
++        fresh_domid = true;
++    }
++
++    ret = amd_iommu_setup_domain_device(pdev->domain, iommu, devfn, pdev);
++    if ( ret && fresh_domid )
++    {
++        iommu_free_domid(pdev->arch.pseudo_domid, iommu->domid_map);
++        pdev->arch.pseudo_domid = DOMID_INVALID;
++    }
++
++    return ret;
+ }
+ 
+ static int amd_iommu_remove_device(u8 devfn, struct pci_dev *pdev)
+@@ -591,6 +608,9 @@ static int amd_iommu_remove_device(u8 devfn, struct pci_dev *pdev)
+ 
+     amd_iommu_disable_domain_device(pdev->domain, iommu, devfn, pdev);
+ 
++    iommu_free_domid(pdev->arch.pseudo_domid, iommu->domid_map);
++    pdev->arch.pseudo_domid = DOMID_INVALID;
++
+     ivrs_mappings = get_ivrs_mappings(pdev->seg);
+     bdf = PCI_BDF2(pdev->bus, devfn);
+     if ( amd_iommu_perdev_intremap &&
+diff --git a/xen/drivers/passthrough/pci.c b/xen/drivers/passthrough/pci.c
+index e2c022aeea..1353e30747 100644
+--- a/xen/drivers/passthrough/pci.c
++++ b/xen/drivers/passthrough/pci.c
+@@ -327,6 +327,7 @@ static struct pci_dev *alloc_pdev(struct pci_seg *pseg, u8 bus, u8 devfn)
+     *((u8*) &pdev->bus) = bus;
+     *((u8*) &pdev->devfn) = devfn;
+     pdev->domain = NULL;
++    pdev->arch.pseudo_domid = DOMID_INVALID;
+     INIT_LIST_HEAD(&pdev->msi_list);
+ 
+     pos = pci_find_cap_offset(pseg->nr, bus, PCI_SLOT(devfn), PCI_FUNC(devfn),
+@@ -1276,8 +1277,12 @@ static int _dump_pci_devices(struct pci_seg *pseg, void *arg)
+ 
+     list_for_each_entry ( pdev, &pseg->alldevs_list, alldevs_list )
+     {
+-        printk("%pp - %pd - node %-3d - MSIs < ",
+-               &pdev->sbdf, pdev->domain,
++        printk("%pp - ", &pdev->sbdf);
++        if ( pdev->domain == dom_io )
++            printk("DomIO:%x", pdev->arch.pseudo_domid);
++        else
++            printk("%pd", pdev->domain);
++        printk(" - node %-3d - MSIs < ",
+                (pdev->node != NUMA_NO_NODE) ? pdev->node : -1);
+         list_for_each_entry ( msi, &pdev->msi_list, list )
+                printk("%d ", msi->irq);
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index ad81d8ebf7..e362604726 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -22,6 +22,7 @@
+ #include <xen/sched.h>
+ #include <xen/xmalloc.h>
+ #include <xen/domain_page.h>
++#include <xen/err.h>
+ #include <xen/iocap.h>
+ #include <xen/iommu.h>
+ #include <xen/numa.h>
+@@ -1204,7 +1205,7 @@ int __init iommu_alloc(struct acpi_drhd_unit *drhd)
+ {
+     struct vtd_iommu *iommu;
+     unsigned long sagaw, nr_dom;
+-    int agaw;
++    int agaw, rc;
+ 
+     if ( nr_iommus >= MAX_IOMMUS )
+     {
+@@ -1297,7 +1298,16 @@ int __init iommu_alloc(struct acpi_drhd_unit *drhd)
+     if ( !iommu->domid_map )
+         return -ENOMEM;
+ 
++    iommu->pseudo_domid_map = iommu_init_domid();
++    rc = -ENOMEM;
++    if ( !iommu->pseudo_domid_map )
++        goto free;
++
+     return 0;
++
++ free:
++    iommu_free(drhd);
++    return rc;
+ }
+ 
+ void __init iommu_free(struct acpi_drhd_unit *drhd)
+@@ -1320,6 +1330,7 @@ void __init iommu_free(struct acpi_drhd_unit *drhd)
+ 
+     xfree(iommu->domid_bitmap);
+     xfree(iommu->domid_map);
++    xfree(iommu->pseudo_domid_map);
+ 
+     if ( iommu->msi.irq >= 0 )
+         destroy_irq(iommu->msi.irq);
+@@ -1581,8 +1592,8 @@ int domain_context_mapping_one(
+     return rc ?: pdev && prev_dom;
+ }
+ 
+-static int domain_context_unmap(struct domain *d, uint8_t devfn,
+-                                struct pci_dev *pdev);
++static const struct acpi_drhd_unit *domain_context_unmap(
++    struct domain *d, uint8_t devfn, struct pci_dev *pdev);
+ 
+ static int domain_context_mapping(struct domain *domain, u8 devfn,
+                                   struct pci_dev *pdev)
+@@ -1590,6 +1601,7 @@ static int domain_context_mapping(struct domain *domain, u8 devfn,
+     struct acpi_drhd_unit *drhd;
+     const struct acpi_rmrr_unit *rmrr;
+     paddr_t pgd_maddr = dom_iommu(domain)->arch.vtd.pgd_maddr;
++    domid_t orig_domid = pdev->arch.pseudo_domid;
+     int ret = 0;
+     unsigned int i, mode = 0;
+     uint16_t seg = pdev->seg, bdf;
+@@ -1649,6 +1661,14 @@ static int domain_context_mapping(struct domain *domain, u8 devfn,
+         break;
+ 
+     case DEV_TYPE_PCIe_ENDPOINT:
++        if ( iommu_quarantine && orig_domid == DOMID_INVALID )
++        {
++            pdev->arch.pseudo_domid =
++                iommu_alloc_domid(drhd->iommu->pseudo_domid_map);
++            if ( pdev->arch.pseudo_domid == DOMID_INVALID )
++                return -ENOSPC;
++        }
++
+         if ( iommu_debug )
+             printk(VTDPREFIX "%pd:PCIe: map %pp\n",
+                    domain, &PCI_SBDF3(seg, bus, devfn));
+@@ -1663,6 +1683,14 @@ static int domain_context_mapping(struct domain *domain, u8 devfn,
+         break;
+ 
+     case DEV_TYPE_PCI:
++        if ( iommu_quarantine && orig_domid == DOMID_INVALID )
++        {
++            pdev->arch.pseudo_domid =
++                iommu_alloc_domid(drhd->iommu->pseudo_domid_map);
++            if ( pdev->arch.pseudo_domid == DOMID_INVALID )
++                return -ENOSPC;
++        }
++
+         if ( iommu_debug )
+             printk(VTDPREFIX "%pd:PCI: map %pp\n",
+                    domain, &PCI_SBDF3(seg, bus, devfn));
+@@ -1736,6 +1764,13 @@ static int domain_context_mapping(struct domain *domain, u8 devfn,
+     if ( !ret && devfn == pdev->devfn )
+         pci_vtd_quirk(pdev);
+ 
++    if ( ret && drhd && orig_domid == DOMID_INVALID )
++    {
++        iommu_free_domid(pdev->arch.pseudo_domid,
++                         drhd->iommu->pseudo_domid_map);
++        pdev->arch.pseudo_domid = DOMID_INVALID;
++    }
++
+     return ret;
+ }
+ 
+@@ -1818,8 +1853,10 @@ int domain_context_unmap_one(
+     return rc;
+ }
+ 
+-static int domain_context_unmap(struct domain *domain, u8 devfn,
+-                                struct pci_dev *pdev)
++static const struct acpi_drhd_unit *domain_context_unmap(
++    struct domain *domain,
++    uint8_t devfn,
++    struct pci_dev *pdev)
+ {
+     struct acpi_drhd_unit *drhd;
+     struct vtd_iommu *iommu;
+@@ -1829,7 +1866,7 @@ static int domain_context_unmap(struct domain *domain, u8 devfn,
+ 
+     drhd = acpi_find_matched_drhd_unit(pdev);
+     if ( !drhd )
+-        return -ENODEV;
++        return ERR_PTR(-ENODEV);
+     iommu = drhd->iommu;
+ 
+     switch ( pdev->type )
+@@ -1839,7 +1876,7 @@ static int domain_context_unmap(struct domain *domain, u8 devfn,
+             printk(VTDPREFIX "%pd:Hostbridge: skip %pp unmap\n",
+                    domain, &PCI_SBDF3(seg, bus, devfn));
+         if ( !is_hardware_domain(domain) )
+-            return -EPERM;
++            return ERR_PTR(-EPERM);
+         goto out;
+ 
+     case DEV_TYPE_PCIe_BRIDGE:
+@@ -1912,7 +1949,7 @@ static int domain_context_unmap(struct domain *domain, u8 devfn,
+         check_cleanup_domid_map(domain, pdev, iommu);
+ 
+ out:
+-    return ret;
++    return ret ? ERR_PTR(ret) : drhd;
+ }
+ 
+ static void iommu_clear_root_pgtable(struct domain *d)
+@@ -2137,16 +2174,17 @@ static int intel_iommu_enable_device(struct pci_dev *pdev)
+ 
+ static int intel_iommu_remove_device(u8 devfn, struct pci_dev *pdev)
+ {
++    const struct acpi_drhd_unit *drhd;
+     struct acpi_rmrr_unit *rmrr;
+     u16 bdf;
+-    int ret, i;
++    unsigned int i;
+ 
+     if ( !pdev->domain )
+         return -EINVAL;
+ 
+-    ret = domain_context_unmap(pdev->domain, devfn, pdev);
+-    if ( ret )
+-        return ret;
++    drhd = domain_context_unmap(pdev->domain, devfn, pdev);
++    if ( IS_ERR(drhd) )
++        return PTR_ERR(drhd);
+ 
+     for_each_rmrr_device ( rmrr, bdf, i )
+     {
+@@ -2163,6 +2201,13 @@ static int intel_iommu_remove_device(u8 devfn, struct pci_dev *pdev)
+                                rmrr->end_address, 0);
+     }
+ 
++    if ( drhd )
++    {
++        iommu_free_domid(pdev->arch.pseudo_domid,
++                         drhd->iommu->pseudo_domid_map);
++        pdev->arch.pseudo_domid = DOMID_INVALID;
++    }
++
+     return 0;
+ }
+ 
+diff --git a/xen/drivers/passthrough/vtd/iommu.h b/xen/drivers/passthrough/vtd/iommu.h
+index 503b07ffb7..be44fc017f 100644
+--- a/xen/drivers/passthrough/vtd/iommu.h
++++ b/xen/drivers/passthrough/vtd/iommu.h
+@@ -535,6 +535,7 @@ struct vtd_iommu {
+     } flush;
+ 
+     struct list_head ats_devices;
++    unsigned long *pseudo_domid_map; /* "pseudo" domain id bitmap */
+     unsigned long *domid_bitmap;  /* domain id bitmap */
+     u16 *domid_map;               /* domain id mapping array */
+     uint32_t version;
+diff --git a/xen/drivers/passthrough/x86/iommu.c b/xen/drivers/passthrough/x86/iommu.c
+index f609dcc373..edb2d9bd64 100644
+--- a/xen/drivers/passthrough/x86/iommu.c
++++ b/xen/drivers/passthrough/x86/iommu.c
+@@ -386,6 +386,53 @@ void __hwdom_init arch_iommu_hwdom_init(struct domain *d)
+         return;
+ }
+ 
++unsigned long *__init iommu_init_domid(void)
++{
++    if ( !iommu_quarantine )
++        return ZERO_BLOCK_PTR;
++
++    BUILD_BUG_ON(DOMID_MASK * 2U >= UINT16_MAX);
++
++    return xzalloc_array(unsigned long,
++                         BITS_TO_LONGS(UINT16_MAX - DOMID_MASK));
++}
++
++domid_t iommu_alloc_domid(unsigned long *map)
++{
++    /*
++     * This is used uniformly across all IOMMUs, such that on typical
++     * systems we wouldn't re-use the same ID very quickly (perhaps never).
++     */
++    static unsigned int start;
++    unsigned int idx = find_next_zero_bit(map, UINT16_MAX - DOMID_MASK, start);
++
++    ASSERT(pcidevs_locked());
++
++    if ( idx >= UINT16_MAX - DOMID_MASK )
++        idx = find_first_zero_bit(map, UINT16_MAX - DOMID_MASK);
++    if ( idx >= UINT16_MAX - DOMID_MASK )
++        return DOMID_INVALID;
++
++    __set_bit(idx, map);
++
++    start = idx + 1;
++
++    return idx | (DOMID_MASK + 1);
++}
++
++void iommu_free_domid(domid_t domid, unsigned long *map)
++{
++    ASSERT(pcidevs_locked());
++
++    if ( domid == DOMID_INVALID )
++        return;
++
++    ASSERT(domid > DOMID_MASK);
++
++    if ( !__test_and_clear_bit(domid & DOMID_MASK, map) )
++        BUG();
++}
++
+ int iommu_free_pgtables(struct domain *d)
+ {
+     struct domain_iommu *hd = dom_iommu(d);
+diff --git a/xen/include/asm-x86/iommu.h b/xen/include/asm-x86/iommu.h
+index 49fa67298d..8175b5ec6d 100644
+--- a/xen/include/asm-x86/iommu.h
++++ b/xen/include/asm-x86/iommu.h
+@@ -142,6 +142,10 @@ int pi_update_irte(const struct pi_desc *pi_desc, const struct pirq *pirq,
+         iommu_vcall(ops, sync_cache, addr, size);       \
+ })
+ 
++unsigned long *iommu_init_domid(void);
++domid_t iommu_alloc_domid(unsigned long *map);
++void iommu_free_domid(domid_t domid, unsigned long *map);
++
+ int __must_check iommu_free_pgtables(struct domain *d);
+ struct domain_iommu;
+ struct page_info *__must_check iommu_alloc_pgtable(struct domain_iommu *hd);
+diff --git a/xen/include/asm-x86/pci.h b/xen/include/asm-x86/pci.h
+index cc05045e9c..70ed48e309 100644
+--- a/xen/include/asm-x86/pci.h
++++ b/xen/include/asm-x86/pci.h
+@@ -15,6 +15,12 @@
+ 
+ struct arch_pci_dev {
+     vmask_t used_vectors;
++    /*
++     * These fields are (de)initialized under pcidevs-lock. Other uses of
++     * them don't race (de)initialization and hence don't strictly need any
++     * locking.
++     */
++    domid_t pseudo_domid;
+ };
+ 
+ int pci_conf_write_intercept(unsigned int seg, unsigned int bdf,
+-- 
+2.30.2
+

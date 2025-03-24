@@ -1,0 +1,341 @@
+From 1e8932f0d815bee3102ede328676e1a4ca1926c7 Mon Sep 17 00:00:00 2001
+From: Paul Durrant <pdurrant@amazon.com>
+Date: Fri, 6 Dec 2019 12:46:24 +0100
+Subject: [PATCH] x86 / iommu: set up a scratch page in the quarantine domain
+
+This patch introduces a new iommu_op to facilitate a per-implementation
+quarantine set up, and then further code for x86 implementations
+(amd and vtd) to set up a read-only scratch page to serve as the source
+for DMA reads whilst a device is assigned to dom_io. DMA writes will
+continue to fault as before.
+
+The reason for doing this is that some hardware may continue to re-try
+DMA (despite FLR) in the event of an error, or even BME being cleared, and
+will fail to deal with DMA read faults gracefully. Having a scratch page
+mapped will allow pending DMA reads to complete and thus such buggy
+hardware will eventually be quiesced.
+
+NOTE: These modifications are restricted to x86 implementations only as
+      the buggy h/w I am aware of is only used with Xen in an x86
+      environment. ARM may require similar code but, since I am not
+      aware of the need, this patch does not modify any ARM implementation.
+
+Signed-off-by: Paul Durrant <pdurrant@amazon.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: ea38867831da67eed0e9c61672c8941016b63dd9
+master date: 2019-11-29 18:27:54 +0000
+---
+ xen/drivers/passthrough/amd/iommu_map.c       | 62 ++++++++++++++++
+ xen/drivers/passthrough/amd/pci_amd_iommu.c   | 14 +---
+ xen/drivers/passthrough/iommu.c               | 17 ++++-
+ xen/drivers/passthrough/vtd/iommu.c           | 74 +++++++++++++++----
+ xen/include/asm-x86/hvm/svm/amd-iommu-proto.h |  3 +
+ xen/include/xen/iommu.h                       |  1 +
+ 6 files changed, 147 insertions(+), 24 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_map.c b/xen/drivers/passthrough/amd/iommu_map.c
+index 628aa60230..f876ce832b 100644
+--- a/xen/drivers/passthrough/amd/iommu_map.c
++++ b/xen/drivers/passthrough/amd/iommu_map.c
+@@ -758,6 +758,68 @@ void amd_iommu_share_p2m(struct domain *d)
+     }
+ }
+ 
++int __init amd_iommu_quarantine_init(struct domain *d)
++{
++    struct domain_iommu *hd = dom_iommu(d);
++    unsigned long max_gfn =
++        PFN_DOWN((1ul << DEFAULT_DOMAIN_ADDRESS_WIDTH) - 1);
++    unsigned int level = amd_iommu_get_paging_mode(max_gfn);
++    uint64_t *table;
++
++    if ( hd->arch.root_table )
++    {
++        ASSERT_UNREACHABLE();
++        return 0;
++    }
++
++    spin_lock(&hd->arch.mapping_lock);
++
++    hd->arch.root_table = alloc_amd_iommu_pgtable();
++    if ( !hd->arch.root_table )
++        goto out;
++
++    table = __map_domain_page(hd->arch.root_table);
++    while ( level )
++    {
++        struct page_info *pg;
++        unsigned int i;
++
++        /*
++         * The pgtable allocator is fine for the leaf page, as well as
++         * page table pages, and the resulting allocations are always
++         * zeroed.
++         */
++        pg = alloc_amd_iommu_pgtable();
++        if ( !pg )
++            break;
++
++        for ( i = 0; i < PTE_PER_TABLE_SIZE; i++ )
++        {
++            uint32_t *pde = (uint32_t *)&table[i];
++
++            /*
++             * PDEs are essentially a subset of PTEs, so this function
++             * is fine to use even at the leaf.
++             */
++            set_iommu_pde_present(pde, mfn_x(page_to_mfn(pg)), level - 1,
++                                  false, true);
++        }
++
++        unmap_domain_page(table);
++        table = __map_domain_page(pg);
++        level--;
++    }
++    unmap_domain_page(table);
++
++ out:
++    spin_unlock(&hd->arch.mapping_lock);
++
++    amd_iommu_flush_all_pages(d);
++
++    /* Pages leaked in failure case */
++    return level ? -ENOMEM : 0;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/xen/drivers/passthrough/amd/pci_amd_iommu.c b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+index 15c13e1163..93ecae4a6c 100644
+--- a/xen/drivers/passthrough/amd/pci_amd_iommu.c
++++ b/xen/drivers/passthrough/amd/pci_amd_iommu.c
+@@ -120,10 +120,6 @@ static void amd_iommu_setup_domain_device(
+     u8 bus = pdev->bus;
+     const struct domain_iommu *hd = dom_iommu(domain);
+ 
+-    /* dom_io is used as a sentinel for quarantined devices */
+-    if ( domain == dom_io )
+-        return;
+-
+     BUG_ON( !hd->arch.root_table || !hd->arch.paging_mode ||
+             !iommu->dev_table.buffer );
+ 
+@@ -226,7 +222,7 @@ static int __must_check allocate_domain_resources(struct domain_iommu *hd)
+     return rc;
+ }
+ 
+-static int get_paging_mode(unsigned long entries)
++int amd_iommu_get_paging_mode(unsigned long entries)
+ {
+     int level = 1;
+ 
+@@ -248,7 +244,8 @@ static int amd_iommu_domain_init(struct domain *d)
+ 
+     /* For pv and dom0, stick with get_paging_mode(max_page)
+      * For HVM dom0, use 2 level page table at first */
+-    hd->arch.paging_mode = is_hvm_domain(d) ? 2 : get_paging_mode(max_page);
++    hd->arch.paging_mode = is_hvm_domain(d) ?
++        2 : amd_iommu_get_paging_mode(max_page);
+     return 0;
+ }
+ 
+@@ -281,10 +278,6 @@ void amd_iommu_disable_domain_device(struct domain *domain,
+     int req_id;
+     u8 bus = pdev->bus;
+ 
+-    /* dom_io is used as a sentinel for quarantined devices */
+-    if ( domain == dom_io )
+-        return;
+-
+     BUG_ON ( iommu->dev_table.buffer == NULL );
+     req_id = get_dma_requestor_id(iommu->seg, PCI_BDF2(bus, devfn));
+     dte = iommu->dev_table.buffer + (req_id * IOMMU_DEV_TABLE_ENTRY_SIZE);
+@@ -581,6 +574,7 @@ static void amd_dump_p2m_table(struct domain *d)
+ static const struct iommu_ops __initconstrel amd_iommu_ops = {
+     .init = amd_iommu_domain_init,
+     .hwdom_init = amd_iommu_hwdom_init,
++    .quarantine_init = amd_iommu_quarantine_init,
+     .add_device = amd_iommu_add_device,
+     .remove_device = amd_iommu_remove_device,
+     .assign_device  = amd_iommu_assign_device,
+diff --git a/xen/drivers/passthrough/iommu.c b/xen/drivers/passthrough/iommu.c
+index 20db08e1df..a747bfb946 100644
+--- a/xen/drivers/passthrough/iommu.c
++++ b/xen/drivers/passthrough/iommu.c
+@@ -497,6 +497,21 @@ int iommu_iotlb_flush_all(struct domain *d, unsigned int flush_flags)
+     return rc;
+ }
+ 
++static int __init iommu_quarantine_init(void)
++{
++    const struct domain_iommu *hd = dom_iommu(dom_io);
++    int rc;
++
++    rc = iommu_domain_init(dom_io);
++    if ( rc )
++        return rc;
++
++    if ( !hd->platform_ops->quarantine_init )
++        return 0;
++
++    return hd->platform_ops->quarantine_init(dom_io);
++}
++
+ int __init iommu_setup(void)
+ {
+     int rc = -ENODEV;
+@@ -530,7 +545,7 @@ int __init iommu_setup(void)
+     printk("I/O virtualisation %sabled\n", iommu_enabled ? "en" : "dis");
+     if ( iommu_enabled )
+     {
+-        if ( iommu_domain_init(dom_io) )
++        if ( iommu_quarantine_init() )
+             panic("Could not set up quarantine\n");
+ 
+         printk(" - Dom0 mode: %s\n",
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index 5663e9740d..576e72eba1 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -192,7 +192,7 @@ u64 alloc_pgtable_maddr(struct acpi_drhd_unit *drhd, unsigned long npages)
+     nodeid_t node = NUMA_NO_NODE;
+     unsigned int i;
+ 
+-    rhsa = drhd_to_rhsa(drhd);
++    rhsa = drhd ? drhd_to_rhsa(drhd) : NULL;
+     if ( rhsa )
+         node =  pxm_to_node(rhsa->proximity_domain);
+ 
+@@ -1340,10 +1340,6 @@ int domain_context_mapping_one(
+     int agaw, rc, ret;
+     bool_t flush_dev_iotlb;
+ 
+-    /* dom_io is used as a sentinel for quarantined devices */
+-    if ( domain == dom_io )
+-        return 0;
+-
+     ASSERT(pcidevs_locked());
+     spin_lock(&iommu->lock);
+     maddr = bus_to_context_maddr(iommu, bus);
+@@ -1579,10 +1575,6 @@ int domain_context_unmap_one(
+     int iommu_domid, rc, ret;
+     bool_t flush_dev_iotlb;
+ 
+-    /* dom_io is used as a sentinel for quarantined devices */
+-    if ( domain == dom_io )
+-        return 0;
+-
+     ASSERT(pcidevs_locked());
+     spin_lock(&iommu->lock);
+ 
+@@ -1715,10 +1707,6 @@ static int domain_context_unmap(struct domain *domain, u8 devfn,
+         goto out;
+     }
+ 
+-    /* dom_io is used as a sentinel for quarantined devices */
+-    if ( domain == dom_io )
+-        goto out;
+-
+     /*
+      * if no other devices under the same iommu owned by this domain,
+      * clear iommu in iommu_bitmap and clear domain_id in domid_bitmp
+@@ -2736,9 +2724,69 @@ static void vtd_dump_p2m_table(struct domain *d)
+     vtd_dump_p2m_table_level(hd->arch.pgd_maddr, agaw_to_level(hd->arch.agaw), 0, 0);
+ }
+ 
++static int __init intel_iommu_quarantine_init(struct domain *d)
++{
++    struct domain_iommu *hd = dom_iommu(d);
++    struct dma_pte *parent;
++    unsigned int agaw = width_to_agaw(DEFAULT_DOMAIN_ADDRESS_WIDTH);
++    unsigned int level = agaw_to_level(agaw);
++    int rc;
++
++    if ( hd->arch.pgd_maddr )
++    {
++        ASSERT_UNREACHABLE();
++        return 0;
++    }
++
++    spin_lock(&hd->arch.mapping_lock);
++
++    hd->arch.pgd_maddr = alloc_pgtable_maddr(NULL, 1);
++    if ( !hd->arch.pgd_maddr )
++        goto out;
++
++    parent = map_vtd_domain_page(hd->arch.pgd_maddr);
++    while ( level )
++    {
++        uint64_t maddr;
++        unsigned int offset;
++
++        /*
++         * The pgtable allocator is fine for the leaf page, as well as
++         * page table pages, and the resulting allocations are always
++         * zeroed.
++         */
++        maddr = alloc_pgtable_maddr(NULL, 1);
++        if ( !maddr )
++            break;
++
++        for ( offset = 0; offset < PTE_NUM; offset++ )
++        {
++            struct dma_pte *pte = &parent[offset];
++
++            dma_set_pte_addr(*pte, maddr);
++            dma_set_pte_readable(*pte);
++        }
++        iommu_flush_cache_page(parent, 1);
++
++        unmap_vtd_domain_page(parent);
++        parent = map_vtd_domain_page(maddr);
++        level--;
++    }
++    unmap_vtd_domain_page(parent);
++
++ out:
++    spin_unlock(&hd->arch.mapping_lock);
++
++    rc = iommu_flush_iotlb_all(d);
++
++    /* Pages leaked in failure case */
++    return level ? -ENOMEM : rc;
++}
++
+ const struct iommu_ops __initconstrel intel_iommu_ops = {
+     .init = intel_iommu_domain_init,
+     .hwdom_init = intel_iommu_hwdom_init,
++    .quarantine_init = intel_iommu_quarantine_init,
+     .add_device = intel_iommu_add_device,
+     .enable_device = intel_iommu_enable_device,
+     .remove_device = intel_iommu_remove_device,
+diff --git a/xen/include/asm-x86/hvm/svm/amd-iommu-proto.h b/xen/include/asm-x86/hvm/svm/amd-iommu-proto.h
+index c5697565d6..5a160b89ca 100644
+--- a/xen/include/asm-x86/hvm/svm/amd-iommu-proto.h
++++ b/xen/include/asm-x86/hvm/svm/amd-iommu-proto.h
+@@ -51,6 +51,9 @@ void get_iommu_features(struct amd_iommu *iommu);
+ int amd_iommu_init(void);
+ int amd_iommu_update_ivrs_mapping_acpi(void);
+ 
++int amd_iommu_get_paging_mode(unsigned long entries);
++int amd_iommu_quarantine_init(struct domain *d);
++
+ /* mapping functions */
+ int __must_check amd_iommu_map_page(struct domain *d, dfn_t dfn,
+                                     mfn_t mfn, unsigned int flags,
+diff --git a/xen/include/xen/iommu.h b/xen/include/xen/iommu.h
+index 70ee53d083..617c993f50 100644
+--- a/xen/include/xen/iommu.h
++++ b/xen/include/xen/iommu.h
+@@ -189,6 +189,7 @@ typedef int iommu_grdm_t(xen_pfn_t start, xen_ulong_t nr, u32 id, void *ctxt);
+ struct iommu_ops {
+     int (*init)(struct domain *d);
+     void (*hwdom_init)(struct domain *d);
++    int (*quarantine_init)(struct domain *d);
+     int (*add_device)(u8 devfn, device_t *dev);
+     int (*enable_device)(device_t *dev);
+     int (*remove_device)(u8 devfn, device_t *dev);
+-- 
+2.30.2
+

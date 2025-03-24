@@ -1,0 +1,40 @@
+From d9dbd85adbb9012a1535dfb6df1685b321bf1c09 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 23 May 2023 14:53:39 +0200
+Subject: [PATCH] x86/mm: replace bogus assertion in paging_log_dirty_op()
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+While I was the one to introduce it, I don't think it is correct: A
+bogus continuation call issued by a tool stack domain may find another
+continuation in progress. IOW we've been asserting caller controlled
+state (which is reachable only via a domctl), and the early (lock-less)
+check in paging_domctl() helps in a limited way only.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+master commit: 0956aa2219745a198bb6a0a99e2108a3c09b280e
+master date: 2023-05-03 13:38:30 +0200
+---
+ xen/arch/x86/mm/paging.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/x86/mm/paging.c b/xen/arch/x86/mm/paging.c
+index 308d44bce7..ae0340570d 100644
+--- a/xen/arch/x86/mm/paging.c
++++ b/xen/arch/x86/mm/paging.c
+@@ -443,8 +443,8 @@ static int paging_log_dirty_op(struct domain *d,
+               d->arch.paging.preempt.op != sc->op )
+     {
+         paging_unlock(d);
+-        ASSERT(!resuming);
+-        domain_unpause(d);
++        if ( !resuming )
++            domain_unpause(d);
+         return -EBUSY;
+     }
+ 
+-- 
+2.30.2
+

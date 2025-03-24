@@ -1,0 +1,55 @@
+From e2436396ed340ade278c29faa9da52a0bd4ae7bc Mon Sep 17 00:00:00 2001
+From: Sergey Dyasli <sergey.dyasli@citrix.com>
+Date: Mon, 5 Nov 2018 15:02:22 +0100
+Subject: [PATCH] x86/boot: enable NMIs after traps init
+
+In certain scenarios, NMIs might be disabled during Xen boot process.
+Such situation will cause alternative_instructions() to:
+
+    panic("Timed out waiting for alternatives self-NMI to hit\n");
+
+This bug was originally seen when using Tboot to boot Xen 4.11
+
+To prevent this from happening, enable NMIs during cpu_init() and
+during __start_xen() for BSP.
+
+Signed-off-by: Sergey Dyasli <sergey.dyasli@citrix.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 072e054359a4d4a4f6c3fa09585667472c4f0f1d
+master date: 2018-10-23 12:33:54 +0100
+---
+ xen/arch/x86/cpu/common.c | 3 +++
+ xen/arch/x86/setup.c      | 3 +++
+ 2 files changed, 6 insertions(+)
+
+diff --git a/xen/arch/x86/cpu/common.c b/xen/arch/x86/cpu/common.c
+index fdb022875a..72e65b6e1a 100644
+--- a/xen/arch/x86/cpu/common.c
++++ b/xen/arch/x86/cpu/common.c
+@@ -831,6 +831,9 @@ void cpu_init(void)
+ #define CD(register) asm volatile ( "mov %0,%%db" #register : : "r"(0UL) );
+ 	CD(0); CD(1); CD(2); CD(3); /* no db4 and db5 */; CD(6); CD(7);
+ #undef CD
++
++	/* Enable NMIs.  Our loader (e.g. Tboot) may have left them disabled. */
++	enable_nmis();
+ }
+ 
+ void cpu_uninit(unsigned int cpu)
+diff --git a/xen/arch/x86/setup.c b/xen/arch/x86/setup.c
+index 2860c425ef..ecb0149849 100644
+--- a/xen/arch/x86/setup.c
++++ b/xen/arch/x86/setup.c
+@@ -702,6 +702,9 @@ void __init noreturn __start_xen(unsigned long mbi_p)
+ 
+     /* Full exception support from here on in. */
+ 
++    /* Enable NMIs.  Our loader (e.g. Tboot) may have left them disabled. */
++    enable_nmis();
++
+     if ( pvh_boot )
+     {
+         ASSERT(mbi_p == 0);
+-- 
+2.30.2
+

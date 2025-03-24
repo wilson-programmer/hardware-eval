@@ -1,0 +1,111 @@
+From b02bca1543f38cc3d2a644484b742768337ac302 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 4 Jun 2019 15:33:53 +0200
+Subject: [PATCH] AMD/IOMMU: disable previously enabled IOMMUs upon init
+ failure
+
+If any IOMMUs were successfully initialized before encountering failure,
+the successfully enabled ones should be disabled again before cleaning
+up their resources.
+
+Move disable_iommu() next to enable_iommu() to avoid a forward
+declaration, and take the opportunity to remove stray blank lines ahead
+of both functions' final closing braces.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Acked-by: Brian Woods <brian.woods@amd.com>
+master commit: 87a3347d476443c66c79953d77d6aef1d2bb3bbd
+master date: 2019-05-13 09:52:43 +0200
+---
+ xen/drivers/passthrough/amd/iommu_init.c | 59 ++++++++++++------------
+ 1 file changed, 29 insertions(+), 30 deletions(-)
+
+diff --git a/xen/drivers/passthrough/amd/iommu_init.c b/xen/drivers/passthrough/amd/iommu_init.c
+index 17f39552a9..e4b267ea61 100644
+--- a/xen/drivers/passthrough/amd/iommu_init.c
++++ b/xen/drivers/passthrough/amd/iommu_init.c
+@@ -909,7 +909,35 @@ static void enable_iommu(struct amd_iommu *iommu)
+ 
+     iommu->enabled = 1;
+     spin_unlock_irqrestore(&iommu->lock, flags);
++}
++
++static void disable_iommu(struct amd_iommu *iommu)
++{
++    unsigned long flags;
++
++    spin_lock_irqsave(&iommu->lock, flags);
+ 
++    if ( !iommu->enabled )
++    {
++        spin_unlock_irqrestore(&iommu->lock, flags);
++        return;
++    }
++
++    amd_iommu_msi_enable(iommu, IOMMU_CONTROL_DISABLED);
++    set_iommu_command_buffer_control(iommu, IOMMU_CONTROL_DISABLED);
++    set_iommu_event_log_control(iommu, IOMMU_CONTROL_DISABLED);
++
++    if ( amd_iommu_has_feature(iommu, IOMMU_EXT_FEATURE_PPRSUP_SHIFT) )
++        set_iommu_ppr_log_control(iommu, IOMMU_CONTROL_DISABLED);
++
++    if ( amd_iommu_has_feature(iommu, IOMMU_EXT_FEATURE_GTSUP_SHIFT) )
++        set_iommu_guest_translation_control(iommu, IOMMU_CONTROL_DISABLED);
++
++    set_iommu_translation_control(iommu, IOMMU_CONTROL_DISABLED);
++
++    iommu->enabled = 0;
++
++    spin_unlock_irqrestore(&iommu->lock, flags);
+ }
+ 
+ static void __init deallocate_buffer(void *buf, uint32_t sz)
+@@ -1046,6 +1074,7 @@ static void __init amd_iommu_init_cleanup(void)
+         list_del(&iommu->list);
+         if ( iommu->enabled )
+         {
++            disable_iommu(iommu);
+             deallocate_ring_buffer(&iommu->cmd_buffer);
+             deallocate_ring_buffer(&iommu->event_log);
+             deallocate_ring_buffer(&iommu->ppr_log);
+@@ -1297,36 +1326,6 @@ error_out:
+     return rc;
+ }
+ 
+-static void disable_iommu(struct amd_iommu *iommu)
+-{
+-    unsigned long flags;
+-
+-    spin_lock_irqsave(&iommu->lock, flags);
+-
+-    if ( !iommu->enabled )
+-    {
+-        spin_unlock_irqrestore(&iommu->lock, flags); 
+-        return;
+-    }
+-
+-    amd_iommu_msi_enable(iommu, IOMMU_CONTROL_DISABLED);
+-    set_iommu_command_buffer_control(iommu, IOMMU_CONTROL_DISABLED);
+-    set_iommu_event_log_control(iommu, IOMMU_CONTROL_DISABLED);
+-
+-    if ( amd_iommu_has_feature(iommu, IOMMU_EXT_FEATURE_PPRSUP_SHIFT) )
+-        set_iommu_ppr_log_control(iommu, IOMMU_CONTROL_DISABLED);
+-
+-    if ( amd_iommu_has_feature(iommu, IOMMU_EXT_FEATURE_GTSUP_SHIFT) )
+-        set_iommu_guest_translation_control(iommu, IOMMU_CONTROL_DISABLED);
+-
+-    set_iommu_translation_control(iommu, IOMMU_CONTROL_DISABLED);
+-
+-    iommu->enabled = 0;
+-
+-    spin_unlock_irqrestore(&iommu->lock, flags);
+-
+-}
+-
+ static void invalidate_all_domain_pages(void)
+ {
+     struct domain *d;
+-- 
+2.30.2
+

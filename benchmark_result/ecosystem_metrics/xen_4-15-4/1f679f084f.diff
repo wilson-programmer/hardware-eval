@@ -1,0 +1,42 @@
+From 1f679f084fef76810762ee69a584fc1b524be0b6 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Mon, 31 Oct 2022 13:33:59 +0100
+Subject: [PATCH] xen/sched: fix race in RTDS scheduler
+
+When a domain gets paused the unit runnable state can change to "not
+runnable" without the scheduling lock being involved. This means that
+a specific scheduler isn't involved in this change of runnable state.
+
+In the RTDS scheduler this can result in an inconsistency in case a
+unit is losing its "runnable" capability while the RTDS scheduler's
+scheduling function is active. RTDS will remove the unit from the run
+queue, but doesn't do so for the replenish queue, leading to hitting
+an ASSERT() in replq_insert() later when the domain is unpaused again.
+
+Fix that by removing the unit from the replenish queue as well in this
+case.
+
+Fixes: 7c7b407e7772 ("xen/sched: introduce unit_runnable_state()")
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Acked-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 73c62927f64ecb48f27d06176befdf76b879f340
+master date: 2022-10-21 12:32:23 +0200
+---
+ xen/common/sched/rt.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/xen/common/sched/rt.c b/xen/common/sched/rt.c
+index c24cd2ac32..ec2ca1bebc 100644
+--- a/xen/common/sched/rt.c
++++ b/xen/common/sched/rt.c
+@@ -1087,6 +1087,7 @@ rt_schedule(const struct scheduler *ops, struct sched_unit *currunit,
+         else if ( !unit_runnable_state(snext->unit) )
+         {
+             q_remove(snext);
++            replq_remove(ops, snext);
+             snext = rt_unit(sched_idle_unit(sched_cpu));
+         }
+ 
+-- 
+2.30.2
+

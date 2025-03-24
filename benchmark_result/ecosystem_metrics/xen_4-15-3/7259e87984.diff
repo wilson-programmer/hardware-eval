@@ -1,0 +1,84 @@
+From 7259e87984a00c6a481b89e1b3da8392750bcc36 Mon Sep 17 00:00:00 2001
+From: Bertrand Marquis <bertrand.marquis@arm.com>
+Date: Wed, 23 Feb 2022 09:42:18 +0000
+Subject: [PATCH] xen/arm: Add ECBHB and CLEARBHB ID fields
+
+Introduce ID coprocessor register ID_AA64ISAR2_EL1.
+Add definitions in cpufeature and sysregs of ECBHB field in mmfr1 and
+CLEARBHB in isar2 ID coprocessor registers.
+
+This is part of XSA-398 / CVE-2022-23960.
+
+Signed-off-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Acked-by: Julien Grall <julien@xen.org>
+(cherry picked from commit 4b68d12d98b8790d8002fcc2c25a9d713374a4d7)
+---
+ xen/arch/arm/cpufeature.c           |  1 +
+ xen/include/asm-arm/arm64/sysregs.h |  3 +++
+ xen/include/asm-arm/cpufeature.h    | 11 +++++++++--
+ 3 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/xen/arch/arm/cpufeature.c b/xen/arch/arm/cpufeature.c
+index 1d88783809..6b7b510d26 100644
+--- a/xen/arch/arm/cpufeature.c
++++ b/xen/arch/arm/cpufeature.c
+@@ -122,6 +122,7 @@ void identify_cpu(struct cpuinfo_arm *c)
+ 
+     c->isa64.bits[0] = READ_SYSREG(ID_AA64ISAR0_EL1);
+     c->isa64.bits[1] = READ_SYSREG(ID_AA64ISAR1_EL1);
++    c->isa64.bits[2] = READ_SYSREG(ID_AA64ISAR2_EL1);
+ 
+     c->zfr64.bits[0] = READ_SYSREG(ID_AA64ZFR0_EL1);
+ 
+diff --git a/xen/include/asm-arm/arm64/sysregs.h b/xen/include/asm-arm/arm64/sysregs.h
+index 077fd95fb7..3115c81970 100644
+--- a/xen/include/asm-arm/arm64/sysregs.h
++++ b/xen/include/asm-arm/arm64/sysregs.h
+@@ -84,6 +84,9 @@
+ #ifndef ID_DFR1_EL1
+ #define ID_DFR1_EL1                 S3_0_C0_C3_5
+ #endif
++#ifndef ID_AA64ISAR2_EL1
++#define ID_AA64ISAR2_EL1            S3_0_C0_C6_2
++#endif
+ 
+ /* Access to system registers */
+ 
+diff --git a/xen/include/asm-arm/cpufeature.h b/xen/include/asm-arm/cpufeature.h
+index 9ea3970c70..538145f260 100644
+--- a/xen/include/asm-arm/cpufeature.h
++++ b/xen/include/asm-arm/cpufeature.h
+@@ -206,14 +206,15 @@ struct cpuinfo_arm {
+             unsigned long lo:4;
+             unsigned long pan:4;
+             unsigned long __res1:8;
+-            unsigned long __res2:32;
++            unsigned long __res2:28;
++            unsigned long ecbhb:4;
+ 
+             unsigned long __res3:64;
+         };
+     } mm64;
+ 
+     union {
+-        uint64_t bits[2];
++        uint64_t bits[3];
+         struct {
+             /* ISAR0 */
+             unsigned long __res0:4;
+@@ -249,6 +250,12 @@ struct cpuinfo_arm {
+             unsigned long dgh:4;
+             unsigned long i8mm:4;
+             unsigned long __res2:8;
++
++            /* ISAR2 */
++            unsigned long __res3:28;
++            unsigned long clearbhb:4;
++
++            unsigned long __res4:32;
+         };
+     } isa64;
+ 
+-- 
+2.30.2
+

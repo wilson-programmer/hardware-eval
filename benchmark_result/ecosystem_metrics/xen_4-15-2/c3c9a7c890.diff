@@ -1,0 +1,38 @@
+From c3c9a7c890537249c0777eb098a169bcfd946047 Mon Sep 17 00:00:00 2001
+From: Juergen Gross <jgross@suse.com>
+Date: Fri, 15 Oct 2021 11:02:52 +0200
+Subject: [PATCH] sched: fix sched_move_domain() for domain without vcpus
+
+In case a domain is created with a cpupool other than Pool-0 specified
+it will be moved to that cpupool before any vcpus are allocated.
+
+This will lead to a NULL pointer dereference in sched_move_domain().
+
+Fix that by tolerating vcpus not being allocated yet.
+
+Fixes: 70fadc41635b9b6 ("xen/cpupool: support moving domain between cpupools with different granularity")
+Reported-by: Bertrand Marquis <bertrand.marquis@arm.com>
+Signed-off-by: Juergen Gross <jgross@suse.com>
+Reviewed-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: 999e1582f289cfb8d59e2e58927c1cba0ac2ada3
+master date: 2021-09-15 10:57:47 +0200
+---
+ xen/common/sched/core.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/common/sched/core.c b/xen/common/sched/core.c
+index 8d178baf3d..8f4b1ca10d 100644
+--- a/xen/common/sched/core.c
++++ b/xen/common/sched/core.c
+@@ -651,7 +651,7 @@ int sched_move_domain(struct domain *d, struct cpupool *c)
+     struct scheduler *old_ops = dom_scheduler(d);
+     void *old_domdata;
+     unsigned int gran = cpupool_get_granularity(c);
+-    unsigned int n_units = DIV_ROUND_UP(d->max_vcpus, gran);
++    unsigned int n_units = d->vcpu[0] ? DIV_ROUND_UP(d->max_vcpus, gran) : 0;
+     int ret = 0;
+ 
+     for_each_vcpu ( d, v )
+-- 
+2.30.2
+

@@ -1,0 +1,30 @@
+From c3cf33b071081cab85c9bcea2e87f2db49dc644d Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Thu, 24 Jun 2021 18:49:14 +0100
+Subject: [PATCH] libxencall: Bump SONAME following new functionality
+
+Fixes: bef64f2c00 ("libxencall: introduce variant of xencall2() returning long")
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Ian Jackson <iwj@xenproject.org>
+Backport-requested-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 01a2d001dea2219c9702afbe2d6fd1b0af539203)
+---
+ tools/libs/call/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libs/call/Makefile b/tools/libs/call/Makefile
+index 4ed201b3b3..93d404b79e 100644
+--- a/tools/libs/call/Makefile
++++ b/tools/libs/call/Makefile
+@@ -2,7 +2,7 @@ XEN_ROOT = $(CURDIR)/../../..
+ include $(XEN_ROOT)/tools/Rules.mk
+ 
+ MAJOR    = 1
+-MINOR    = 2
++MINOR    = 3
+ 
+ SRCS-y                 += core.c buffer.c
+ SRCS-$(CONFIG_Linux)   += linux.c
+-- 
+2.30.2
+

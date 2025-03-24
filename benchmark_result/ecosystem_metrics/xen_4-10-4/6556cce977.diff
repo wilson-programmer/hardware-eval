@@ -1,0 +1,50 @@
+From 6556cce9778113306c4a749e4b491b0143b2f205 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Wed, 15 May 2019 09:54:52 +0200
+Subject: [PATCH] VT-d: posted interrupts require interrupt remapping
+
+Initially I had just noticed the unnecessary indirection in the call
+from pi_update_irte(). The generic wrapper having an iommu_intremap
+conditional made me look at the setup code though. So first of all
+enforce the necessary dependency.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Kevin Tian <kevin.tian@intel.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 6c54663786d9f1ed04153867687c158675e7277d
+master date: 2019-04-09 15:12:07 +0200
+---
+ xen/drivers/passthrough/vtd/intremap.c | 3 ++-
+ xen/drivers/passthrough/vtd/iommu.c    | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/xen/drivers/passthrough/vtd/intremap.c b/xen/drivers/passthrough/vtd/intremap.c
+index dfd39c22c1..5f620c3202 100644
+--- a/xen/drivers/passthrough/vtd/intremap.c
++++ b/xen/drivers/passthrough/vtd/intremap.c
+@@ -986,7 +986,8 @@ int pi_update_irte(const struct pi_desc *pi_desc, const struct pirq *pirq,
+     spin_unlock_irq(&desc->lock);
+ 
+     ASSERT(pcidevs_locked());
+-    return iommu_update_ire_from_msi(msi_desc, &msi_desc->msg);
++
++    return msi_msg_write_remap_rte(msi_desc, &msi_desc->msg);
+ 
+  unlock_out:
+     spin_unlock_irq(&desc->lock);
+diff --git a/xen/drivers/passthrough/vtd/iommu.c b/xen/drivers/passthrough/vtd/iommu.c
+index 2093668328..481efef2b0 100644
+--- a/xen/drivers/passthrough/vtd/iommu.c
++++ b/xen/drivers/passthrough/vtd/iommu.c
+@@ -2284,7 +2284,7 @@ int __init intel_vtd_setup(void)
+          * not supported, since we count on this feature to
+          * atomically update 16-byte IRTE in posted format.
+          */
+-        if ( !cap_intr_post(iommu->cap) || !cpu_has_cx16 )
++        if ( !cap_intr_post(iommu->cap) || !iommu_intremap || !cpu_has_cx16 )
+             iommu_intpost = 0;
+ 
+         if ( !vtd_ept_page_compatible(iommu) )
+-- 
+2.30.2
+

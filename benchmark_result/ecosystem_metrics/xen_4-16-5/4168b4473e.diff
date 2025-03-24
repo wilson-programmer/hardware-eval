@@ -1,0 +1,71 @@
+From 4168b4473eeb93375ba7f222975b979042ae1ece Mon Sep 17 00:00:00 2001
+From: Stewart Hildebrand <stewart.hildebrand@amd.com>
+Date: Tue, 23 May 2023 15:03:19 +0200
+Subject: [PATCH] sched/null: avoid crash after failed domU creation
+
+When creating a domU, but the creation fails, there is a corner case that may
+lead to a crash in the null scheduler when running a debug build of Xen.
+
+(XEN) ****************************************
+(XEN) Panic on CPU 0:
+(XEN) Assertion 'npc->unit == unit' failed at common/sched/null.c:379
+(XEN) ****************************************
+
+The events leading to the crash are:
+
+* null_unit_insert() was invoked with the unit offline. Since the unit was
+  offline, unit_assign() was not called, and null_unit_insert() returned.
+* Later during domain creation, the unit was onlined
+* Eventually, domain creation failed due to bad configuration
+* null_unit_remove() was invoked with the unit still online. Since the unit was
+  online, it called unit_deassign() and triggered an ASSERT.
+
+To fix this, only call unit_deassign() when npc->unit is non-NULL in
+null_unit_remove.
+
+Signed-off-by: Stewart Hildebrand <stewart.hildebrand@amd.com>
+Reviewed-by: Juergen Gross <jgross@suse.com>
+Acked-by: Dario Faggioli <dfaggioli@suse.com>
+master commit: c2eae2614c8f04e384cd3334c3f06f31a6cb5f41
+master date: 2023-05-22 16:11:40 +0200
+---
+ xen/common/sched/null.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/xen/common/sched/null.c b/xen/common/sched/null.c
+index 82d5d1baab..31c327821c 100644
+--- a/xen/common/sched/null.c
++++ b/xen/common/sched/null.c
+@@ -521,6 +521,8 @@ static void null_unit_remove(const struct scheduler *ops,
+ {
+     struct null_private *prv = null_priv(ops);
+     struct null_unit *nvc = null_unit(unit);
++    struct null_pcpu *npc;
++    unsigned int cpu;
+     spinlock_t *lock;
+ 
+     ASSERT(!is_idle_unit(unit));
+@@ -530,8 +532,6 @@ static void null_unit_remove(const struct scheduler *ops,
+     /* If offline, the unit shouldn't be assigned, nor in the waitqueue */
+     if ( unlikely(!is_unit_online(unit)) )
+     {
+-        struct null_pcpu *npc;
+-
+         npc = unit->res->sched_priv;
+         ASSERT(npc->unit != unit);
+         ASSERT(list_empty(&nvc->waitq_elem));
+@@ -548,7 +548,10 @@ static void null_unit_remove(const struct scheduler *ops,
+         goto out;
+     }
+ 
+-    unit_deassign(prv, unit);
++    cpu = sched_unit_master(unit);
++    npc = get_sched_res(cpu)->sched_priv;
++    if ( npc->unit )
++        unit_deassign(prv, unit);
+ 
+  out:
+     unit_schedule_unlock_irq(lock, unit);
+-- 
+2.30.2
+

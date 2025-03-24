@@ -1,0 +1,57 @@
+From 54102e428ba3f677904278479f8110c8eef6fedc Mon Sep 17 00:00:00 2001
+From: David Woodhouse <dwmw@amazon.co.uk>
+Date: Tue, 21 Mar 2023 13:53:25 +0100
+Subject: [PATCH] libacpi: fix PCI hotplug AML
+
+The emulated PIIX3 uses a nybble for the status of each PCI function,
+so the status for e.g. slot 0 functions 0 and 1 respectively can be
+read as (\_GPE.PH00 & 0x0F), and (\_GPE.PH00 >> 0x04).
+
+The AML that Xen gives to a guest gets the operand order for the odd-
+numbered functions the wrong way round, returning (0x04 >> \_GPE.PH00)
+instead.
+
+As far as I can tell, this was the wrong way round in Xen from the
+moment that PCI hotplug was first introduced in commit 83d82e6f35a8:
+
++                    ShiftRight (0x4, \_GPE.PH00, Local1)
++                    Return (Local1) /* IN status as the _STA */
+
+Or maybe there's bizarre AML operand ordering going on there, like
+Intel's wrong-way-round assembler, and it only broke later when it was
+changed to being generated?
+
+Either way, it's definitely wrong now, and instrumenting a Linux guest
+shows that it correctly sees _STA being 0x00 in function 0 of an empty
+slot, but then the loop in acpiphp_glue.c::get_slot_status() goes on to
+look at function 1 and sees that _STA evaluates to 0x04. Thus reporting
+an adapter is present in every slot in /sys/bus/pci/slots/*
+
+Quite why Linux wants to look for function 1 being physically present
+when function 0 isn't... I don't want to think about right now.
+
+Fixes: 83d82e6f35a8 ("hvmloader: pass-through: multi-function PCI hot-plug")
+Signed-off-by: David Woodhouse <dwmw@amazon.co.uk>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: b190af7d3e90f58da5f58044b8dea7261b8b483d
+master date: 2023-03-20 17:12:34 +0100
+---
+ tools/libacpi/mk_dsdt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/libacpi/mk_dsdt.c b/tools/libacpi/mk_dsdt.c
+index c5ba4c0b2f..250a50b7eb 100644
+--- a/tools/libacpi/mk_dsdt.c
++++ b/tools/libacpi/mk_dsdt.c
+@@ -431,7 +431,7 @@ int main(int argc, char **argv)
+                 stmt("Store", "0x89, \\_GPE.DPT2");
+             }
+             if ( slot & 1 )
+-                stmt("ShiftRight", "0x4, \\_GPE.PH%02X, Local1", slot & ~1);
++                stmt("ShiftRight", "\\_GPE.PH%02X, 0x04, Local1", slot & ~1);
+             else
+                 stmt("And", "\\_GPE.PH%02X, 0x0f, Local1", slot & ~1);
+             stmt("Return", "Local1"); /* IN status as the _STA */
+-- 
+2.30.2
+

@@ -1,0 +1,44 @@
+From 07e8f5b3d1300327a9f2e67b03dead0e2138b92f Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Marek=20Marczykowski-G=C3=B3recki?=
+ <marmarek@invisiblethingslab.com>
+Date: Fri, 31 Mar 2023 08:38:07 +0200
+Subject: [PATCH] VT-d: fix iommu=no-igfx if the IOMMU scope contains fake
+ device(s)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+If the scope for IGD's IOMMU contains additional device that doesn't
+actually exist, iommu=no-igfx would not disable that IOMMU. In this
+particular case (Thinkpad x230) it included 00:02.1, but there is no
+such device on this platform. Consider only existing devices for the
+"gfx only" check as well as the establishing of IGD DRHD address
+(underlying is_igd_drhd(), which is used to determine applicability of
+two workarounds).
+
+Fixes: 2d7f191b392e ("VT-d: generalize and correct "iommu=no-igfx" handling")
+Signed-off-by: Marek Marczykowski-GÃ³recki <marmarek@invisiblethingslab.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Kevin Tian <kevin.tian@intel.com>
+master commit: 49de6749baa8d0addc3048defd4ef3e85cb135e9
+master date: 2023-03-23 09:16:41 +0100
+---
+ xen/drivers/passthrough/vtd/dmar.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/drivers/passthrough/vtd/dmar.c b/xen/drivers/passthrough/vtd/dmar.c
+index 9ec49936b8..bfec40f47d 100644
+--- a/xen/drivers/passthrough/vtd/dmar.c
++++ b/xen/drivers/passthrough/vtd/dmar.c
+@@ -389,7 +389,7 @@ static int __init acpi_parse_dev_scope(
+                 printk(VTDPREFIX " endpoint: %pp\n",
+                        &PCI_SBDF(seg, bus, path->dev, path->fn));
+ 
+-            if ( drhd )
++            if ( drhd && pci_device_detect(seg, bus, path->dev, path->fn) )
+             {
+                 if ( pci_conf_read8(PCI_SBDF(seg, bus, path->dev, path->fn),
+                                     PCI_CLASS_DEVICE + 1) != 0x03
+-- 
+2.30.2
+

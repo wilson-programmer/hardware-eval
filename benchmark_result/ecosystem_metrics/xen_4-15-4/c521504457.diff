@@ -1,0 +1,108 @@
+From c5215044578e88b401a1296ed6302df05c113c5f Mon Sep 17 00:00:00 2001
+From: Henry Wang <Henry.Wang@arm.com>
+Date: Tue, 11 Oct 2022 15:10:16 +0200
+Subject: [PATCH] xen/arm, libxl: Implement XEN_DOMCTL_shadow_op for Arm
+
+This commit implements the `XEN_DOMCTL_shadow_op` support in Xen
+for Arm. The p2m pages pool size for xl guests is supposed to be
+determined by `XEN_DOMCTL_shadow_op`. Hence, this commit:
+
+- Introduces a function `p2m_domctl` and implements the subops
+`XEN_DOMCTL_SHADOW_OP_SET_ALLOCATION` and
+`XEN_DOMCTL_SHADOW_OP_GET_ALLOCATION` of `XEN_DOMCTL_shadow_op`.
+
+- Adds the `XEN_DOMCTL_SHADOW_OP_SET_ALLOCATION` support in libxl.
+
+Therefore enabling the setting of shadow memory pool size
+when creating a guest from xl and getting shadow memory pool size
+from Xen.
+
+Note that the `XEN_DOMCTL_shadow_op` added in this commit is only
+a dummy op, and the functionality of setting/getting p2m memory pool
+size for xl guests will be added in following commits.
+
+This is part of CVE-2022-33747 / XSA-409.
+
+Signed-off-by: Henry Wang <Henry.Wang@arm.com>
+Reviewed-by: Stefano Stabellini <sstabellini@kernel.org>
+master commit: cf2a68d2ffbc3ce95e01449d46180bddb10d24a0
+master date: 2022-10-11 14:28:42 +0200
+---
+ tools/libs/light/libxl_arm.c | 12 ++++++++++++
+ xen/arch/arm/domctl.c        | 32 ++++++++++++++++++++++++++++++++
+ 2 files changed, 44 insertions(+)
+
+diff --git a/tools/libs/light/libxl_arm.c b/tools/libs/light/libxl_arm.c
+index d59b464192..d21f614ed7 100644
+--- a/tools/libs/light/libxl_arm.c
++++ b/tools/libs/light/libxl_arm.c
+@@ -131,6 +131,18 @@ int libxl__arch_domain_create(libxl__gc *gc,
+                               libxl__domain_build_state *state,
+                               uint32_t domid)
+ {
++    libxl_ctx *ctx = libxl__gc_owner(gc);
++    unsigned int shadow_mb = DIV_ROUNDUP(d_config->b_info.shadow_memkb, 1024);
++
++    int r = xc_shadow_control(ctx->xch, domid,
++                              XEN_DOMCTL_SHADOW_OP_SET_ALLOCATION,
++                              &shadow_mb, 0);
++    if (r) {
++        LOGED(ERROR, domid,
++              "Failed to set %u MiB shadow allocation", shadow_mb);
++        return ERROR_FAIL;
++    }
++
+     return 0;
+ }
+ 
+diff --git a/xen/arch/arm/domctl.c b/xen/arch/arm/domctl.c
+index a8c48b0bea..a049bc7f3e 100644
+--- a/xen/arch/arm/domctl.c
++++ b/xen/arch/arm/domctl.c
+@@ -45,11 +45,43 @@ static int handle_vuart_init(struct domain *d,
+     return rc;
+ }
+ 
++static long p2m_domctl(struct domain *d, struct xen_domctl_shadow_op *sc,
++                       XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
++{
++    if ( unlikely(d == current->domain) )
++    {
++        printk(XENLOG_ERR "Tried to do a p2m domctl op on itself.\n");
++        return -EINVAL;
++    }
++
++    if ( unlikely(d->is_dying) )
++    {
++        printk(XENLOG_ERR "Tried to do a p2m domctl op on dying domain %u\n",
++               d->domain_id);
++        return -EINVAL;
++    }
++
++    switch ( sc->op )
++    {
++    case XEN_DOMCTL_SHADOW_OP_SET_ALLOCATION:
++        return 0;
++    case XEN_DOMCTL_SHADOW_OP_GET_ALLOCATION:
++        return 0;
++    default:
++    {
++        printk(XENLOG_ERR "Bad p2m domctl op %u\n", sc->op);
++        return -EINVAL;
++    }
++    }
++}
++
+ long arch_do_domctl(struct xen_domctl *domctl, struct domain *d,
+                     XEN_GUEST_HANDLE_PARAM(xen_domctl_t) u_domctl)
+ {
+     switch ( domctl->cmd )
+     {
++    case XEN_DOMCTL_shadow_op:
++        return p2m_domctl(d, &domctl->u.shadow_op, u_domctl);
+     case XEN_DOMCTL_cacheflush:
+     {
+         gfn_t s = _gfn(domctl->u.cacheflush.start_pfn);
+-- 
+2.30.2
+

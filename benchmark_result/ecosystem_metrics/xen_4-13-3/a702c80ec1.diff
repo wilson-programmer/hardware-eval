@@ -1,0 +1,41 @@
+From a702c80ec1936c2ecf00a4628af6a4cfdbc5b909 Mon Sep 17 00:00:00 2001
+From: Stefano Stabellini <sstabellini@kernel.org>
+Date: Tue, 14 Apr 2020 18:02:55 -0700
+Subject: [PATCH] xen/arm: call iomem_permit_access for passthrough devices
+
+iomem_permit_access should be called for MMIO regions of devices
+assigned to a domain. Currently it is not called for MMIO regions of
+passthrough devices of Dom0less guests. This patch fixes it.
+
+Signed-off-by: Stefano Stabellini <stefano.stabellini@xilinx.com>
+Acked-by: Julien Grall <julien@xen.org>
+(cherry picked from commit 6b75c7a95420acbb9c118624ff0a5e973287c1e4)
+---
+ xen/arch/arm/domain_build.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/xen/arch/arm/domain_build.c b/xen/arch/arm/domain_build.c
+index dd9c3b73ba..8c5ff11cdc 100644
+--- a/xen/arch/arm/domain_build.c
++++ b/xen/arch/arm/domain_build.c
+@@ -1798,6 +1798,17 @@ static int __init handle_passthrough_prop(struct kernel_info *kinfo,
+             return -EINVAL;
+         }
+ 
++        res = iomem_permit_access(kinfo->d, paddr_to_pfn(mstart),
++                                  paddr_to_pfn(PAGE_ALIGN(mstart + size - 1)));
++        if ( res )
++        {
++            printk(XENLOG_ERR "Unable to permit to dom%d access to"
++                   " 0x%"PRIx64" - 0x%"PRIx64"\n",
++                   kinfo->d->domain_id,
++                   mstart & PAGE_MASK, PAGE_ALIGN(mstart + size) - 1);
++            return res;
++        }
++
+         res = map_regions_p2mt(kinfo->d,
+                                gaddr_to_gfn(gstart),
+                                PFN_DOWN(size),
+-- 
+2.30.2
+

@@ -1,0 +1,44 @@
+From c15221e45c0ffafdbb9faafd1a07ffb054b2cde3 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Mon, 17 Jul 2023 08:32:34 +0200
+Subject: [PATCH] vpci/header: cope with devices not having vpci allocated
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+When traversing the list of pci devices assigned to a domain cope with
+some of them not having the vpci struct allocated. It should be
+possible for the hardware domain to have read-only devices assigned
+that are not handled by vPCI, such support will be added by further
+patches.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+master commit: ee045f3a4a6dddb09f5aa96a50cceaae97d3245f
+master date: 2023-05-26 09:18:37 +0200
+---
+ xen/drivers/vpci/header.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/xen/drivers/vpci/header.c b/xen/drivers/vpci/header.c
+index 40ff79c33f..d59056fb18 100644
+--- a/xen/drivers/vpci/header.c
++++ b/xen/drivers/vpci/header.c
+@@ -269,6 +269,14 @@ static int modify_bars(const struct pci_dev *pdev, uint16_t cmd, bool rom_only)
+      */
+     for_each_pdev ( pdev->domain, tmp )
+     {
++        if ( !tmp->vpci )
++            /*
++             * For the hardware domain it's possible to have devices assigned
++             * to it that are not handled by vPCI, either because those are
++             * read-only devices, or because vPCI setup has failed.
++             */
++            continue;
++
+         if ( tmp == pdev )
+         {
+             /*
+-- 
+2.30.2
+

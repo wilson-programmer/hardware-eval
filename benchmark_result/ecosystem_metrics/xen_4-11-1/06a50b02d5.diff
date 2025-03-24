@@ -1,0 +1,109 @@
+From 06a50b02d58d812158b4efdb8820be89d6565534 Mon Sep 17 00:00:00 2001
+From: Andrew Cooper <andrew.cooper3@citrix.com>
+Date: Mon, 5 Nov 2018 15:04:12 +0100
+Subject: [PATCH] x86/domain: Initialise vcpu debug registers correctly
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+In particular, initialising %dr6 with the value 0 is buggy, because on
+hardware supporting Transactional Memory, it will cause the sticky RTM bit to
+be asserted, even though a debug exception from a transaction hasn't actually
+been observed.
+
+Introduce arch_vcpu_regs_init() to set various architectural defaults, and
+reuse this in the hvm_vcpu_reset_state() path.
+
+Architecturally, %edx's init state contains the processors model information,
+and 0xf looks to be a remnant of the old Intel processors.  We clearly have no
+software which cares, seeing as it is wrong for the last decade's worth of
+Intel hardware and for all other vendors, so lets use the value 0 for
+simplicity.
+
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+
+x86/domain: Fix build with GCC 4.3.x
+
+GCC 4.3.x can't initialise the user_regs structure like this.
+
+Reported-by: Jan Beulich <JBeulich@suse.com>
+Signed-off-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Wei Liu <wei.liu2@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: dfba4d2e91f63a8f40493c4fc2db03fd8287f6cb
+master date: 2018-10-24 14:43:05 +0100
+master commit: 0a1fa635029d100d4b6b7eddb31d49603217cab7
+master date: 2018-10-30 13:26:21 +0000
+---
+ xen/arch/x86/domain.c        | 13 +++++++++++++
+ xen/arch/x86/hvm/hvm.c       |  6 ++----
+ xen/include/asm-x86/domain.h |  2 ++
+ 3 files changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index c39cf2c6e5..5a0f64feaf 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -323,6 +323,17 @@ void free_vcpu_struct(struct vcpu *v)
+     free_xenheap_page(v);
+ }
+ 
++/* Initialise various registers to their architectural INIT/RESET state. */
++void arch_vcpu_regs_init(struct vcpu *v)
++{
++    memset(&v->arch.user_regs, 0, sizeof(v->arch.user_regs));
++    v->arch.user_regs.eflags = X86_EFLAGS_MBS;
++
++    memset(v->arch.debugreg, 0, sizeof(v->arch.debugreg));
++    v->arch.debugreg[6] = X86_DR6_DEFAULT;
++    v->arch.debugreg[7] = X86_DR7_DEFAULT;
++}
++
+ int vcpu_initialise(struct vcpu *v)
+ {
+     struct domain *d = v->domain;
+@@ -342,6 +353,8 @@ int vcpu_initialise(struct vcpu *v)
+             return rc;
+ 
+         vmce_init_vcpu(v);
++
++        arch_vcpu_regs_init(v);
+     }
+     else if ( (rc = xstate_alloc_save_area(v)) != 0 )
+         return rc;
+diff --git a/xen/arch/x86/hvm/hvm.c b/xen/arch/x86/hvm/hvm.c
+index 4cbb688c05..611545f898 100644
+--- a/xen/arch/x86/hvm/hvm.c
++++ b/xen/arch/x86/hvm/hvm.c
+@@ -3905,11 +3905,9 @@ void hvm_vcpu_reset_state(struct vcpu *v, uint16_t cs, uint16_t ip)
+     }
+ 
+     v->arch.vgc_flags = VGCF_online;
+-    memset(&v->arch.user_regs, 0, sizeof(v->arch.user_regs));
+-    v->arch.user_regs.rflags = X86_EFLAGS_MBS;
+-    v->arch.user_regs.rdx = 0x00000f00;
++
++    arch_vcpu_regs_init(v);
+     v->arch.user_regs.rip = ip;
+-    memset(&v->arch.debugreg, 0, sizeof(v->arch.debugreg));
+ 
+     v->arch.hvm_vcpu.guest_cr[0] = X86_CR0_ET;
+     hvm_update_guest_cr(v, 0);
+diff --git a/xen/include/asm-x86/domain.h b/xen/include/asm-x86/domain.h
+index 61e6900465..ec81d788e3 100644
+--- a/xen/include/asm-x86/domain.h
++++ b/xen/include/asm-x86/domain.h
+@@ -633,6 +633,8 @@ static inline void free_vcpu_guest_context(struct vcpu_guest_context *vgc)
+     vfree(vgc);
+ }
+ 
++void arch_vcpu_regs_init(struct vcpu *v);
++
+ struct vcpu_hvm_context;
+ int arch_set_info_hvm_guest(struct vcpu *v, const struct vcpu_hvm_context *ctx);
+ 
+-- 
+2.30.2
+

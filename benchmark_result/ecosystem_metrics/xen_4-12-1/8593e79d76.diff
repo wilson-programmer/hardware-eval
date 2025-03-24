@@ -1,0 +1,43 @@
+From 8593e79d76ca19d1d2e6d0443e6efc53bec73a6e Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Fri, 3 May 2019 10:37:58 +0200
+Subject: [PATCH] x86/HVM: don't crash guest in hvmemul_find_mmio_cache()
+
+Commit 35a61c05ea ("x86emul: adjust handling of AVX2 gathers") builds
+upon the fact that the domain will actually survive running out of MMIO
+result buffer space. Drop the domain_crash() invocation. Also delay
+incrementing of the usage counter, such that the function can't possibly
+use/return an out-of-bounds slot/pointer in case execution subsequently
+makes it into the function again without a prior reset of state.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Paul Durrant <paul.durrant@citrix.com>
+master commit: a43c1dec246bdee484e6a3de001cc6850a107abe
+master date: 2019-03-12 14:39:46 +0100
+---
+ xen/arch/x86/hvm/emulate.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/xen/arch/x86/hvm/emulate.c b/xen/arch/x86/hvm/emulate.c
+index 2d02ef1521..754baf68d5 100644
+--- a/xen/arch/x86/hvm/emulate.c
++++ b/xen/arch/x86/hvm/emulate.c
+@@ -966,12 +966,11 @@ static struct hvm_mmio_cache *hvmemul_find_mmio_cache(
+             return cache;
+     }
+ 
+-    i = vio->mmio_cache_count++;
++    i = vio->mmio_cache_count;
+     if( i == ARRAY_SIZE(vio->mmio_cache) )
+-    {
+-        domain_crash(current->domain);
+         return NULL;
+-    }
++
++    ++vio->mmio_cache_count;
+ 
+     cache = &vio->mmio_cache[i];
+     memset(cache, 0, sizeof (*cache));
+-- 
+2.30.2
+

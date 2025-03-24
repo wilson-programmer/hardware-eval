@@ -1,0 +1,67 @@
+From b13f939a7651ae89b99839412b2e01b68e1db54e Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Fri, 24 Feb 2023 17:29:15 +0000
+Subject: [PATCH] automation: Remove non-debug x86_32 build jobs
+
+In the interest of having less jobs, we remove the x86_32 build jobs
+that do release build. Debug build is very likely to be enough to find
+32bit build issues.
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+(cherry picked from commit 7b66792ea7f77fb9e587e1e9c530a7c869eecba1)
+---
+ automation/gitlab-ci/build.yaml | 20 --------------------
+ 1 file changed, 20 deletions(-)
+
+diff --git a/automation/gitlab-ci/build.yaml b/automation/gitlab-ci/build.yaml
+index 1ecf77e092..02ac74ebce 100644
+--- a/automation/gitlab-ci/build.yaml
++++ b/automation/gitlab-ci/build.yaml
+@@ -246,21 +246,11 @@ debian-stretch-gcc-debug:
+   variables:
+     CONTAINER: debian:stretch
+ 
+-debian-stretch-32-clang:
+-  extends: .clang-x86-32-build
+-  variables:
+-    CONTAINER: debian:stretch-i386
+-
+ debian-stretch-32-clang-debug:
+   extends: .clang-x86-32-build-debug
+   variables:
+     CONTAINER: debian:stretch-i386
+ 
+-debian-stretch-32-gcc:
+-  extends: .gcc-x86-32-build
+-  variables:
+-    CONTAINER: debian:stretch-i386
+-
+ debian-stretch-32-gcc-debug:
+   extends: .gcc-x86-32-build-debug
+   variables:
+@@ -298,21 +288,11 @@ debian-unstable-gcc-debug-randconfig:
+     CONTAINER: debian:unstable
+     RANDCONFIG: y
+ 
+-debian-unstable-32-clang:
+-  extends: .clang-x86-32-build
+-  variables:
+-    CONTAINER: debian:unstable-i386
+-
+ debian-unstable-32-clang-debug:
+   extends: .clang-x86-32-build-debug
+   variables:
+     CONTAINER: debian:unstable-i386
+ 
+-debian-unstable-32-gcc:
+-  extends: .gcc-x86-32-build
+-  variables:
+-    CONTAINER: debian:unstable-i386
+-
+ debian-unstable-32-gcc-debug:
+   extends: .gcc-x86-32-build-debug
+   variables:
+-- 
+2.30.2
+

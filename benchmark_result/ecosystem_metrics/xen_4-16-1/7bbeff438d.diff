@@ -1,0 +1,54 @@
+From 7bbeff438dfa61e532116d9fbd65bffb896857c5 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 6 Jan 2022 14:12:26 +0100
+Subject: [PATCH] x86/HVM: fail virt-to-linear conversion for insn fetches from
+ non-code segments
+
+Just like (in protected mode) reads may not go to exec-only segments and
+writes may not go to non-writable ones, insn fetches may not access data
+segments.
+
+Fixes: 623e83716791 ("hvm: Support hardware task switching")
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 311297f4216a4387bdae6df6cfbb1f5edb06618a
+master date: 2021-12-06 14:15:05 +0100
+---
+ xen/arch/x86/hvm/hvm.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/hvm.c b/xen/arch/x86/hvm/hvm.c
+index eee365711d..b680f62892 100644
+--- a/xen/arch/x86/hvm/hvm.c
++++ b/xen/arch/x86/hvm/hvm.c
+@@ -2551,6 +2551,9 @@ bool hvm_vcpu_virtual_to_linear(
+      */
+     ASSERT(seg < x86_seg_none);
+ 
++    /* However, check that insn fetches only ever specify CS. */
++    ASSERT(access_type != hvm_access_insn_fetch || seg == x86_seg_cs);
++
+     if ( !(v->arch.hvm.guest_cr[0] & X86_CR0_PE) )
+     {
+         /*
+@@ -2615,10 +2618,17 @@ bool hvm_vcpu_virtual_to_linear(
+                 if ( (reg->type & 0xa) == 0x8 )
+                     goto out; /* execute-only code segment */
+                 break;
++
+             case hvm_access_write:
+                 if ( (reg->type & 0xa) != 0x2 )
+                     goto out; /* not a writable data segment */
+                 break;
++
++            case hvm_access_insn_fetch:
++                if ( !(reg->type & 0x8) )
++                    goto out; /* not a code segment */
++                break;
++
+             default:
+                 break;
+             }
+-- 
+2.30.2
+

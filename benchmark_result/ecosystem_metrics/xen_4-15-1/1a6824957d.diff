@@ -1,0 +1,29 @@
+From 1a6824957d051bb94929a1c74a52c013bc2f388d Mon Sep 17 00:00:00 2001
+From: Anthony PERARD <anthony.perard@citrix.com>
+Date: Thu, 15 Jul 2021 09:23:41 +0200
+Subject: [PATCH] build: clean "lib.a"
+
+Signed-off-by: Anthony PERARD <anthony.perard@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 3ce2765ac21dbd739e8216694b025aaabf4afff3
+master date: 2021-07-07 17:51:18 +0200
+---
+ xen/Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/Makefile b/xen/Makefile
+index d4a7014f59..ae2fa0fda3 100644
+--- a/xen/Makefile
++++ b/xen/Makefile
+@@ -339,7 +339,7 @@ _clean: delete-unfresh-files
+ 	$(MAKE) $(clean) test
+ 	$(MAKE) -f $(BASEDIR)/tools/kconfig/Makefile.kconfig ARCH=$(ARCH) SRCARCH=$(SRCARCH) clean
+ 	find . \( -name "*.o" -o -name ".*.d" -o -name ".*.d2" \
+-		-o -name "*.gcno" -o -name ".*.cmd" \) -exec rm -f {} \;
++		-o -name "*.gcno" -o -name ".*.cmd" -o -name "lib.a" \) -exec rm -f {} \;
+ 	rm -f include/asm $(TARGET) $(TARGET).gz $(TARGET).efi $(TARGET).efi.map $(TARGET)-syms $(TARGET)-syms.map *~ core
+ 	rm -f include/asm-*/asm-offsets.h
+ 	rm -f .banner
+-- 
+2.30.2
+

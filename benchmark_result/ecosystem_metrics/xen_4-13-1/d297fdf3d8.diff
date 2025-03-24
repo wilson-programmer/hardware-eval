@@ -1,0 +1,53 @@
+From d297fdf3d8bb348988227d6dbb2930db53fddc11 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 27 Apr 2020 14:53:41 +0200
+Subject: [PATCH] x86/EFI: also fill boot_tsc_stamp on the xen.efi boot path
+
+Commit e3a379c35eff ("x86/time: always count s_time from Xen boot")
+introducing this missed adjusting this path as well.
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Wei Liu <wl@xen.org>
+master commit: 0dbc112e727f6c17f306c864950bdf83dece5cd5
+master date: 2020-04-14 11:42:11 +0200
+---
+ xen/arch/x86/efi/efi-boot.h | 3 +++
+ xen/include/asm-x86/setup.h | 1 +
+ 2 files changed, 4 insertions(+)
+
+diff --git a/xen/arch/x86/efi/efi-boot.h b/xen/arch/x86/efi/efi-boot.h
+index 232972eedf..6ca1f76877 100644
+--- a/xen/arch/x86/efi/efi-boot.h
++++ b/xen/arch/x86/efi/efi-boot.h
+@@ -8,6 +8,7 @@
+ #include <asm/edd.h>
+ #include <asm/msr.h>
+ #include <asm/processor.h>
++#include <asm/setup.h>
+ 
+ static struct file __initdata ucode;
+ static multiboot_info_t __initdata mbi = {
+@@ -639,6 +640,8 @@ static void __init efi_arch_cpu(void)
+     uint32_t eax = cpuid_eax(0x80000000);
+     uint32_t *caps = boot_cpu_data.x86_capability;
+ 
++    boot_tsc_stamp = rdtsc();
++
+     caps[cpufeat_word(X86_FEATURE_HYPERVISOR)] = cpuid_ecx(1);
+ 
+     if ( (eax >> 16) == 0x8000 && eax > 0x80000000 )
+diff --git a/xen/include/asm-x86/setup.h b/xen/include/asm-x86/setup.h
+index 861d46d6ac..138a41ac1a 100644
+--- a/xen/include/asm-x86/setup.h
++++ b/xen/include/asm-x86/setup.h
+@@ -13,6 +13,7 @@ extern char __2M_init_start[], __2M_init_end[];
+ extern char __2M_rwdata_start[], __2M_rwdata_end[];
+ 
+ extern unsigned long xenheap_initial_phys_start;
++extern uint64_t boot_tsc_stamp;
+ 
+ void early_cpu_init(void);
+ void early_time_init(void);
+-- 
+2.30.2
+

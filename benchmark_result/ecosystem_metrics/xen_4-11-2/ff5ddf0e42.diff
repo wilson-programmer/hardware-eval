@@ -1,0 +1,33 @@
+From ff5ddf0e425df6cd09c91248297d10bc44c1cc17 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 23 Sep 2019 14:40:08 +0200
+Subject: [PATCH] x86: properly gate clearing of PKU feature
+
+setup_clear_cpu_cap() is __init and hence may not be called post-boot.
+Note that opt_pku nevertheless is not getting __initdata added - see
+e.g. commit 43fa95ae6a ("mm: make opt_bootscrub non-init").
+
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Acked-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: 41c7700a00011ad08be3c9d71126b67e08e58ac3
+master date: 2019-08-29 15:10:07 +0200
+---
+ xen/arch/x86/cpu/common.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/cpu/common.c b/xen/arch/x86/cpu/common.c
+index e438191c36..b40c45d097 100644
+--- a/xen/arch/x86/cpu/common.c
++++ b/xen/arch/x86/cpu/common.c
+@@ -472,7 +472,7 @@ void identify_cpu(struct cpuinfo_x86 *c)
+ 		this_cpu->c_init(c);
+ 
+ 
+-   	if ( !opt_pku )
++   	if (c == &boot_cpu_data && !opt_pku)
+ 		setup_clear_cpu_cap(X86_FEATURE_PKU);
+ 
+ 	/*
+-- 
+2.30.2
+

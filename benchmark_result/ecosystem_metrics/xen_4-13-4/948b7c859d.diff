@@ -1,0 +1,29 @@
+From 948b7c859d9fede2c4296777343635ac6c341fa8 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Thu, 15 Jul 2021 09:37:11 +0200
+Subject: [PATCH] there's no CONFIG_GCC_VERSION
+
+This was introduced in 4.14 only.
+
+Reported-by: Olaf Hering <olaf@aepfle.de>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+---
+ xen/include/xen/compiler.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/xen/include/xen/compiler.h b/xen/include/xen/compiler.h
+index 85cbd1ab00..b1c0374dfe 100644
+--- a/xen/include/xen/compiler.h
++++ b/xen/include/xen/compiler.h
+@@ -99,7 +99,7 @@
+     __asm__ ("" : "=r"(__ptr) : "0"(ptr));      \
+     (typeof(ptr)) (__ptr + (off)); })
+ 
+-#if CONFIG_GCC_VERSION >= 110000 /* See gcc bug 100680. */
++#if __GNUC__ >= 11 /* See gcc bug 100680. */
+ # define gcc11_wrap(x) RELOC_HIDE(x, 0)
+ #else
+ # define gcc11_wrap(x) (x)
+-- 
+2.30.2
+

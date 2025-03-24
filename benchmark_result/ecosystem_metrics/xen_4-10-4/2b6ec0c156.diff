@@ -1,0 +1,174 @@
+From 2b6ec0c156000518ba6fde725a31b775d29ddf03 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Tue, 4 Jun 2019 15:54:23 +0200
+Subject: [PATCH] x86/IO-APIC: fix build with gcc9
+
+There are a number of pointless __packed attributes which cause gcc 9 to
+legitimately warn:
+
+utils.c: In function 'vtd_dump_iommu_info':
+utils.c:287:33: error: converting a packed 'struct IO_APIC_route_entry' pointer (alignment 1) to a 'struct IO_APIC_route_remap_entry' pointer (alignment 8) may result in an unaligned pointer value [-Werror=address-of-packed-member]
+  287 |                 remap = (struct IO_APIC_route_remap_entry *) &rte;
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~~~
+
+intremap.c: In function 'ioapic_rte_to_remap_entry':
+intremap.c:343:25: error: converting a packed 'struct IO_APIC_route_entry' pointer (alignment 1) to a 'struct IO_APIC_route_remap_entry' pointer (alignment 8) may result in an unaligned pointer value [-Werror=address-of-packed-member]
+  343 |     remap_rte = (struct IO_APIC_route_remap_entry *) old_rte;
+      |                         ^~~~~~~~~~~~~~~~~~~~~~~~~
+
+Simply drop these attributes. Take the liberty and also re-format the
+structure definitions at the same time.
+
+Reported-by: Charles Arnold <carnold@suse.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+master commit: ca9310b24e6205de5387e5982ccd42c35caf89d4
+master date: 2019-05-24 10:19:59 +0200
+---
+ xen/include/asm-x86/io_apic.h | 113 +++++++++++++++++-----------------
+ 1 file changed, 57 insertions(+), 56 deletions(-)
+
+diff --git a/xen/include/asm-x86/io_apic.h b/xen/include/asm-x86/io_apic.h
+index 736bb49184..3aa7e8ddd1 100644
+--- a/xen/include/asm-x86/io_apic.h
++++ b/xen/include/asm-x86/io_apic.h
+@@ -32,42 +32,42 @@
+  * The structure of the IO-APIC:
+  */
+ union IO_APIC_reg_00 {
+-	u32	raw;
+-	struct __packed {
+-		u32	__reserved_2	: 14,
+-			LTS		:  1,
+-			delivery_type	:  1,
+-			__reserved_1	:  8,
+-			ID		:  8;
+-	} bits;
++    uint32_t raw;
++    struct {
++        unsigned int __reserved_2:14;
++        unsigned int LTS:1;
++        unsigned int delivery_type:1;
++        unsigned int __reserved_1:8;
++        unsigned int ID:8;
++    } bits;
+ };
+ 
+ union IO_APIC_reg_01 {
+-	u32	raw;
+-	struct __packed {
+-		u32	version		:  8,
+-			__reserved_2	:  7,
+-			PRQ		:  1,
+-			entries		:  8,
+-			__reserved_1	:  8;
+-	} bits;
++    uint32_t raw;
++    struct {
++        unsigned int version:8;
++        unsigned int __reserved_2:7;
++        unsigned int PRQ:1;
++        unsigned int entries:8;
++        unsigned int __reserved_1:8;
++    } bits;
+ };
+ 
+ union IO_APIC_reg_02 {
+-	u32	raw;
+-	struct __packed {
+-		u32	__reserved_2	: 24,
+-			arbitration	:  4,
+-			__reserved_1	:  4;
+-	} bits;
++    uint32_t raw;
++    struct {
++        unsigned int __reserved_2:24;
++        unsigned int arbitration:4;
++        unsigned int __reserved_1:4;
++    } bits;
+ };
+ 
+ union IO_APIC_reg_03 {
+-	u32	raw;
+-	struct __packed {
+-		u32	boot_DT		:  1,
+-			__reserved_1	: 31;
+-	} bits;
++    uint32_t raw;
++    struct {
++        unsigned int boot_DT:1;
++        unsigned int __reserved_1:31;
++    } bits;
+ };
+ 
+ /*
+@@ -87,35 +87,36 @@ enum ioapic_irq_destination_types {
+ 	dest_ExtINT = 7
+ };
+ 
+-struct __packed IO_APIC_route_entry {
+-	__u32	vector		:  8,
+-		delivery_mode	:  3,	/* 000: FIXED
+-					 * 001: lowest prio
+-					 * 111: ExtINT
+-					 */
+-		dest_mode	:  1,	/* 0: physical, 1: logical */
+-		delivery_status	:  1,
+-		polarity	:  1,
+-		irr		:  1,
+-		trigger		:  1,	/* 0: edge, 1: level */
+-		mask		:  1,	/* 0: enabled, 1: disabled */
+-		__reserved_2	: 15;
+-
+-	union {		struct { __u32
+-					__reserved_1	: 24,
+-					physical_dest	:  4,
+-					__reserved_2	:  4;
+-			} physical;
+-
+-			struct { __u32
+-					__reserved_1	: 24,
+-					logical_dest	:  8;
+-			} logical;
+-
+-			/* used when Interrupt Remapping with EIM is enabled */
+-			__u32 dest32;
+-	} dest;
+-
++struct IO_APIC_route_entry {
++    unsigned int vector:8;
++    unsigned int delivery_mode:3; /*
++                                   * 000: FIXED
++                                   * 001: lowest prio
++                                   * 111: ExtINT
++                                   */
++    unsigned int dest_mode:1;     /* 0: physical, 1: logical */
++    unsigned int delivery_status:1;
++    unsigned int polarity:1;      /* 0: low, 1: high */
++    unsigned int irr:1;
++    unsigned int trigger:1;       /* 0: edge, 1: level */
++    unsigned int mask:1;          /* 0: enabled, 1: disabled */
++    unsigned int __reserved_2:15;
++
++    union {
++        struct {
++            unsigned int __reserved_1:24;
++            unsigned int physical_dest:4;
++            unsigned int __reserved_2:4;
++        } physical;
++
++        struct {
++            unsigned int __reserved_1:24;
++            unsigned int logical_dest:8;
++        } logical;
++
++        /* used when Interrupt Remapping with EIM is enabled */
++        unsigned int dest32;
++    } dest;
+ };
+ 
+ /*
+-- 
+2.30.2
+

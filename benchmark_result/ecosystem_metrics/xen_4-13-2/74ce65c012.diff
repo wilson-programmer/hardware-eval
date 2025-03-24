@@ -1,0 +1,53 @@
+From 74ce65c012e9b286842336fd9b02fea8cea34602 Mon Sep 17 00:00:00 2001
+From: =?utf8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Date: Wed, 24 Jun 2020 16:41:06 +0200
+Subject: [PATCH] build32: don't discard .shstrtab in linker script
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf8
+Content-Transfer-Encoding: 8bit
+
+LLVM linker doesn't support discarding .shstrtab, and complains with:
+
+ld -melf_i386_fbsd -N -T build32.lds -o reloc.lnk reloc.o
+ld: error: discarding .shstrtab section is not allowed
+
+Add an explicit .shstrtab, .strtab and .symtab sections to the linker
+script after the text section in order to make LLVM LD happy and match
+the behavior of GNU LD.
+
+Signed-off-by: Roger Pau MonnÃ© <roger.pau@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+master commit: 10d27b48b5b4dfbead2d9bf03290984bba4806e4
+master date: 2020-06-02 13:37:53 +0200
+---
+ xen/arch/x86/boot/build32.lds | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/xen/arch/x86/boot/build32.lds b/xen/arch/x86/boot/build32.lds
+index 97454b40ff..1ab9418793 100644
+--- a/xen/arch/x86/boot/build32.lds
++++ b/xen/arch/x86/boot/build32.lds
+@@ -50,6 +50,20 @@ SECTIONS
+         *(.got.plt)
+   }
+ 
++  /*
++   * Discarding .shstrtab is not supported by LLD (LLVM LD) and will trigger an
++   * error. Also keep the rest of the control sections to match GNU LD behavior.
++   */
++  .shstrtab : {
++        *(.shstrtab)
++  }
++  .strtab : {
++        *(.strtab)
++  }
++  .symtab : {
++        *(.symtab)
++  }
++
+   /DISCARD/ : {
+         /*
+          * Discard everything else, to prevent linkers from putting
+-- 
+2.30.2
+

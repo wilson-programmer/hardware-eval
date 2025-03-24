@@ -1,0 +1,30 @@
+From 03fd74515401f74d3a749bed78feee4f14fb1f4d Mon Sep 17 00:00:00 2001
+From: Zhenzhong Duan <zhenzhong.duan@oracle.com>
+Date: Fri, 14 Sep 2018 13:05:13 +0200
+Subject: [PATCH] VT-d/dmar: iommu mem leak fix
+
+Release memory allocated for drhd iommu in error path.
+
+Signed-off-by: Zhenzhong Duan <zhenzhong.duan@oracle.com>
+Acked-by: Kevin Tian <kevin.tian@intel.com>
+master commit: fd07b6648c4c8891dca5bd0f7ef174b6831f80b2
+master date: 2018-08-27 11:37:24 +0200
+---
+ xen/drivers/passthrough/vtd/dmar.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/xen/drivers/passthrough/vtd/dmar.c b/xen/drivers/passthrough/vtd/dmar.c
+index 46decd4eb1..81afa5498e 100644
+--- a/xen/drivers/passthrough/vtd/dmar.c
++++ b/xen/drivers/passthrough/vtd/dmar.c
+@@ -100,6 +100,7 @@ static void __init disable_all_dmar_units(void)
+     {
+         list_del(&drhd->list);
+         scope_devices_free(&drhd->scope);
++        iommu_free(drhd);
+         xfree(drhd);
+     }
+     list_for_each_entry_safe ( rmrr, _rmrr, &acpi_rmrr_units, list )
+-- 
+2.30.2
+

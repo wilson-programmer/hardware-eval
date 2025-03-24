@@ -1,0 +1,51 @@
+From 6bbdcefd205903b2181b3b4fdc9503709ecdb7c4 Mon Sep 17 00:00:00 2001
+From: Jan Beulich <jbeulich@suse.com>
+Date: Mon, 19 Jul 2021 12:28:09 +0200
+Subject: [PATCH] libxl/x86: check return value of SHADOW_OP_SET_ALLOCATION
+ domctl
+
+The hypervisor may not have enough memory to satisfy the request. While
+there, make the unit of the value clear by renaming the local variable.
+
+Requested-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+Reviewed-by: Anthony PERARD <anthony.perard@citrix.com>
+backport-requested-by: Jan Beulich <jbeulich@suse.com>
+(cherry picked from commit 0be5a00af590c97ea553aadb60f1e0b3af53d8f6)
+---
+ tools/libs/light/libxl_x86.c | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/tools/libs/light/libxl_x86.c b/tools/libs/light/libxl_x86.c
+index ac09897a63..18c3c77ccd 100644
+--- a/tools/libs/light/libxl_x86.c
++++ b/tools/libs/light/libxl_x86.c
+@@ -529,10 +529,20 @@ int libxl__arch_domain_create(libxl__gc *gc,
+         xc_domain_set_time_offset(ctx->xch, domid, rtc_timeoffset);
+ 
+     if (d_config->b_info.type != LIBXL_DOMAIN_TYPE_PV) {
+-        unsigned long shadow = DIV_ROUNDUP(d_config->b_info.shadow_memkb,
+-                                           1024);
+-        xc_shadow_control(ctx->xch, domid, XEN_DOMCTL_SHADOW_OP_SET_ALLOCATION,
+-                          NULL, 0, &shadow, 0, NULL);
++        unsigned long shadow_mb = DIV_ROUNDUP(d_config->b_info.shadow_memkb,
++                                              1024);
++        int r = xc_shadow_control(ctx->xch, domid,
++                                  XEN_DOMCTL_SHADOW_OP_SET_ALLOCATION,
++                                  NULL, 0, &shadow_mb, 0, NULL);
++
++        if (r) {
++            LOGED(ERROR, domid,
++                  "Failed to set %lu MiB %s allocation",
++                  shadow_mb,
++                  libxl_defbool_val(d_config->c_info.hap) ? "HAP" : "shadow");
++            ret = ERROR_FAIL;
++            goto out;
++        }
+     }
+ 
+     if (d_config->c_info.type == LIBXL_DOMAIN_TYPE_PV &&
+-- 
+2.30.2
+
