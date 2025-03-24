@@ -1,0 +1,35 @@
+To launch ansible with root privileges and provide password
+
+ansible-playbook -i hosts.yml -u wilson -e "ansible_sudo_pass=1234" playbook3.yml
+
+another solution with password encryption
+
+1) Edit the playbook file by adding a file containing the password
+
+---
+# Install packages
+- name: "[INSTALL PACKAGE]"
+  hosts: all
+  vars_files:
+          - secret
+  tasks:
+          - name: "[Update package]"
+            apt:
+                    update_cache: yes
+            become: yes
+The file is call secret
+
+2) run the following command to create secret file
+$ ansible-vault create secret
+This will ask for a password, then open your default editor to edit the file. You can put your ansible_sudo_pass in here
+
+e.g.: secret:
+
+ansible_sudo_pass: mysudopassword
+
+#Save and exit, now you have an encrypted secret file which Ansible is able to decrypt when you run your playbook. Note: 
+#you can edit the file with ansible-vault edit secret (and enter the password that you used when creating the file)
+Create a file called vault.txt: and in that put the password that you used when creating your secret file. 
+The password should be a string stored as a single line in the file.
+Finally run
+$ ansible-playbook -i hosts.yml -u wilson --sudo --vault-password-file=vault.txt playbook3.yml 

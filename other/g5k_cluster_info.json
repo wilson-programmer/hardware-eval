@@ -1,0 +1,499 @@
+{
+    "dahu": {
+        "site": "Grenoble",
+        "arrival_date": "2018-03-22",
+        "manufacturing_date": "2017-12-12",
+        "processor": "Intel Xeon Gold 6130",
+        "arch": "x86_64"
+    },
+    "drac": {
+        "site": "Grenoble",
+        "arrival_date": "2020-10-05",
+        "manufacturing_date": "2016-10-17",
+        "processor": "IBM POWER8NVL 1.0",
+        "arch": "ppc64le"
+    },
+    "servan": {
+        "site": "Grenoble",
+        "arrival_date": "2021-12-15",
+        "manufacturing_date": "2021-12-10",
+        "processor": "AMD EPYC 7352",
+        "arch": "x86_64"
+    },
+    "troll": {
+        "site": "Grenoble",
+        "arrival_date": "2019-12-23",
+        "manufacturing_date": "2019-11-21",
+        "processor": "Intel Xeon Gold 5218",
+        "arch": "x86_64"
+    },
+    "yeti": {
+        "site": "Grenoble",
+        "arrival_date": "2018-01-16",
+        "manufacturing_date": "2017-12-26",
+        "processor": "Intel Xeon Gold 6130",
+        "arch": "x86_64"
+    },
+    "chiclet": {
+        "site": "Lille",
+        "arrival_date": "2018-08-06",
+        "manufacturing_date": "2018-07-27",
+        "processor": "AMD EPYC 7301",
+        "arch": "x86_64"
+    },
+    "chifflot": {
+        "site": "Lille",
+        "arrival_date": "2018-08-01",
+        "manufacturing_date": "2018-07-17",
+        "processor": "Intel Xeon Gold 6126",
+        "arch": "x86_64"
+    },
+    "chirop": {
+        "site": "Lille",
+        "arrival_date": "2024-01-25",
+        "manufacturing_date": "2023-05-02",
+        "processor": "Intel Xeon Platinum 8358",
+        "arch": "x86_64"
+    },
+    "chuc": {
+        "site": "Lille",
+        "arrival_date": "2024-01-22",
+        "manufacturing_date": "2023-05-02",
+        "processor": "AMD EPYC 7513",
+        "arch": "x86_64"
+    },
+    "petitprince": {
+        "site": "Luxembourg",
+        "arrival_date": "2013-09-10",
+        "manufacturing_date": "2012-10-30",
+        "processor": "Intel Xeon E5-2630L",
+        "arch": "x86_64"
+    },
+    "gemini": {
+        "site": "Lyon",
+        "arrival_date": "2019-09-01",
+        "manufacturing_date": "2019-06-12",
+        "processor": "Intel Xeon E5-2698 v4",
+        "arch": "x86_64"
+    },
+    "hercule": {
+        "site": "Lyon",
+        "arrival_date": "2012-10-02",
+        "manufacturing_date": "2012-07-19",
+        "processor": "Intel Xeon E5-2620",
+        "arch": "x86_64"
+    },
+    "neowise": {
+        "site": "Lyon",
+        "arrival_date": "2021-05-17",
+        "manufacturing_date": "2021-05-17",
+        "processor": "AMD EPYC 7642",
+        "arch": "x86_64"
+    },
+    "nova": {
+        "site": "Lyon",
+        "arrival_date": "2016-12-01",
+        "manufacturing_date": "2016-10-28",
+        "processor": "Intel Xeon E5-2620 v4",
+        "arch": "x86_64"
+    },
+    "orion": {
+        "site": "Lyon",
+        "arrival_date": "2012-09-14",
+        "manufacturing_date": "2012-07-16",
+        "processor": "Intel Xeon E5-2630",
+        "arch": "x86_64"
+    },
+    "pyxis": {
+        "site": "Lyon",
+        "arrival_date": "2020-01-06",
+        "manufacturing_date": "2019-11-07",
+        "processor": "Cavium ThunderX2 99xx",
+        "arch": "aarch64"
+    },
+    "sagittaire": {
+        "site": "Lyon",
+        "arrival_date": "2006-07-01",
+        "manufacturing_date": "2006-07-01",
+        "processor": "AMD Opteron 250",
+        "arch": "x86_64"
+    },
+    "sirius": {
+        "site": "Lyon",
+        "arrival_date": "2021-11-18",
+        "manufacturing_date": "2021-11-24",
+        "processor": "AMD EPYC 7742",
+        "arch": "x86_64"
+    },
+    "taurus": {
+        "site": "Lyon",
+        "arrival_date": "2012-09-14",
+        "manufacturing_date": "2012-07-16",
+        "processor": "Intel Xeon E5-2630",
+        "arch": "x86_64"
+    },
+    "graffiti": {
+        "site": "Nancy",
+        "arrival_date": "2019-06-07",
+        "manufacturing_date": "2019-05-27",
+        "processor": "Intel Xeon Silver 4110",
+        "arch": "x86_64"
+    },
+    "grappe": {
+        "site": "Nancy",
+        "arrival_date": "2020-08-20",
+        "manufacturing_date": "2020-07-09",
+        "processor": "Intel Xeon Gold 5218R",
+        "arch": "x86_64"
+    },
+    "grat": {
+        "site": "Nancy",
+        "arrival_date": "2022-09-07",
+        "manufacturing_date": "2022-06-22",
+        "processor": "AMD EPYC 7513",
+        "arch": "x86_64"
+    },
+    "grele": {
+        "site": "Nancy",
+        "arrival_date": "2017-06-26",
+        "manufacturing_date": "2017-06-07",
+        "processor": "Intel Xeon E5-2650 v4",
+        "arch": "x86_64"
+    },
+    "gros": {
+        "site": "Nancy",
+        "arrival_date": "2019-09-04",
+        "manufacturing_date": "2019-07-16",
+        "processor": "Intel Xeon Gold 5220",
+        "arch": "x86_64"
+    },
+    "grosminet": {
+        "site": "Nancy",
+        "arrival_date": "2023-12-05",
+        "manufacturing_date": "2023-11-30",
+        "processor": "Intel Xeon Gold 6240L",
+        "arch": "x86_64"
+    },
+    "grostiti": {
+        "site": "Nancy",
+        "arrival_date": "2024-01-10",
+        "manufacturing_date": "2015-10-23",
+        "processor": "Intel Xeon E7-4850 v3",
+        "arch": "x86_64"
+    },
+    "grouille": {
+        "site": "Nancy",
+        "arrival_date": "2021-01-13",
+        "manufacturing_date": "2020-12-07",
+        "processor": "AMD EPYC 7452",
+        "arch": "x86_64"
+    },
+    "grue": {
+        "site": "Nancy",
+        "arrival_date": "2019-11-25",
+        "manufacturing_date": "2019-11-15",
+        "processor": "AMD EPYC 7351",
+        "arch": "x86_64"
+    },
+    "gruss": {
+        "site": "Nancy",
+        "arrival_date": "2021-08-26",
+        "manufacturing_date": "2021-06-24",
+        "processor": "AMD EPYC 7352",
+        "arch": "x86_64"
+    },
+    "grvingt": {
+        "site": "Nancy",
+        "arrival_date": "2018-04-11",
+        "manufacturing_date": "2018-04-01",
+        "processor": "Intel Xeon Gold 6130",
+        "arch": "x86_64"
+    },
+    "econome": {
+        "site": "Nantes",
+        "arrival_date": "2014-04-16",
+        "manufacturing_date": "2012-06-28",
+        "processor": "Intel Xeon E5-2660",
+        "arch": "x86_64"
+    },
+    "ecotype": {
+        "site": "Nantes",
+        "arrival_date": "2017-10-16",
+        "manufacturing_date": "2017-07-11",
+        "processor": "Intel Xeon E5-2630L v4",
+        "arch": "x86_64"
+    },
+    "abacus1": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2016-07-27",
+        "processor": "Intel Xeon E5-2650 v4",
+        "arch": "x86_64"
+    },
+    "abacus2": {
+        "site": "Rennes",
+        "arrival_date": "2023-11-10",
+        "manufacturing_date": "2017-08-15",
+        "processor": "Intel Xeon E5-2609 v4",
+        "arch": "x86_64"
+    },
+    "abacus3": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-13",
+        "manufacturing_date": "2017-07-05",
+        "processor": "Intel Xeon E5-2620 v4",
+        "arch": "x86_64"
+    },
+    "abacus4": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-09",
+        "manufacturing_date": "2017-11-13",
+        "processor": "Intel Xeon Silver 4114",
+        "arch": "x86_64"
+    },
+    "abacus5": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2018-05-06",
+        "processor": "Intel Xeon Gold 5115",
+        "arch": "x86_64"
+    },
+    "abacus8": {
+        "site": "Rennes",
+        "arrival_date": "2023-11-17",
+        "manufacturing_date": "2018-11-09",
+        "processor": "Intel Xeon Gold 5120",
+        "arch": "x86_64"
+    },
+    "abacus9": {
+        "site": "Rennes",
+        "arrival_date": "2023-11-06",
+        "manufacturing_date": "2018-12-12",
+        "processor": "Intel Xeon Silver 4114",
+        "arch": "x86_64"
+    },
+    "abacus10": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-30",
+        "manufacturing_date": "2018-12-03",
+        "processor": "Intel Xeon Silver 4114",
+        "arch": "x86_64"
+    },
+    "abacus11": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2018-12-03",
+        "processor": "Intel Xeon Silver 4114",
+        "arch": "x86_64"
+    },
+    "abacus12": {
+        "site": "Rennes",
+        "arrival_date": "2023-11-17",
+        "manufacturing_date": "2019-10-28",
+        "processor": "Intel Xeon Gold 6248",
+        "arch": "x86_64"
+    },
+    "abacus14": {
+        "site": "Rennes",
+        "arrival_date": "2023-11-08",
+        "manufacturing_date": "2019-09-26",
+        "processor": "Intel Xeon Silver 4214",
+        "arch": "x86_64"
+    },
+    "abacus16": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-16",
+        "manufacturing_date": "2019-09-26",
+        "processor": "Intel Xeon Silver 4214",
+        "arch": "x86_64"
+    },
+    "abacus17": {
+        "site": "Rennes",
+        "arrival_date": "2023-11-17",
+        "manufacturing_date": "2020-11-25",
+        "processor": "AMD EPYC 7282",
+        "arch": "x86_64"
+    },
+    "abacus18": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-11",
+        "manufacturing_date": "2020-11-13",
+        "processor": "AMD EPYC 7352",
+        "arch": "x86_64"
+    },
+    "abacus19": {
+        "site": "Rennes",
+        "arrival_date": "2023-11-17",
+        "manufacturing_date": "2020-11-12",
+        "processor": "Intel Xeon Gold 5220R",
+        "arch": "x86_64"
+    },
+    "abacus20": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-11",
+        "manufacturing_date": "2020-12-29",
+        "processor": "Intel Xeon Gold 5220R",
+        "arch": "x86_64"
+    },
+    "abacus21": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2021-08-02",
+        "processor": "AMD EPYC 7F72",
+        "arch": "x86_64"
+    },
+    "abacus22": {
+        "site": "Rennes",
+        "arrival_date": "2023-12-04",
+        "manufacturing_date": "2022-01-14",
+        "processor": "AMD EPYC 7413",
+        "arch": "x86_64"
+    },
+    "abacus25": {
+        "site": "Rennes",
+        "arrival_date": "2023-06-05",
+        "manufacturing_date": "2022-10-24",
+        "processor": "AMD EPYC 7413",
+        "arch": "x86_64"
+    },
+    "paradoxe": {
+        "site": "Rennes",
+        "arrival_date": "2024-01-02",
+        "manufacturing_date": "2023-05-27",
+        "processor": "Intel Xeon Gold 5320",
+        "arch": "x86_64"
+    },
+    "paranoia": {
+        "site": "Rennes",
+        "arrival_date": "2014-02-21",
+        "manufacturing_date": "2013-11-22",
+        "processor": "Intel Xeon E5-2660 v2",
+        "arch": "x86_64"
+    },
+    "parasilo": {
+        "site": "Rennes",
+        "arrival_date": "2015-01-13",
+        "manufacturing_date": "2015-01-13",
+        "processor": "Intel Xeon E5-2630 v3",
+        "arch": "x86_64"
+    },
+    "paravance": {
+        "site": "Rennes",
+        "arrival_date": "2015-01-13",
+        "manufacturing_date": "2015-01-13",
+        "processor": "Intel Xeon E5-2630 v3",
+        "arch": "x86_64"
+    },
+    "roazhon1": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2018-09-20",
+        "processor": "Intel Xeon Gold 6154",
+        "arch": "x86_64"
+    },
+    "roazhon2": {
+        "site": "Rennes",
+        "arrival_date": "2023-09-06",
+        "manufacturing_date": "2018-10-22",
+        "processor": "Intel Xeon Gold 5120",
+        "arch": "x86_64"
+    },
+    "roazhon3": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2018-11-12",
+        "processor": "Intel Xeon Gold 6142",
+        "arch": "x86_64"
+    },
+    "roazhon4": {
+        "site": "Rennes",
+        "arrival_date": "2023-09-06",
+        "manufacturing_date": "2020-12-01",
+        "processor": "AMD EPYC 7H12",
+        "arch": "x86_64"
+    },
+    "roazhon5": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-13",
+        "manufacturing_date": "2015-04-06",
+        "processor": "Intel Xeon E5-2660 v3",
+        "arch": "x86_64"
+    },
+    "roazhon6": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2017-10-25",
+        "processor": "Intel Xeon E5-2650 v4",
+        "arch": "x86_64"
+    },
+    "roazhon7": {
+        "site": "Rennes",
+        "arrival_date": "2023-12-20",
+        "manufacturing_date": "2017-06-27",
+        "processor": "Intel Xeon E5-2650 v4",
+        "arch": "x86_64"
+    },
+    "roazhon8": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2017-06-22",
+        "processor": "Intel Xeon E5-2650 v4",
+        "arch": "x86_64"
+    },
+    "roazhon9": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-09",
+        "manufacturing_date": "2017-12-15",
+        "processor": "Intel Xeon Gold 5118",
+        "arch": "x86_64"
+    },
+    "roazhon10": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2019-09-25",
+        "processor": "Intel Xeon Gold 5220",
+        "arch": "x86_64"
+    },
+    "roazhon11": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2012-09-14",
+        "processor": "Intel Xeon E5-2660",
+        "arch": "x86_64"
+    },
+    "roazhon12": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-24",
+        "manufacturing_date": "2012-09-14",
+        "processor": "Intel Xeon E5-2660",
+        "arch": "x86_64"
+    },
+    "roazhon13": {
+        "site": "Rennes",
+        "arrival_date": "2023-10-06",
+        "manufacturing_date": "2019-09-25",
+        "processor": "Intel Xeon Gold 6254",
+        "arch": "x86_64"
+    },
+    "uvb": {
+        "site": "Sophia",
+        "arrival_date": "2011-01-04",
+        "manufacturing_date": "2011-01-04",
+        "processor": "Intel Xeon X5670",
+        "arch": "x86_64"
+    },
+    "estats": {
+        "site": "Toulouse",
+        "arrival_date": "2023-06-13",
+        "manufacturing_date": "2022-12-01",
+        "processor": "Nvidia Carmel",
+        "arch": "aarch64"
+    },
+    "montcalm": {
+        "site": "Toulouse",
+        "arrival_date": "2022-12-01",
+        "manufacturing_date": "2022-11-06",
+        "processor": "Intel Xeon Silver 4314",
+        "arch": "x86_64"
+    }
+}
