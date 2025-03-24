@@ -1,0 +1,23 @@
+---
+#Create directory
+- name: "[TEMPLATE]"
+  hosts: all
+  vars:
+          myapp_conf:
+                  - "buffer = True"
+                  - "memory = 90mb"
+                  - "cache = 1G "
+  tasks:
+          - name: "[TEMPLATE] - create directory"
+            file:
+                    path: /home/wilson/new_dir
+                    state: directory
+                    mode: 0755
+                    owner: wilson
+         
+          - name: "[TEMPLATE] - create template"
+            template: 
+              src: myappconf.cfg.j2
+              dest: /home/wilson/myappconf.cfg
+              mode: 0755
+

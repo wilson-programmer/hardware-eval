@@ -1,0 +1,40 @@
+---
+- name: "[RUN REDIS BENCH]"
+  hosts: all
+  tasks:
+          - name: "[Create redis_result directory]"
+            file:
+                    path: /home/wilson/redis_result
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Copy bench_redis2.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/bench_redis2.sh
+                    dest: /home/wilson/redis_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run bench_redis.sh]"
+            command: bash /home/wilson/redis_bench/bench_redis2.sh
+            become: yes
+
+          - name: "[Copy save_redis_output.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/save_redis_output.sh
+                    dest: /home/wilson/redis_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run save_redis_output.sh]"
+            command: bash /home/wilson/redis_bench/save_redis_output.sh
+            become: yes
+
+
+
+
+

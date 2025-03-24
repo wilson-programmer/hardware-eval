@@ -1,0 +1,94 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 05/12] x86: maintain socket CPU mask for CAT
+Date: Thu,  9 Apr 2015 17:18:18 +0800
+Message-ID: <1428571105-3604-6-git-send-email-chao.p.peng@linux.intel.com>
+References: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Some CAT resource/registers exist in socket level and they must be
+accessed from the CPU of the corresponding socket. It's common to pick
+an arbitrary CPU from the socket. To make the picking easy, it's useful
+to maintain a reference to the cpu_core_mask which contains all the
+siblings of a CPU in the same socket. The reference needs to be
+synchronized with the CPU up/down.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+ xen/arch/x86/psr.c | 24 ++++++++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 4aff5f6..7de2504 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -32,6 +32,7 @@ struct psr_cat_socket_info {
+     unsigned int cbm_len;
+     unsigned int cos_max;
+     struct psr_cat_cbm *cos_cbm_map;
++    cpumask_t *socket_cpu_mask;
+ };
+ 
+ struct psr_assoc {
+@@ -234,6 +235,8 @@ static void cat_cpu_init(unsigned int cpu)
+     ASSERT(socket < nr_sockets);
+ 
+     info = cat_socket_info + socket;
++    if ( info->socket_cpu_mask == NULL )
++        info->socket_cpu_mask = per_cpu(cpu_core_mask, cpu);
+ 
+     /* Avoid initializing more than one times for the same socket. */
+     if ( test_and_set_bool(info->initialized) )
+@@ -274,6 +277,24 @@ static void psr_cpu_init(unsigned int cpu)
+     psr_assoc_init(cpu);
+ }
+ 
++static void psr_cpu_fini(unsigned int cpu)
++{
++    unsigned int socket, next;
++    cpumask_t *cpu_mask;
++
++    if ( cat_socket_info )
++    {
++        socket = cpu_to_socket(cpu);
++        cpu_mask = cat_socket_info[socket].socket_cpu_mask;
++
++        if ( (next = cpumask_cycle(cpu, cpu_mask)) == cpu )
++            cat_socket_info[socket].socket_cpu_mask = NULL;
++        else
++            cat_socket_info[socket].socket_cpu_mask =
++                                    per_cpu(cpu_core_mask, next);
++    }
++}
++
+ static int cpu_callback(
+     struct notifier_block *nfb, unsigned long action, void *hcpu)
+ {
+@@ -284,6 +305,9 @@ static int cpu_callback(
+     case CPU_STARTING:
+         psr_cpu_init(cpu);
+         break;
++    case CPU_DYING:
++        psr_cpu_fini(cpu);
++        break;
+     }
+ 
+     return NOTIFY_DONE;
+-- 
+1.9.1
+

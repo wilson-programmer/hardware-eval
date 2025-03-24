@@ -1,0 +1,35 @@
+---
+- name: "[RUN FIO BENCH]"
+  hosts: all
+  tasks:
+          - name: "[Create fio_result directory]"
+            file:
+                    path: /home/wilson/fio_result
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Copy bench_fio2.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/bench_fio2.sh
+                    dest: /home/wilson/fio_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run bench_fio2.sh]"
+            command: bash /home/wilson/fio_bench/bench_fio2.sh
+            become: yes
+
+          - name: "[Copy save_fio_output.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/save_fio_output.sh
+                    dest: /home/wilson/fio_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run save_fio_output.sh]"
+            command: bash /home/wilson/fio_bench/save_fio_output.sh
+            become: yes

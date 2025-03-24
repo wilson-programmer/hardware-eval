@@ -1,0 +1,31 @@
+---
+- name: "[RUN INSTALL NETPERF]"
+  hosts: all
+  tasks:
+          - name: "[Create netperf_result directory]"
+            file:
+                    path: /home/wilson/netperf_result
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Create netperf_bench directory]"
+            file:
+                    path: /home/wilson/netperf_bench
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes  
+
+          - name: "[Copy install_netperf_client.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/install_netperf_client.sh
+                    dest: /home/wilson/netperf_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run install_netperf_client.sh]"
+            command: bash /home/wilson/netperf_bench/install_netperf_client.sh
+            become: yes

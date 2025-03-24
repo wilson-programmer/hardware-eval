@@ -1,0 +1,92 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 00/12] enable Cache Allocation Technology
+	(CAT) for VMs
+Date: Thu,  9 Apr 2015 17:18:13 +0800
+Message-ID: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Changes in v4:
+* Address comments from Andrew and Ian(Detail in patch).
+* Split COS/CBM management patch into 4 small patches.
+* Add documentation xl-psr.markdown.
+Changes in v3:
+* Address comments from Jan and Ian(Detail in patch).
+* Add xl sample output in cover letter.
+Changes in v2:
+* Address comments from Konrad and Jan(Detail in patch):
+* Make all cat unrelated changes into the preparation patches. 
+
+This patch serial enable the new Cache Allocation Technology (CAT) feature
+found in Intel Broadwell and later server platform. In Xen's implementation,
+CAT is used to control cache allocation on VM basis.
+
+Detail hardware spec can be found in section 17.15 of the Intel SDM [1].
+The design for XEN can be found at [2].
+
+patch1-2:  preparation.
+patch3-11: real work for CAT.
+patch12:   xl document for CMT/MBM/CAT.
+
+[1] Intel SDM (http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-manual-325462.pdf)
+[2] CAT design for XEN( http://lists.xen.org/archives/html/xen-devel/2014-12/msg01382.html)
+
+Chao Peng (12):
+  x86: clean up psr boot parameter parsing
+  x86: improve psr scheduling code
+  x86: detect and initialize Intel CAT feature
+  x86: maintain COS to CBM mapping for each socket
+  x86: maintain socket CPU mask for CAT
+  x86: add COS information for each domain
+  x86: expose CBM length and COS number information
+  x86: dynamically get/set CBM for a domain
+  x86: add scheduling support for Intel CAT
+  xsm: add CAT related xsm policies
+  tools: add tools support for Intel CAT
+  docs: add xl-psr.markdown
+
+ docs/man/xl.pod.1                            |  38 +++
+ docs/misc/xen-command-line.markdown          |  13 +-
+ docs/misc/xl-psr.markdown                    | 111 +++++++
+ tools/flask/policy/policy/modules/xen/xen.if |   2 +-
+ tools/flask/policy/policy/modules/xen/xen.te |   4 +-
+ tools/libxc/include/xenctrl.h                |  15 +
+ tools/libxc/xc_psr.c                         |  76 +++++
+ tools/libxl/libxl.h                          |  26 ++
+ tools/libxl/libxl_psr.c                      | 168 +++++++++-
+ tools/libxl/libxl_types.idl                  |  10 +
+ tools/libxl/xl.h                             |   4 +
+ tools/libxl/xl_cmdimpl.c                     | 140 +++++++++
+ tools/libxl/xl_cmdtable.c                    |  12 +
+ xen/arch/x86/domain.c                        |  13 +-
+ xen/arch/x86/domctl.c                        |  18 ++
+ xen/arch/x86/psr.c                           | 446 ++++++++++++++++++++++++---
+ xen/arch/x86/sysctl.c                        |  18 ++
+ xen/include/asm-x86/cpufeature.h             |   1 +
+ xen/include/asm-x86/domain.h                 |   5 +-
+ xen/include/asm-x86/msr-index.h              |   1 +
+ xen/include/asm-x86/psr.h                    |  14 +-
+ xen/include/public/domctl.h                  |  12 +
+ xen/include/public/sysctl.h                  |  16 +
+ xen/xsm/flask/hooks.c                        |   6 +
+ xen/xsm/flask/policy/access_vectors          |   6 +
+ 25 files changed, 1120 insertions(+), 55 deletions(-)
+ create mode 100644 docs/misc/xl-psr.markdown
+
+-- 
+1.9.1
+

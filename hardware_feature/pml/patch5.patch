@@ -1,0 +1,67 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Kai Huang <kai.huang@linux.intel.com>
+Subject: [v2 05/11] vmx: add new data structure member to
+	support PML
+Date: Wed, 15 Apr 2015 15:03:47 +0800
+Message-ID: <1429081433-9600-6-git-send-email-kai.huang@linux.intel.com>
+References: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: andrew.cooper3@citrix.com, tim@xen.org, jbeulich@suse.com, kevin.tian@intel.com, xen-devel@lists.xen.org
+Cc: Kai Huang <kai.huang@linux.intel.com>
+List-Id: xen-devel@lists.xenproject.org
+
+A new 4K page pointer is added to arch_vmx_struct as PML buffer for vcpu. And a
+new 'status' field is added to vmx_domain to indicate whether PML is enabled for
+the domain or not. The 'status' field also can be used for further similiar
+purpose.
+
+Note both new members don't have to be initialized to zero explicitly as both
+vcpu and domain structure are zero-ed when they are created.
+
+Signed-off-by: Kai Huang <kai.huang@linux.intel.com>
+---
+ xen/include/asm-x86/hvm/vmx/vmcs.h | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/xen/include/asm-x86/hvm/vmx/vmcs.h b/xen/include/asm-x86/hvm/vmx/vmcs.h
+index f831a78..2c679ac 100644
+--- a/xen/include/asm-x86/hvm/vmx/vmcs.h
++++ b/xen/include/asm-x86/hvm/vmx/vmcs.h
+@@ -70,8 +70,12 @@ struct ept_data {
+     cpumask_var_t synced_mask;
+ };
+ 
++#define _VMX_DOMAIN_PML_ENABLED    0
++#define VMX_DOMAIN_PML_ENABLED     (1ul << _VMX_DOMAIN_PML_ENABLED)
+ struct vmx_domain {
+     unsigned long apic_access_mfn;
++    /* VMX_DOMAIN_* */
++    unsigned long status;
+ };
+ 
+ struct pi_desc {
+@@ -142,6 +146,9 @@ struct arch_vmx_struct {
+     /* Bitmap to control vmexit policy for Non-root VMREAD/VMWRITE */
+     struct page_info     *vmread_bitmap;
+     struct page_info     *vmwrite_bitmap;
++
++#define NR_PML_ENTRIES   512
++    struct page_info     *pml_pg;
+ };
+ 
+ int vmx_create_vmcs(struct vcpu *v);
+-- 
+2.1.0
+

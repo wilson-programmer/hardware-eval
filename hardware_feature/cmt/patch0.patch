@@ -1,0 +1,265 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 00/10] enable Cache Monitoring Technology
+	(CMT) feature
+Date: Tue, 30 Sep 2014 18:49:02 +0800
+Message-ID: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Changes from v17:
+ - Address comments from Andrew and Jan, including:
+   * Add per-entry return value for resource_op;
+   * Refine code for resource_op;
+    
+Changes from v16:
+ - Address comments from Konrad, Andrew and Jan, including:
+   * Correct copyin/copyout for resource_op.
+   * Improve documentation/coding style
+   * Other minor fix.
+
+Changes from v15:
+ - Keywords change: Intel changed the names for PQOS/CQM in latest SDM.
+   Adjust the code accordingly:
+     PQOS(Platform QOS) => PSR(Platform Shared Resource)
+     CQM(Cache QoS Monitoring) => CMT(Cache Monitoring Technology)
+ - Make resource operation more clean:
+   * do_platform_op is the minimum unit for non-preemptible operation, it
+     accepts Small, non-preempt operations as well as single operation.
+   * Other preemptible batch operations are performed with multicall mechanism.
+ - Add padding field in xenpf_resource_data structure and check for that.
+
+Changes from v14:
+ - Address comments from Jan and Andrew, including:
+   * Add non-preemption ability to multicall;
+   * Build the resource batch operation on top of multicall;
+   * Simplify pqos option.
+
+Changes from v13:
+ - Address comments from Jan and Andrew, including:
+   * Support mixed resource types in one invocation;
+   * Remove some unused fields(rmid_min/rmid_inuse);
+   * Other minor changes and code clean up;
+
+Changes from v12:
+ - Address comments from Jan, like QoS feature setting when booting,
+   avoid unbound memory allocation in Xen, put resource access
+   hypercall in platform_hypercall.c to avoid creating new files, 
+   specifically enumerate L3 cache size for CQM (instead of
+   x86_cache_size), get random socket CPU in user space tools, and 
+   also some coding styles. However the continue_hypercall_on_cpu()
+   suggestion is not adopted in this version due to the potential
+   issue in our usage case.
+ - Add a white list to limit the capability for resource access from
+   tool side.
+ - Address comments from Ian on the xl/libxl/libxc side.
+
+Changes from v11:
+ - Turn off pqos and pqos_monitor in Xen command line by default.
+ - Modify the original specific MSR access hypercall into a generic
+   resource access hypercall. This hypercall could be used to access
+   MSR, Port I/O, etc. Use platform_op to replace sysctl so that both
+   dom0 kernel and userspace could use this hypercall.
+ - Address various comments from Jan, Ian, Konrad, and Daniel.
+
+Changes from v10:
+ - Re-design and re-implement the whole logic. In this version,
+   hypervisor provides basic mechanisms (like access MSRs) while all
+   policies are put in user space.
+   patch 1-3 provide a generic MSR hypercall for toolstack to access
+   patch 4-9 implement the cache QoS monitoring feature
+
+Changes from v9:
+ - Revise the readonly mapping mechanism to share data between Xen and
+   userspace. We create L3C buffer for each socket, share both buffer
+   address MFNs and buffer MFNs to userspace.
+ - Split the pqos.c into pqos.c and cqm.c for better code structure.
+ - Show the total L3 cache size when issueing xl pqos-list cqm command.
+ - Abstract a libxl_getcqminfo() function to fetch cqm data from Xen.
+ - Several coding style fixes.
+
+Changes from v8:
+ - Address comments from Ian Campbell, including:
+   * Modify the return handling for xc_sysctl();
+   * Add man page items for platform QoS related commands.
+   * Fix typo in commit message.
+
+Changes from v7:
+ - Address comments from Andrew Cooper, including:
+   * Check CQM capability before allocating cpumask memory.
+   * Move one function declaration into the correct patch.
+
+Changes from v6:
+ - Address comments from Jan Beulich, including:
+   * Remove the unnecessary CPUID feature check.
+   * Remove the unnecessary socket_cpu_map.
+   * Spin_lock related changes, avoid spin_lock_irqsave().
+   * Use readonly mapping to pass cqm data between Xen/Userspace,
+     to avoid data copying.
+   * Optimize RDMSR/WRMSR logic to avoid unnecessary calls.
+   * Misc fixes including __read_mostly prefix, return value, etc.
+
+Changes from v5:
+ - Address comments from Dario Faggioli, including:
+   * Define a new libxl_cqminfo structure to avoid reference of xc
+     structure in libxl functions.
+   * Use LOGE() instead of the LIBXL__LOG() functions.
+
+Changes from v4:
+ - When comparing xl cqm parameter, use strcmp instead of strncmp,
+   otherwise, "xl pqos-attach cqmabcd domid" will be considered as
+   a valid command line.
+ - Address comments from Andrew Cooper, including:
+   * Adjust the pqos parameter parsing function.
+   * Modify the pqos related documentation.
+   * Add a check for opt_cqm_max_rmid in initialization code.
+   * Do not IPI CPU that is in same socket with current CPU.
+ - Address comments from Dario Faggioli, including:
+   * Fix an typo in export symbols.
+   * Return correct libxl error code for qos related functions.
+   * Abstract the error printing logic into a function.
+ - Address comment from Daniel De Graaf, including:
+   * Add return value in for pqos related check.
+ - Address comments from Konrad Rzeszutek Wilk, including:
+   * Modify the GPLv2 related file header, remove the address.
+
+Changes from v3:
+ - Use structure to better organize CQM related global variables.
+ - Address comments from Andrew Cooper, including:
+   * Remove the domain creation flag for CQM RMID allocation.
+   * Adjust the boot parameter format, use custom_param().
+   * Add documentation for the new added boot parameter.
+   * Change QoS type flag to be uint64_t.
+   * Initialize the per socket cpu bitmap in system boot time.
+   * Remove get_cqm_avail() function.
+   * Misc of format changes.
+ - Address comment from Daniel De Graaf, including:
+   * Use avc_current_has_perm() for XEN2__PQOS_OP that belongs to SECCLASS_XEN2.
+
+Changes from v2:
+ - Address comments from Andrew Cooper, including:
+   * Merging tools stack changes into one patch.
+   * Reduce the IPI number to one per socket.
+   * Change structures for CQM data exchange between tools and Xen.
+   * Misc of format/variable/function name changes.
+ - Address comments from Konrad Rzeszutek Wilk, including:
+   * Simplify the error printing logic.
+   * Add xsm check for the new added hypercalls.
+
+Changes from v1:
+ - Address comments from Andrew Cooper, including:
+   * Change function names, e.g., alloc_cqm_rmid(), system_supports_cqm(), etc.
+   * Change some structure element order to save packing cost.
+   * Correct some function's return value.
+   * Some programming styles change.
+   * ...
+
+The Intel Xeon processor E5 v3 family introduced resource monitoring capability
+in each logical processor to measure specific platform shared resource metrics,
+for example, L3 cache occupancy. Detailed information please refer to Intel SDM
+chapter 17.14.
+
+Cache Monitoring Technology provides a layer of abstraction between applications
+and logical processors through the use of Resource Monitoring IDs (RMIDs).
+In Xen design, each guest in the system can be assigned an RMID independently,
+while RMID=0 is reserved for monitoring domains that doesn't enable CMT service.
+When any of the domain's vcpu is scheduled on a logical processor, the domain's
+RMID will be activated by programming the value into one specific MSR, and when
+the vcpu is scheduled out, a RMID=0 will be programmed into that MSR.
+The CMT Hardware tracks cache utilization of memory accesses according to the
+RMIDs and reports monitored data via a counter register. With this solution,
+we can get the knowledge how much L3 cache is used by a certain guest.
+
+To attach CMT service to a certain guest:
+xl psr-cmt-attach domid
+
+To detached CMT service from a guest:
+xl psr-cmt-detach domid
+
+To get the L3 cache usage:
+$ xl psr-cmt-show cache_occupancy <domid>
+
+The below data is just an example showing how the CMT related data is exposed to
+end user.
+
+[root@localhost]# xl psr-cmt-show cache_occupancy
+Total RMID: 55
+Per-Socket L3 Cache Size: 35840 KB
+Name                                        ID        Socket 0        Socket 1
+Domain-0                                     0        20720 KB        15960 KB
+ExampleHVMDomain                             1         4200 KB         2352 KB
+
+Chao Peng (10):
+  x86: add generic resource (e.g. MSR) access hypercall
+  xsm: add resource operation related xsm policy
+  tools: provide interface for generic resource access
+  x86: detect and initialize Cache Monitoring Technology feature
+  x86: dynamically attach/detach CMT service for a guest
+  x86: collect global CMT information
+  x86: enable CMT for each domain RMID
+  x86: add CMT related MSRs in allowed list
+  xsm: add CMT related xsm policies
+  tools: CMDs and APIs for Cache Monitoring Technology
+
+ docs/man/xl.pod.1                            |   25 +++
+ docs/misc/xen-command-line.markdown          |   21 +++
+ tools/flask/policy/policy/modules/xen/xen.if |    2 +-
+ tools/flask/policy/policy/modules/xen/xen.te |    6 +-
+ tools/libxc/Makefile                         |    2 +
+ tools/libxc/xc_msr_x86.h                     |   36 +++++
+ tools/libxc/xc_private.h                     |   51 ++++++
+ tools/libxc/xc_psr.c                         |  214 ++++++++++++++++++++++++++
+ tools/libxc/xc_resource.c                    |  150 ++++++++++++++++++
+ tools/libxc/xenctrl.h                        |   34 ++++
+ tools/libxl/Makefile                         |    2 +-
+ tools/libxl/libxl.h                          |   19 +++
+ tools/libxl/libxl_psr.c                      |  184 ++++++++++++++++++++++
+ tools/libxl/libxl_types.idl                  |    4 +
+ tools/libxl/libxl_utils.c                    |   28 ++++
+ tools/libxl/xl.h                             |    3 +
+ tools/libxl/xl_cmdimpl.c                     |  132 ++++++++++++++++
+ tools/libxl/xl_cmdtable.c                    |   17 ++
+ xen/arch/x86/Makefile                        |    1 +
+ xen/arch/x86/cpu/intel_cacheinfo.c           |   49 +-----
+ xen/arch/x86/domain.c                        |    8 +
+ xen/arch/x86/domctl.c                        |   29 ++++
+ xen/arch/x86/platform_hypercall.c            |  165 ++++++++++++++++++++
+ xen/arch/x86/psr.c                           |  187 ++++++++++++++++++++++
+ xen/arch/x86/setup.c                         |    1 +
+ xen/arch/x86/sysctl.c                        |   43 ++++++
+ xen/arch/x86/x86_64/platform_hypercall.c     |    4 +
+ xen/include/asm-x86/cpufeature.h             |   46 ++++++
+ xen/include/asm-x86/domain.h                 |    2 +
+ xen/include/asm-x86/msr-index.h              |    5 +
+ xen/include/asm-x86/psr.h                    |   62 ++++++++
+ xen/include/public/domctl.h                  |   12 ++
+ xen/include/public/platform.h                |   35 +++++
+ xen/include/public/sysctl.h                  |   14 ++
+ xen/include/xlat.lst                         |    1 +
+ xen/xsm/flask/hooks.c                        |   10 ++
+ xen/xsm/flask/policy/access_vectors          |   18 ++-
+ xen/xsm/flask/policy/security_classes        |    1 +
+ 38 files changed, 1570 insertions(+), 53 deletions(-)
+ create mode 100644 tools/libxc/xc_msr_x86.h
+ create mode 100644 tools/libxc/xc_psr.c
+ create mode 100644 tools/libxc/xc_resource.c
+ create mode 100644 tools/libxl/libxl_psr.c
+ create mode 100644 xen/arch/x86/psr.c
+ create mode 100644 xen/include/asm-x86/psr.h
+
+-- 
+1.7.9.5
+

@@ -1,0 +1,129 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Kai Huang <kai.huang@linux.intel.com>
+Subject: [v2 00/11] PML (Paging Modification Logging) support
+Date: Wed, 15 Apr 2015 15:03:42 +0800
+Message-ID: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: andrew.cooper3@citrix.com, tim@xen.org, jbeulich@suse.com, kevin.tian@intel.com, xen-devel@lists.xen.org
+Cc: Kai Huang <kai.huang@linux.intel.com>
+List-Id: xen-devel@lists.xenproject.org
+
+This v2 patch series was rebased on latest upstream code.
+
+v1->v2:
+
+Firstly the sequence of this patch series were adjusted addressing Andrew and
+Tim's comments:
+
+    - Put v1 patch 2 (new boot parameter for PML) to be patch 1.
+    - Added a new patch to patch the doc change of new added boot parameter
+      of controlling PML enabling, as patch 2.
+    - Added a new patch to introduce paging_mark_gfn_dirty, and made
+      paging_mark_dirty as a wrapper of it, as patch 3.
+    - Merged v1 patch 1 (EPT A/D bits support) and v1 patch 10 (enabling PML in
+      p2m-ept.c) to a single patch as they both operates on EPT A/D bits, with
+      considering EPT A/D bits will be enabled only when PML is used as well.
+      To me, looks a single patch is more straightforward.
+
+The v2 patch series were orginized as following, with detail changes described
+under each of them.
+
+patch 1: Add new boot parameter to control PML enabling
+    - adjusted the sequence of parsing function and boot parameter.
+
+patch 2: new patch for adding description for new PML boot parameter
+    - inspired by "iommu=" parameter.
+
+patch 3: add new paging_mark_gfn_dirty
+    - Introduced new paging_mark_gfn_dirty, which takes guest pfn as parameter,
+      and made paging_mark_dirty a wrapper of paging_mark_gfn_dirty, commented
+      by Tim.
+
+patch 4: PML feature detection
+    - disable opt_pml_enabled if PML is not present, commented by Andrew.
+
+patch 5 ~ 9: Add PML support in VMX
+    - changed vmx_*_{enable|disable}_pml, vmx_domain_flush_pml_buffer to be
+      idempotent, commented by Tim. vmx_vcpu_flush_pml_buffer remains the same
+      as it is also called in PML buffer full VMEXIT.
+    - changed vmx_{vcpu|domain}_pml_enabled to return bool_t, with taking const
+      pointer (of vcpu or domain) as parameter, commented by Andrew.
+    - changed vmx_vcpu_flush_pml_buffer calling paging_mark_gfn_dirty instead of
+      paging_mark_dirty, commented by Tim.
+    - changed various coding style issues and did several code refinements
+      commented by Andrew.
+
+patch 10: refine log-dirty common code to support PML
+    - removed PML buffer flush callback in log_dirty_domain in paging layer.
+    - changed to call p2m_flush_hardware_cached_dirty directly in
+      hap_track_dirty_vram, and paging_log_dirty_op.
+
+patch 11: enable EPT A/D bits and add PML support in p2m-ept.c
+    - Merged EPT A/D bits support with enabling PML in p2m-ept.c as it's more
+      straightforward, with considering EPT A/D bits will only be enabled if PML
+      is used, and both of them operates on EPT A/D bits.
+    - Manually set or clear A/D bits in ept_p2m_type_to_flags, and
+      ept_set_middle_entry, commented by Tim.
+
+Several sanity tests of live migration were done, and all tests worked well.
+
+I also tested specjbb performance under global log-dirty, by using the same hack
+mentioned in v1. The result is consistent with v1 (~10% improvement in global
+log-dirty), and PML is beneficial in reducing hypervisor overhead in log-dirty
+mode.
+
+- global log-dirty:
+
+    WP              PML (v1)        PML (v2)
+    72862           79511	        80007
+    73466           81173	        81614
+    72989           81177	        82047
+    73138           81777	        81975
+    72811           80257	        80139
+    72486           80413	        81127
+
+avg 72959           80718	        81151
+    100%            110.63%         111.22%
+
+
+
+Kai Huang (11):
+  vmx: add new boot parameter to control PML enabling
+  doc: add description for new PML boot parameter
+  log-dirty: add new paging_mark_gfn_dirty
+  vmx: add PML definition and feature detection.
+  vmx: add new data structure member to support PML
+  vmx: add help functions to support PML
+  vmx: handle PML buffer full VMEXIT
+  vmx: handle PML enabling in vmx_vcpu_initialise
+  vmx: disable PML in vmx_vcpu_destroy
+  log-dirty: refine common code to support PML
+  p2m/ept: enable PML in p2m-ept for log-dirty
+
+ docs/misc/xen-command-line.markdown |  14 +++
+ xen/arch/x86/hvm/vmx/vmcs.c         | 231 ++++++++++++++++++++++++++++++++++++
+ xen/arch/x86/hvm/vmx/vmx.c          |  35 ++++++
+ xen/arch/x86/mm/hap/hap.c           |  29 ++++-
+ xen/arch/x86/mm/p2m-ept.c           |  79 ++++++++++--
+ xen/arch/x86/mm/p2m.c               |  36 ++++++
+ xen/arch/x86/mm/paging.c            |  41 +++++--
+ xen/include/asm-x86/hvm/vmx/vmcs.h  |  25 +++-
+ xen/include/asm-x86/hvm/vmx/vmx.h   |   4 +-
+ xen/include/asm-x86/p2m.h           |  11 ++
+ xen/include/asm-x86/paging.h        |   2 +
+ 11 files changed, 484 insertions(+), 23 deletions(-)
+
+-- 
+2.1.0
+

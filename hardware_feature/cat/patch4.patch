@@ -1,0 +1,74 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 04/12] x86: maintain COS to CBM mapping for
+	each socket
+Date: Thu,  9 Apr 2015 17:18:17 +0800
+Message-ID: <1428571105-3604-5-git-send-email-chao.p.peng@linux.intel.com>
+References: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+For each socket, a COS to CBM mapping structure is maintained for each
+COS. The mapping is indexed by COS and the value is the corresponding
+CBM. Different VMs may use the same CBM, a reference count is used to
+indicate if the CBM is available.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+ xen/arch/x86/psr.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 16c37dd..4aff5f6 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -21,11 +21,17 @@
+ #define PSR_CMT        (1<<0)
+ #define PSR_CAT        (1<<1)
+ 
++struct psr_cat_cbm {
++    unsigned int ref;
++    uint64_t cbm;
++};
++
+ struct psr_cat_socket_info {
+     bool_t initialized;
+     bool_t enabled;
+     unsigned int cbm_len;
+     unsigned int cos_max;
++    struct psr_cat_cbm *cos_cbm_map;
+ };
+ 
+ struct psr_assoc {
+@@ -240,6 +246,14 @@ static void cat_cpu_init(unsigned int cpu)
+         info->cbm_len = (eax & 0x1f) + 1;
+         info->cos_max = (edx & 0xffff);
+ 
++        info->cos_cbm_map = xzalloc_array(struct psr_cat_cbm,
++                                          info->cos_max + 1UL);
++        if ( !info->cos_cbm_map )
++            return;
++
++        /* cos=0 is reserved as default cbm(all ones). */
++        info->cos_cbm_map[0].cbm = (1ull << info->cbm_len) - 1;
++
+         info->enabled = 1;
+         printk(XENLOG_INFO "CAT: enabled on socket %u, cos_max:%u, cbm_len:%u\n",
+                socket, info->cos_max, info->cbm_len);
+-- 
+1.9.1
+

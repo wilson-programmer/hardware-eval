@@ -1,0 +1,279 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 08/12] x86: dynamically get/set CBM for a
+	domain
+Date: Thu,  9 Apr 2015 17:18:21 +0800
+Message-ID: <1428571105-3604-9-git-send-email-chao.p.peng@linux.intel.com>
+References: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+For CAT, COS is maintained in hypervisor only while CBM is exposed to
+user space directly to allow getting/setting domain's cache capacity.
+For each specified CBM, hypervisor will either use a existed COS which
+has the same CBM or allocate a new one if the same CBM is not found. If
+the allocation fails because of no enough COS available then error is
+returned. The getting/setting are always operated on a specified socket.
+For multiple sockets system, the interface may be called several times.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+ xen/arch/x86/domctl.c           |  18 ++++++
+ xen/arch/x86/psr.c              | 126 ++++++++++++++++++++++++++++++++++++++++
+ xen/include/asm-x86/msr-index.h |   1 +
+ xen/include/asm-x86/psr.h       |   2 +
+ xen/include/public/domctl.h     |  12 ++++
+ 5 files changed, 159 insertions(+)
+
+diff --git a/xen/arch/x86/domctl.c b/xen/arch/x86/domctl.c
+index d4f6ccf..89a6b33 100644
+--- a/xen/arch/x86/domctl.c
++++ b/xen/arch/x86/domctl.c
+@@ -1326,6 +1326,24 @@ long arch_do_domctl(
+         }
+         break;
+ 
++    case XEN_DOMCTL_psr_cat_op:
++        switch ( domctl->u.psr_cat_op.cmd )
++        {
++        case XEN_DOMCTL_PSR_CAT_OP_SET_L3_CBM:
++            ret = psr_set_l3_cbm(d, domctl->u.psr_cat_op.target,
++                                 domctl->u.psr_cat_op.data);
++            break;
++        case XEN_DOMCTL_PSR_CAT_OP_GET_L3_CBM:
++            ret = psr_get_l3_cbm(d, domctl->u.psr_cat_op.target,
++                                 &domctl->u.psr_cat_op.data);
++            copyback = 1;
++            break;
++        default:
++            ret = -EOPNOTSUPP;
++            break;
++        }
++        break;
++
+     default:
+         ret = iommu_do_domctl(domctl, d, u_domctl);
+         break;
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index e390fd9..5247bcd 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -56,6 +56,17 @@ static unsigned int get_socket_count(void)
+     return DIV_ROUND_UP(nr_cpu_ids, cpus_per_socket);
+ }
+ 
++static unsigned int get_socket_cpu(unsigned int socket)
++{
++    if ( socket < nr_sockets )
++    {
++        cpumask_t *cpu_mask = cat_socket_info[socket].socket_cpu_mask;
++        ASSERT(cpu_mask != NULL);
++        return cpumask_any(cpu_mask);
++    }
++    return nr_cpu_ids;
++}
++
+ static void __init parse_psr_bool(char *s, char *value, char *feature,
+                                   unsigned int mask)
+ {
+@@ -252,6 +263,121 @@ int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
+     return 0;
+ }
+ 
++int psr_get_l3_cbm(struct domain *d, unsigned int socket, uint64_t *cbm)
++{
++    unsigned int cos;
++    struct psr_cat_socket_info *info;
++    int ret = get_cat_socket_info(socket, &info);
++
++    if ( ret )
++        return ret;
++
++    cos = d->arch.psr_cos_ids[socket];
++    *cbm = info->cos_cbm_map[cos].cbm;
++    return 0;
++}
++
++static bool_t psr_check_cbm(unsigned int cbm_len, uint64_t cbm)
++{
++    unsigned int first_bit, zero_bit;
++
++    /* Set bits should only in the range of [0, cbm_len). */
++    if ( cbm & (~0ull << cbm_len) )
++        return 0;
++
++    first_bit = find_first_bit(&cbm, cbm_len);
++    zero_bit = find_next_zero_bit(&cbm, cbm_len, first_bit);
++
++    /* Set bits should be contiguous. */
++    if ( zero_bit < cbm_len &&
++         find_next_bit(&cbm, cbm_len, zero_bit) < cbm_len )
++        return 0;
++
++    return 1;
++}
++
++struct cos_cbm_info
++{
++    unsigned int cos;
++    uint64_t cbm;
++};
++
++static void do_write_l3_cbm(void *data)
++{
++    struct cos_cbm_info *info = data;
++    wrmsrl(MSR_IA32_PSR_L3_MASK(info->cos), info->cbm);
++}
++
++static int write_l3_cbm(unsigned int socket, unsigned int cos, uint64_t cbm)
++{
++    struct cos_cbm_info info = { .cos = cos, .cbm = cbm };
++
++    if ( socket == cpu_to_socket(smp_processor_id()) )
++        do_write_l3_cbm(&info);
++    else
++    {
++        unsigned int cpu = get_socket_cpu(socket);
++
++        if ( cpu >= nr_cpu_ids )
++            return -EBADSLT;
++        on_selected_cpus(cpumask_of(cpu), do_write_l3_cbm, &info, 1);
++    }
++
++    return 0;
++}
++
++int psr_set_l3_cbm(struct domain *d, unsigned int socket, uint64_t cbm)
++{
++    unsigned int old_cos, cos;
++    struct psr_cat_cbm *map, *find;
++    struct psr_cat_socket_info *info;
++    int ret = get_cat_socket_info(socket, &info);
++
++    if ( ret )
++        return ret;
++
++    if ( !psr_check_cbm(info->cbm_len, cbm) )
++        return -EINVAL;
++
++    old_cos = d->arch.psr_cos_ids[socket];
++    map = info->cos_cbm_map;
++    find = NULL;
++
++    for ( cos = 0; cos <= info->cos_max; cos++ )
++    {
++        /* If still not found, then keep unused one. */
++        if ( !find && cos != 0 && map[cos].ref == 0 )
++            find = map + cos;
++        else if ( map[cos].cbm == cbm )
++        {
++            if ( unlikely(cos == old_cos) )
++                return -EEXIST;
++            find = map + cos;
++            break;
++        }
++    }
++
++    /* If old cos is referred only by the domain, then use it. */
++    if ( !find && map[old_cos].ref == 1 )
++        find = map + old_cos;
++
++    if ( !find )
++        return -EUSERS;
++
++    cos = find - map;
++    if ( find->cbm != cbm )
++    {
++        ret = write_l3_cbm(socket, cos, cbm);
++        if ( ret )
++            return ret;
++        find->cbm = cbm;
++    }
++    find->ref++;
++    map[old_cos].ref--;
++    d->arch.psr_cos_ids[socket] = cos;
++    return 0;
++}
++
+ /* Called with domain lock held, no psr specific lock needed */
+ static void psr_free_cos(struct domain *d)
+ {
+diff --git a/xen/include/asm-x86/msr-index.h b/xen/include/asm-x86/msr-index.h
+index 83f2f70..5425f77 100644
+--- a/xen/include/asm-x86/msr-index.h
++++ b/xen/include/asm-x86/msr-index.h
+@@ -327,6 +327,7 @@
+ #define MSR_IA32_CMT_EVTSEL		0x00000c8d
+ #define MSR_IA32_CMT_CTR		0x00000c8e
+ #define MSR_IA32_PSR_ASSOC		0x00000c8f
++#define MSR_IA32_PSR_L3_MASK(n)	(0x00000c90 + (n))
+ 
+ /* Intel Model 6 */
+ #define MSR_P6_PERFCTR(n)		(0x000000c1 + (n))
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index 3a8a406..fb474bb 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -54,6 +54,8 @@ void psr_ctxt_switch_to(struct domain *d);
+ 
+ int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
+                         uint32_t *cos_max);
++int psr_get_l3_cbm(struct domain *d, unsigned int socket, uint64_t *cbm);
++int psr_set_l3_cbm(struct domain *d, unsigned int socket, uint64_t cbm);
+ 
+ int psr_domain_init(struct domain *d);
+ void psr_domain_free(struct domain *d);
+diff --git a/xen/include/public/domctl.h b/xen/include/public/domctl.h
+index ca0e51e..9f04836 100644
+--- a/xen/include/public/domctl.h
++++ b/xen/include/public/domctl.h
+@@ -1005,6 +1005,16 @@ struct xen_domctl_psr_cmt_op {
+ typedef struct xen_domctl_psr_cmt_op xen_domctl_psr_cmt_op_t;
+ DEFINE_XEN_GUEST_HANDLE(xen_domctl_psr_cmt_op_t);
+ 
++struct xen_domctl_psr_cat_op {
++#define XEN_DOMCTL_PSR_CAT_OP_SET_L3_CBM     0
++#define XEN_DOMCTL_PSR_CAT_OP_GET_L3_CBM     1
++    uint32_t cmd;       /* IN: XEN_DOMCTL_PSR_CAT_OP_* */
++    uint32_t target;    /* IN: socket to be operated on */
++    uint64_t data;      /* IN/OUT */
++};
++typedef struct xen_domctl_psr_cat_op xen_domctl_psr_cat_op_t;
++DEFINE_XEN_GUEST_HANDLE(xen_domctl_psr_cat_op_t);
++
+ struct xen_domctl {
+     uint32_t cmd;
+ #define XEN_DOMCTL_createdomain                   1
+@@ -1080,6 +1090,7 @@ struct xen_domctl {
+ #define XEN_DOMCTL_setvnumainfo                  74
+ #define XEN_DOMCTL_psr_cmt_op                    75
+ #define XEN_DOMCTL_arm_configure_domain          76
++#define XEN_DOMCTL_psr_cat_op                    77
+ #define XEN_DOMCTL_gdbsx_guestmemio            1000
+ #define XEN_DOMCTL_gdbsx_pausevcpu             1001
+ #define XEN_DOMCTL_gdbsx_unpausevcpu           1002
+@@ -1145,6 +1156,7 @@ struct xen_domctl {
+         struct xen_domctl_gdbsx_domstatus   gdbsx_domstatus;
+         struct xen_domctl_vnuma             vnuma;
+         struct xen_domctl_psr_cmt_op        psr_cmt_op;
++        struct xen_domctl_psr_cat_op        psr_cat_op;
+         uint8_t                             pad[128];
+     } u;
+ };
+-- 
+1.9.1
+

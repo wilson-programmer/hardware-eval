@@ -1,0 +1,44 @@
+---
+- name: "[RUN NETPERF BENCH]"
+  hosts: all
+  tasks:
+
+          - name: "[Create netperf_result directory]"
+            file:
+                    path: /home/wilson/netperf_result
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Create netperf_bench directory]"
+            file:
+                    path: /home/wilson/netperf_bench
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Copy bench_netperf.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/bench_netperf.sh
+                    dest: /home/wilson/netperf_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run bench_netperf.sh]"
+            command: bash /home/wilson/netperf_bench/bench_netperf.sh
+            become: yes
+
+          - name: "[Copy save_netperf_output.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/save_netperf_output.sh
+                    dest: /home/wilson/netperf_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run save_netperf_output.sh]"
+            command: bash /home/wilson/netperf_bench/save_netperf_output.sh
+            become: yes

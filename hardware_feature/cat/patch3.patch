@@ -1,0 +1,234 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 03/12] x86: detect and initialize Intel CAT
+	feature
+Date: Thu,  9 Apr 2015 17:18:16 +0800
+Message-ID: <1428571105-3604-4-git-send-email-chao.p.peng@linux.intel.com>
+References: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Detect Intel Cache Allocation Technology(CAT) feature and store the
+cpuid information for later use. Currently only L3 cache allocation is
+supported. The L3 CAT features may vary among sockets so per-socket
+feature information is stored. The initialization can happen either at
+boot time or when CPU(s) is hot plugged after booting.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+Changes in v4:
+* check X86_FEATURE_CAT available before doing initialization.
+Changes in v3:
+* Remove num_sockets boot option instead calculate it at boot time.
+* Name hardcoded CAT cpuid leaf as PSR_CPUID_LEVEL_CAT.
+Changes in v2:
+* socket_num => num_sockets and fix several documentaion issues.
+* refactor boot line parameters parsing into standlone patch.
+* set opt_num_sockets = NR_CPUS when opt_num_sockets > NR_CPUS.
+* replace CPU_ONLINE with CPU_STARTING and integrate that into scheduling
+  improvement patch.
+* reimplement get_max_socket() with cpu_to_socket();
+* cbm is still uint64 as there is a path forward for supporting long masks.
+---
+ docs/misc/xen-command-line.markdown | 13 +++++--
+ xen/arch/x86/psr.c                  | 68 +++++++++++++++++++++++++++++++++++--
+ xen/include/asm-x86/cpufeature.h    |  1 +
+ xen/include/asm-x86/psr.h           |  3 ++
+ 4 files changed, 81 insertions(+), 4 deletions(-)
+
+diff --git a/docs/misc/xen-command-line.markdown b/docs/misc/xen-command-line.markdown
+index 1dda1f0..9ad8801 100644
+--- a/docs/misc/xen-command-line.markdown
++++ b/docs/misc/xen-command-line.markdown
+@@ -1122,9 +1122,9 @@ This option can be specified more than once (up to 8 times at present).
+ > `= <integer>`
+ 
+ ### psr (Intel)
+-> `= List of ( cmt:<boolean> | rmid_max:<integer> )`
++> `= List of ( cmt:<boolean> | rmid_max:<integer> | cat:<boolean> )`
+ 
+-> Default: `psr=cmt:0,rmid_max:255`
++> Default: `psr=cmt:0,rmid_max:255,cat:0`
+ 
+ Platform Shared Resource(PSR) Services.  Intel Haswell and later server
+ platforms offer information about the sharing of resources.
+@@ -1134,6 +1134,11 @@ Monitoring ID(RMID) is used to bind the domain to corresponding shared
+ resource.  RMID is a hardware-provided layer of abstraction between software
+ and logical processors.
+ 
++To use the PSR cache allocation service for a certain domain, a capacity
++bitmasks(CBM) is used to bind the domain to corresponding shared resource.
++CBM represents cache capacity and indicates the degree of overlap and isolation
++between domains.
++
+ The following resources are available:
+ 
+ * Cache Monitoring Technology (Haswell and later).  Information regarding the
+@@ -1144,6 +1149,10 @@ The following resources are available:
+   total/local memory bandwidth. Follow the same options with Cache Monitoring
+   Technology.
+ 
++* Cache Alllocation Technology (Broadwell and later).  Information regarding
++  the cache allocation.
++  * `cat` instructs Xen to enable/disable Cache Allocation Technology.
++
+ ### reboot
+ > `= t[riple] | k[bd] | a[cpi] | p[ci] | P[ower] | e[fi] | n[o] [, [w]arm | [c]old]`
+ 
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 6119c6e..16c37dd 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -19,17 +19,36 @@
+ #include <asm/psr.h>
+ 
+ #define PSR_CMT        (1<<0)
++#define PSR_CAT        (1<<1)
++
++struct psr_cat_socket_info {
++    bool_t initialized;
++    bool_t enabled;
++    unsigned int cbm_len;
++    unsigned int cos_max;
++};
+ 
+ struct psr_assoc {
+     uint64_t val;
+ };
+ 
+ struct psr_cmt *__read_mostly psr_cmt;
++static struct psr_cat_socket_info *__read_mostly cat_socket_info;
++
+ static unsigned int __initdata opt_psr;
+ static unsigned int __initdata opt_rmid_max = 255;
++static unsigned int __read_mostly nr_sockets;
+ static uint64_t rmid_mask;
+ static DEFINE_PER_CPU(struct psr_assoc, psr_assoc);
+ 
++static unsigned int get_socket_count(void)
++{
++    unsigned int cpus_per_socket = boot_cpu_data.x86_max_cores *
++                                   boot_cpu_data.x86_num_siblings;
++
++    return DIV_ROUND_UP(nr_cpu_ids, cpus_per_socket);
++}
++
+ static void __init parse_psr_bool(char *s, char *value, char *feature,
+                                   unsigned int mask)
+ {
+@@ -63,6 +82,7 @@ static void __init parse_psr_param(char *s)
+             *val_str++ = '\0';
+ 
+         parse_psr_bool(s, val_str, "cmt", PSR_CMT);
++        parse_psr_bool(s, val_str, "cat", PSR_CAT);
+ 
+         if ( val_str && !strcmp(s, "rmid_max") )
+             opt_rmid_max = simple_strtoul(val_str, NULL, 0);
+@@ -194,8 +214,49 @@ void psr_ctxt_switch_to(struct domain *d)
+     }
+ }
+ 
++static void cat_cpu_init(unsigned int cpu)
++{
++    unsigned int eax, ebx, ecx, edx;
++    struct psr_cat_socket_info *info;
++    unsigned int socket;
++    const struct cpuinfo_x86 *c = cpu_data + cpu;
++
++    if ( !cpu_has(c, X86_FEATURE_CAT) )
++        return;
++
++    socket = cpu_to_socket(cpu);
++    ASSERT(socket < nr_sockets);
++
++    info = cat_socket_info + socket;
++
++    /* Avoid initializing more than one times for the same socket. */
++    if ( test_and_set_bool(info->initialized) )
++        return;
++
++    cpuid_count(PSR_CPUID_LEVEL_CAT, 0, &eax, &ebx, &ecx, &edx);
++    if ( ebx & PSR_RESOURCE_TYPE_L3 )
++    {
++        cpuid_count(PSR_CPUID_LEVEL_CAT, 1, &eax, &ebx, &ecx, &edx);
++        info->cbm_len = (eax & 0x1f) + 1;
++        info->cos_max = (edx & 0xffff);
++
++        info->enabled = 1;
++        printk(XENLOG_INFO "CAT: enabled on socket %u, cos_max:%u, cbm_len:%u\n",
++               socket, info->cos_max, info->cbm_len);
++    }
++}
++
++static void __init init_psr_cat(void)
++{
++    nr_sockets = get_socket_count();
++    cat_socket_info = xzalloc_array(struct psr_cat_socket_info, nr_sockets);
++}
++
+ static void psr_cpu_init(unsigned int cpu)
+ {
++    if ( cat_socket_info )
++        cat_cpu_init(cpu);
++
+     psr_assoc_init(cpu);
+ }
+ 
+@@ -223,9 +284,12 @@ static int __init psr_presmp_init(void)
+     if ( (opt_psr & PSR_CMT) && opt_rmid_max )
+         init_psr_cmt(opt_rmid_max);
+ 
++    if ( opt_psr & PSR_CAT )
++        init_psr_cat();
++
+     psr_cpu_init(0);
+-    if ( psr_cmt_enabled() )
+-        register_cpu_notifier(&cpu_nfb);
++    if ( psr_cmt_enabled() || cat_socket_info )
++          register_cpu_notifier(&cpu_nfb);
+ 
+     return 0;
+ }
+diff --git a/xen/include/asm-x86/cpufeature.h b/xen/include/asm-x86/cpufeature.h
+index 7963a3a..8c0f0a6 100644
+--- a/xen/include/asm-x86/cpufeature.h
++++ b/xen/include/asm-x86/cpufeature.h
+@@ -149,6 +149,7 @@
+ #define X86_FEATURE_CMT 	(7*32+12) /* Cache Monitoring Technology */
+ #define X86_FEATURE_NO_FPU_SEL 	(7*32+13) /* FPU CS/DS stored as zero */
+ #define X86_FEATURE_MPX		(7*32+14) /* Memory Protection Extensions */
++#define X86_FEATURE_CAT 	(7*32+15) /* Cache Allocation Technology */
+ #define X86_FEATURE_RDSEED	(7*32+18) /* RDSEED instruction */
+ #define X86_FEATURE_ADX		(7*32+19) /* ADCX, ADOX instructions */
+ #define X86_FEATURE_SMAP	(7*32+20) /* Supervisor Mode Access Prevention */
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index 585350c..3bc5496 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -18,6 +18,9 @@
+ 
+ #include <xen/types.h>
+ 
++/* CAT cpuid level */
++#define PSR_CPUID_LEVEL_CAT   0x10
++
+ /* Resource Type Enumeration */
+ #define PSR_RESOURCE_TYPE_L3            0x2
+ 
+-- 
+1.9.1
+

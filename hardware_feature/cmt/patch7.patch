@@ -1,0 +1,139 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v18 07/10] x86: enable CMT for each domain RMID
+Date: Tue, 30 Sep 2014 18:49:09 +0800
+Message-ID: <1412074152-2955-8-git-send-email-chao.p.peng@linux.intel.com>
+References: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1412074152-2955-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, George.Dunlap@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+If the CMT service is attached to a domain, its related RMID
+will be set to hardware for monitoring when the domain's vcpu is
+scheduled in. When the domain's vcpu is scheduled out, RMID 0
+(system reserved) will be set for monitoring.
+
+Signed-off-by: Dongxiao Xu <dongxiao.xu@intel.com>
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Andrew Cooper <andrew.cooper3@citrix.com>
+---
+ xen/arch/x86/domain.c           |    5 +++++
+ xen/arch/x86/psr.c              |   27 +++++++++++++++++++++++++++
+ xen/include/asm-x86/msr-index.h |    3 +++
+ xen/include/asm-x86/psr.h       |    1 +
+ 4 files changed, 36 insertions(+)
+
+diff --git a/xen/arch/x86/domain.c b/xen/arch/x86/domain.c
+index 3cfd8f4..04a6719 100644
+--- a/xen/arch/x86/domain.c
++++ b/xen/arch/x86/domain.c
+@@ -1418,6 +1418,8 @@ static void __context_switch(void)
+     {
+         memcpy(&p->arch.user_regs, stack_regs, CTXT_SWITCH_STACK_BYTES);
+         vcpu_save_fpu(p);
++        if ( psr_cmt_enabled() )
++            psr_assoc_rmid(0);
+         p->arch.ctxt_switch_from(p);
+     }
+ 
+@@ -1442,6 +1444,9 @@ static void __context_switch(void)
+         }
+         vcpu_restore_fpu_eager(n);
+         n->arch.ctxt_switch_to(n);
++
++        if ( psr_cmt_enabled() && n->domain->arch.psr_rmid > 0 )
++            psr_assoc_rmid(n->domain->arch.psr_rmid);
+     }
+ 
+     gdt = !is_pv_32on64_vcpu(n) ? per_cpu(gdt_table, cpu) :
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 4b4a4cf..c5ee16e 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -20,9 +20,15 @@
+ 
+ #define PSR_CMT        (1<<0)
+ 
++struct pqr_assoc {
++    uint64_t val;
++    bool_t initialized;
++};
++
+ struct psr_cmt *__read_mostly psr_cmt;
+ static bool_t __initdata opt_psr;
+ static unsigned int __initdata opt_rmid_max = 255;
++static DEFINE_PER_CPU(struct pqr_assoc, pqr_assoc);
+ 
+ static void __init parse_psr_param(char *s)
+ {
+@@ -149,6 +155,27 @@ void psr_free_rmid(struct domain *d)
+     d->arch.psr_rmid = 0;
+ }
+ 
++void psr_assoc_rmid(unsigned int rmid)
++{
++    uint64_t val;
++    uint64_t new_val;
++    struct pqr_assoc *pqr = &this_cpu(pqr_assoc);
++
++    if ( !pqr->initialized )
++    {
++        rdmsrl(MSR_IA32_PQR_ASSOC, pqr->val);
++        pqr->initialized = 1;
++    }
++    val = pqr->val;
++
++    new_val = (val & ~psr_cmt->rmid_mask) | (rmid & psr_cmt->rmid_mask);
++    if ( val != new_val )
++    {
++        wrmsrl(MSR_IA32_PQR_ASSOC, new_val);
++        pqr->val = new_val;
++    }
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/xen/include/asm-x86/msr-index.h b/xen/include/asm-x86/msr-index.h
+index 542222e..dcb2b87 100644
+--- a/xen/include/asm-x86/msr-index.h
++++ b/xen/include/asm-x86/msr-index.h
+@@ -323,6 +323,9 @@
+ #define MSR_IA32_TSC_DEADLINE		0x000006E0
+ #define MSR_IA32_ENERGY_PERF_BIAS	0x000001b0
+ 
++/* Platform Shared Resource MSRs */
++#define MSR_IA32_PQR_ASSOC		0x00000c8f
++
+ /* Intel Model 6 */
+ #define MSR_P6_PERFCTR(n)		(0x000000c1 + (n))
+ #define MSR_P6_EVNTSEL(n)		(0x00000186 + (n))
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index 98cfa6d..b544306 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -47,6 +47,7 @@ static inline bool_t psr_cmt_enabled(void)
+ 
+ int psr_alloc_rmid(struct domain *d);
+ void psr_free_rmid(struct domain *d);
++void psr_assoc_rmid(unsigned int rmid);
+ 
+ #endif /* __ASM_PSR_H__ */
+ 
+-- 
+1.7.9.5
+

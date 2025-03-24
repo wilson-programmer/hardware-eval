@@ -1,0 +1,22 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Install NFS utilities
+      apt: 
+        name: nfs-common 
+        state: present
+
+    - name: Create mount point
+      file:
+        path: /mnt/nfs
+        state: directory
+
+    - name: Mount NFS share
+      mount:
+        src: "172.16.20.22:/var/general/nfs"
+        path: /mnt/nfs
+        fstype: nfs
+        opts: defaults
+        state: mounted
+

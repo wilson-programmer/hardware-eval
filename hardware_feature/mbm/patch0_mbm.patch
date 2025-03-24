@@ -1,0 +1,71 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v2 0/5] enable Memory Bandwidth Monitoring (MBM)
+	for VMs
+Date: Wed,  7 Jan 2015 19:12:00 +0800
+Message-ID: <1420629125-17725-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: wei.liu2@citrix.com, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, Ian.Jackson@eu.citrix.com, JBeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+Changes from v1:
+* Move event type check from xc to xl;
+* Add retry capability for MBM sampling;
+* Fix Coding style/docs;
+
+Intel Memory Bandwidth Monitoring(MBM) is a new hardware feature
+which builds on the CMT infrastructure to allow monitoring of system
+memory bandwidth. Event codes are provided to monitor both "total"
+and "local" bandwidth, meaning bandwidth over QPI and other external
+links can be monitored.
+
+For XEN, MBM is used to monitor memory bandwidth for VMs. Due to its
+dependency on CMT, the software also makes use of most of CMT codes.
+Actually, besides introducing two additional events and some cpuid
+feature bits, there are no extra changes compared to cache occupancy
+monitoring in CMT. Due to this, CMT should be enabled first to use
+this feature.
+
+For interface changes, the patch serial only introduces a new command
+"XEN_SYSCTL_PSR_CMT_get_l3_event_mask" which exposes MBM feature
+capability to user space and introduces two additional options for
+"xl psr-cmt-show":
+total_mem_bandwidth:     Show total memory bandwidth
+local_mem_bandwidth:     Show local memory bandwidth
+
+The usage flow keeps the same with CMT.
+
+Chao Peng (5):
+  x86: expose CMT L3 event mask to user space
+  tools: add routine to get CMT L3 event mask
+  tools: correct coding style for psr
+  tools: code refactoring for MBM
+  tools: add total/local memory bandwith monitoring
+
+ docs/man/xl.pod.1             |    9 +++
+ tools/libxc/include/xenctrl.h |   11 +--
+ tools/libxc/xc_psr.c          |   42 ++++++++++--
+ tools/libxl/libxl.h           |   20 ++++--
+ tools/libxl/libxl_psr.c       |  147 +++++++++++++++++++++++++++++++++++------
+ tools/libxl/libxl_types.idl   |    2 +
+ tools/libxl/xl_cmdimpl.c      |   69 +++++++++++++------
+ tools/libxl/xl_cmdtable.c     |    4 +-
+ xen/arch/x86/sysctl.c         |    3 +
+ xen/include/public/sysctl.h   |    1 +
+ 10 files changed, 254 insertions(+), 54 deletions(-)
+
+-- 
+1.7.9.5
+

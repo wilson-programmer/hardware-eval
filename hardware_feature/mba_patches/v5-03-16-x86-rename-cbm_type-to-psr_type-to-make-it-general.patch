@@ -1,0 +1,446 @@
+From patchwork Sat Sep 30 01:39:13 2017
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+X-Patchwork-Submitter: Yi Sun <yi.y.sun@linux.intel.com>
+X-Patchwork-Id: 9979013
+Return-Path: <xen-devel-bounces@lists.xen.org>
+Received: from mail.wl.linuxfoundation.org (pdx-wl-mail.web.codeaurora.org
+	[172.30.200.125])
+	by pdx-korg-patchwork.web.codeaurora.org (Postfix) with ESMTP id
+	06F8460311 for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:33 +0000 (UTC)
+Received: from mail.wl.linuxfoundation.org (localhost [127.0.0.1])
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTP id E9082298AA
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:32 +0000 (UTC)
+Received: by mail.wl.linuxfoundation.org (Postfix, from userid 486)
+	id DD610298C5; Sat, 30 Sep 2017 02:01:32 +0000 (UTC)
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	pdx-wl-mail.web.codeaurora.org
+X-Spam-Level: 
+X-Spam-Status: No, score=-4.2 required=2.0 tests=BAYES_00, RCVD_IN_DNSWL_MED
+	autolearn=ham version=3.3.1
+Received: from lists.xenproject.org (lists.xenproject.org [192.237.175.120])
+	(using TLSv1.2 with cipher AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTPS id 09732298B3
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:32 +0000 (UTC)
+Received: from localhost ([127.0.0.1] helo=lists.xenproject.org)
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <xen-devel-bounces@lists.xen.org>)
+	id 1dy73l-0004OG-CB; Sat, 30 Sep 2017 01:59:17 +0000
+Received: from mail6.bemta5.messagelabs.com ([195.245.231.135])
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <yi.y.sun@linux.intel.com>) id 1dy73j-0004Mh-DE
+	for xen-devel@lists.xenproject.org; Sat, 30 Sep 2017 01:59:15 +0000
+Received: from [85.158.139.211] by server-12.bemta-5.messagelabs.com id
+	90/43-30935-27AFEC95; Sat, 30 Sep 2017 01:59:14 +0000
+X-Brightmail-Tracker: H4sIAAAAAAAAA+NgFtrPIsWRWlGSWpSXmKPExsXS1taRolv461y
+	kwdJH+hbft0xmcmD0OPzhCksAYxRrZl5SfkUCa8a7A1eYC44mV8xZfpG1gXG7RxcjJ4eQQIXE
+	h21vWEFsCQFeiSPLZkDZARIP7x5l6WLkAqppYJRY+OUtI0iCTUBd4vHXHiYQW0RASeLeqslAN
+	gcHs0C1xJdXWSBhYYFAiQdndoCVswioSvxt/88GYvMKuEtcfP+dEWK+nMTJY5PBdnEKeEhc62
+	lig7jHXeJKy1pGiHpBiZMzn7BAjFeXWD9PCCTMLCAv0bx1NvMERoFZSKpmIVTNQlK1gJF5FaN
+	GcWpRWWqRrqGhXlJRZnpGSW5iZo6uoYGpXm5qcXFiempOYlKxXnJ+7iZGYGAyAMEOxpXtzocY
+	JTmYlER5l387FynEl5SfUpmRWJwRX1Sak1p8iFGGg0NJgnfhT6CcYFFqempFWmYOMEZg0hIcP
+	EoivFtA0rzFBYm5xZnpEKlTjLocHTfv/mESYsnLz0uVEuctACkSACnKKM2DGwGL10uMslLCvI
+	xARwnxFKQW5WaWoMq/YhTnYFQS5t0DMoUnM68EbtMroCOYgI6YPPEMyBEliQgpqQZG3eki9zZ
+	w5J1qbnrpxOnMYdlyW1/Eg+OjfMNbvmPHJ2d/TV2h23bK+cVnXR11wTXypx7Y1KU7/+DTueh7
+	7nJl849Nx5MUvD7Gt24vOLt2j/bvW5Njp2ZJHK11KIx4eeNAueYr3bWe+97ftvOb93zxWoPGF
+	dq+Xlv9Ot9Zrt658SD/iVztOi1TJZbijERDLeai4kQANoKiPtICAAA=
+X-Env-Sender: yi.y.sun@linux.intel.com
+X-Msg-Ref: server-5.tower-206.messagelabs.com!1506736750!112287641!1
+X-Originating-IP: [134.134.136.100]
+X-SpamReason: No, hits=0.5 required=7.0 tests=BODY_RANDOM_LONG
+X-StarScan-Received: 
+X-StarScan-Version: 9.4.45; banners=-,-,-
+X-VirusChecked: Checked
+Received: (qmail 44076 invoked from network); 30 Sep 2017 01:59:13 -0000
+Received: from mga07.intel.com (HELO mga07.intel.com) (134.134.136.100)
+	by server-5.tower-206.messagelabs.com with DHE-RSA-AES256-GCM-SHA384
+	encrypted SMTP; 30 Sep 2017 01:59:13 -0000
+Received: from orsmga003.jf.intel.com ([10.7.209.27])
+	by orsmga105.jf.intel.com with ESMTP; 29 Sep 2017 18:59:12 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos; i="5.42,455,1500966000"; d="scan'208";
+	a="1020038993"
+Received: from vmmmba-s2600wft.bj.intel.com ([10.240.193.75])
+	by orsmga003.jf.intel.com with ESMTP; 29 Sep 2017 18:59:11 -0700
+From: Yi Sun <yi.y.sun@linux.intel.com>
+To: xen-devel@lists.xenproject.org
+Date: Sat, 30 Sep 2017 09:39:13 +0800
+Message-Id: <1506735566-5706-4-git-send-email-yi.y.sun@linux.intel.com>
+X-Mailer: git-send-email 1.9.1
+In-Reply-To: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+References: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+MIME-Version: 1.0
+Cc: Andrew Cooper <andrew.cooper3@citrix.com>,
+	Yi Sun <yi.y.sun@linux.intel.com>,
+	Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [Xen-devel] [PATCH v5 03/16] x86: rename 'cbm_type' to 'psr_type'
+	to make it general
+X-BeenThere: xen-devel@lists.xen.org
+X-Mailman-Version: 2.1.18
+Precedence: list
+List-Id: Xen developer discussion <xen-devel.lists.xen.org>
+List-Unsubscribe: <https://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <https://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Errors-To: xen-devel-bounces@lists.xen.org
+Sender: "Xen-devel" <xen-devel-bounces@lists.xen.org>
+X-Virus-Scanned: ClamAV using ClamSMTP
+
+This patch renames 'cbm_type' to 'psr_type' to generalize it.
+Then, we can reuse this for all psr allocation features.
+
+Signed-off-by: Yi Sun <yi.y.sun@linux.intel.com>
+Reviewed-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Roger Pau Monné <roger.pau@citrix.com>
+Acked-by: Jan Beulich <jbeulich@suse.com>
+---
+CC: Andrew Cooper <andrew.cooper3@citrix.com>
+CC: Chao Peng <chao.p.peng@linux.intel.com>
+
+v5:
+    - correct character of reviewer's name.
+      (suggested by Jan Beulich)
+v4:
+    - fix words in commit message.
+      (suggested by Roger Pau Monné)
+v3:
+    - replace 'psr_val_type' to 'psr_type' and remove '_VAL' from the enum
+      items.
+      (suggested by Roger Pau Monné)
+v2:
+    - replace 'PSR_VAL_TYPE_{L3, L2}' to 'PSR_VAL_TYPE_{L3, L2}_CBM'.
+      (suggested by Chao Peng)
+---
+ xen/arch/x86/domctl.c     | 16 ++++++------
+ xen/arch/x86/psr.c        | 62 +++++++++++++++++++++++++----------------------
+ xen/arch/x86/sysctl.c     |  4 +--
+ xen/include/asm-x86/psr.h | 18 +++++++-------
+ 4 files changed, 52 insertions(+), 48 deletions(-)
+
+diff --git a/xen/arch/x86/domctl.c b/xen/arch/x86/domctl.c
+index c63ef19..cc09f7d 100644
+--- a/xen/arch/x86/domctl.c
++++ b/xen/arch/x86/domctl.c
+@@ -1455,41 +1455,41 @@ long arch_do_domctl(
+         case XEN_DOMCTL_PSR_SET_L3_CBM:
+             ret = psr_set_val(d, domctl->u.psr_alloc.target,
+                               domctl->u.psr_alloc.data,
+-                              PSR_CBM_TYPE_L3);
++                              PSR_TYPE_L3_CBM);
+             break;
+ 
+         case XEN_DOMCTL_PSR_SET_L3_CODE:
+             ret = psr_set_val(d, domctl->u.psr_alloc.target,
+                               domctl->u.psr_alloc.data,
+-                              PSR_CBM_TYPE_L3_CODE);
++                              PSR_TYPE_L3_CODE);
+             break;
+ 
+         case XEN_DOMCTL_PSR_SET_L3_DATA:
+             ret = psr_set_val(d, domctl->u.psr_alloc.target,
+                               domctl->u.psr_alloc.data,
+-                              PSR_CBM_TYPE_L3_DATA);
++                              PSR_TYPE_L3_DATA);
+             break;
+ 
+         case XEN_DOMCTL_PSR_SET_L2_CBM:
+             ret = psr_set_val(d, domctl->u.psr_alloc.target,
+                               domctl->u.psr_alloc.data,
+-                              PSR_CBM_TYPE_L2);
++                              PSR_TYPE_L2_CBM);
+             break;
+ 
+         case XEN_DOMCTL_PSR_GET_L3_CBM:
+-            ret = domctl_psr_get_val(d, domctl, PSR_CBM_TYPE_L3, copyback);
++            ret = domctl_psr_get_val(d, domctl, PSR_TYPE_L3_CBM, copyback);
+             break;
+ 
+         case XEN_DOMCTL_PSR_GET_L3_CODE:
+-            ret = domctl_psr_get_val(d, domctl, PSR_CBM_TYPE_L3_CODE, copyback);
++            ret = domctl_psr_get_val(d, domctl, PSR_TYPE_L3_CODE, copyback);
+             break;
+ 
+         case XEN_DOMCTL_PSR_GET_L3_DATA:
+-            ret = domctl_psr_get_val(d, domctl, PSR_CBM_TYPE_L3_DATA, copyback);
++            ret = domctl_psr_get_val(d, domctl, PSR_TYPE_L3_DATA, copyback);
+             break;
+ 
+         case XEN_DOMCTL_PSR_GET_L2_CBM:
+-            ret = domctl_psr_get_val(d, domctl, PSR_CBM_TYPE_L2, copyback);
++            ret = domctl_psr_get_val(d, domctl, PSR_TYPE_L2_CBM, copyback);
+             break;
+ 
+         default:
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index daa2aeb..ac2ae32 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -100,24 +100,24 @@ static const struct feat_props {
+     unsigned int cos_num;
+ 
+     /*
+-     * An array to save all 'enum cbm_type' values of the feature. It is
++     * An array to save all 'enum psr_type' values of the feature. It is
+      * used with cos_num together to get/write a feature's COS registers
+      * values one by one.
+      */
+-    enum cbm_type type[MAX_COS_NUM];
++    enum psr_type type[MAX_COS_NUM];
+ 
+     /*
+      * alt_type is 'alternative type'. When this 'alt_type' is input, the
+      * feature does some special operations.
+      */
+-    enum cbm_type alt_type;
++    enum psr_type alt_type;
+ 
+     /* get_feat_info is used to return feature HW info through sysctl. */
+     bool (*get_feat_info)(const struct feat_node *feat,
+                           uint32_t data[], unsigned int array_len);
+ 
+     /* write_msr is used to write out feature MSR register. */
+-    void (*write_msr)(unsigned int cos, uint32_t val, enum cbm_type type);
++    void (*write_msr)(unsigned int cos, uint32_t val, enum psr_type type);
+ } *feat_props[FEAT_TYPE_NUM];
+ 
+ /*
+@@ -215,13 +215,13 @@ static void free_socket_resources(unsigned int socket)
+     bitmap_zero(info->dom_set, DOMID_IDLE + 1);
+ }
+ 
+-static enum psr_feat_type psr_cbm_type_to_feat_type(enum cbm_type type)
++static enum psr_feat_type psr_type_to_feat_type(enum psr_type type)
+ {
+     enum psr_feat_type feat_type = FEAT_TYPE_UNKNOWN;
+ 
+     switch ( type )
+     {
+-    case PSR_CBM_TYPE_L3:
++    case PSR_TYPE_L3_CBM:
+         feat_type = FEAT_TYPE_L3_CAT;
+ 
+         /*
+@@ -233,12 +233,12 @@ static enum psr_feat_type psr_cbm_type_to_feat_type(enum cbm_type type)
+ 
+         break;
+ 
+-    case PSR_CBM_TYPE_L3_DATA:
+-    case PSR_CBM_TYPE_L3_CODE:
++    case PSR_TYPE_L3_DATA:
++    case PSR_TYPE_L3_CODE:
+         feat_type = FEAT_TYPE_L3_CDP;
+         break;
+ 
+-    case PSR_CBM_TYPE_L2:
++    case PSR_TYPE_L2_CBM:
+         feat_type = FEAT_TYPE_L2_CAT;
+         break;
+ 
+@@ -362,15 +362,16 @@ static bool cat_get_feat_info(const struct feat_node *feat,
+ }
+ 
+ /* L3 CAT props */
+-static void l3_cat_write_msr(unsigned int cos, uint32_t val, enum cbm_type type)
++static void l3_cat_write_msr(unsigned int cos, uint32_t val,
++                             enum psr_type type)
+ {
+     wrmsrl(MSR_IA32_PSR_L3_MASK(cos), val);
+ }
+ 
+ static const struct feat_props l3_cat_props = {
+     .cos_num = 1,
+-    .type[0] = PSR_CBM_TYPE_L3,
+-    .alt_type = PSR_CBM_TYPE_UNKNOWN,
++    .type[0] = PSR_TYPE_L3_CBM,
++    .alt_type = PSR_TYPE_UNKNOWN,
+     .get_feat_info = cat_get_feat_info,
+     .write_msr = l3_cat_write_msr,
+ };
+@@ -387,9 +388,10 @@ static bool l3_cdp_get_feat_info(const struct feat_node *feat,
+     return true;
+ }
+ 
+-static void l3_cdp_write_msr(unsigned int cos, uint32_t val, enum cbm_type type)
++static void l3_cdp_write_msr(unsigned int cos, uint32_t val,
++                             enum psr_type type)
+ {
+-    wrmsrl(((type == PSR_CBM_TYPE_L3_DATA) ?
++    wrmsrl(((type == PSR_TYPE_L3_DATA) ?
+             MSR_IA32_PSR_L3_MASK_DATA(cos) :
+             MSR_IA32_PSR_L3_MASK_CODE(cos)),
+            val);
+@@ -397,23 +399,24 @@ static void l3_cdp_write_msr(unsigned int cos, uint32_t val, enum cbm_type type)
+ 
+ static const struct feat_props l3_cdp_props = {
+     .cos_num = 2,
+-    .type[0] = PSR_CBM_TYPE_L3_DATA,
+-    .type[1] = PSR_CBM_TYPE_L3_CODE,
+-    .alt_type = PSR_CBM_TYPE_L3,
++    .type[0] = PSR_TYPE_L3_DATA,
++    .type[1] = PSR_TYPE_L3_CODE,
++    .alt_type = PSR_TYPE_L3_CBM,
+     .get_feat_info = l3_cdp_get_feat_info,
+     .write_msr = l3_cdp_write_msr,
+ };
+ 
+ /* L2 CAT props */
+-static void l2_cat_write_msr(unsigned int cos, uint32_t val, enum cbm_type type)
++static void l2_cat_write_msr(unsigned int cos, uint32_t val,
++                             enum psr_type type)
+ {
+     wrmsrl(MSR_IA32_PSR_L2_MASK(cos), val);
+ }
+ 
+ static const struct feat_props l2_cat_props = {
+     .cos_num = 1,
+-    .type[0] = PSR_CBM_TYPE_L2,
+-    .alt_type = PSR_CBM_TYPE_UNKNOWN,
++    .type[0] = PSR_TYPE_L2_CBM,
++    .alt_type = PSR_TYPE_UNKNOWN,
+     .get_feat_info = cat_get_feat_info,
+     .write_msr = l2_cat_write_msr,
+ };
+@@ -675,7 +678,7 @@ static struct psr_socket_info *get_socket_info(unsigned int socket)
+     return socket_info + socket;
+ }
+ 
+-int psr_get_info(unsigned int socket, enum cbm_type type,
++int psr_get_info(unsigned int socket, enum psr_type type,
+                  uint32_t data[], unsigned int array_len)
+ {
+     const struct psr_socket_info *info = get_socket_info(socket);
+@@ -687,7 +690,7 @@ int psr_get_info(unsigned int socket, enum cbm_type type,
+     if ( IS_ERR(info) )
+         return PTR_ERR(info);
+ 
+-    feat_type = psr_cbm_type_to_feat_type(type);
++    feat_type = psr_type_to_feat_type(type);
+     if ( feat_type >= ARRAY_SIZE(info->features) )
+         return -ENOENT;
+ 
+@@ -708,7 +711,7 @@ int psr_get_info(unsigned int socket, enum cbm_type type,
+ }
+ 
+ int psr_get_val(struct domain *d, unsigned int socket,
+-                uint32_t *val, enum cbm_type type)
++                uint32_t *val, enum psr_type type)
+ {
+     const struct psr_socket_info *info = get_socket_info(socket);
+     const struct feat_node *feat;
+@@ -720,7 +723,7 @@ int psr_get_val(struct domain *d, unsigned int socket,
+     if ( IS_ERR(info) )
+         return PTR_ERR(info);
+ 
+-    feat_type = psr_cbm_type_to_feat_type(type);
++    feat_type = psr_type_to_feat_type(type);
+     if ( feat_type >= ARRAY_SIZE(info->features) )
+         return -ENOENT;
+ 
+@@ -850,7 +853,7 @@ static int insert_val_into_array(uint32_t val[],
+                                  unsigned int array_len,
+                                  const struct psr_socket_info *info,
+                                  enum psr_feat_type feat_type,
+-                                 enum cbm_type type,
++                                 enum psr_type type,
+                                  uint32_t new_val)
+ {
+     const struct feat_node *feat;
+@@ -886,8 +889,9 @@ static int insert_val_into_array(uint32_t val[],
+     /*
+      * Value setting position is same as feature array.
+      * For CDP, user may set both DATA and CODE to same value. For such case,
+-     * user input 'PSR_CBM_TYPE_L3' as type. The alternative type of CDP is same
+-     * as it. So we should set new_val to both of DATA and CODE under such case.
++     * user input 'PSR_TYPE_L3_CBM' as type. The alternative type of CDP is
++     * same as it. So we should set new_val to both of DATA and CODE under such
++     * case.
+      */
+     for ( i = 0; i < props->cos_num; i++ )
+     {
+@@ -1176,7 +1180,7 @@ static int write_psr_msrs(unsigned int socket, unsigned int cos,
+ }
+ 
+ int psr_set_val(struct domain *d, unsigned int socket,
+-                uint64_t new_val, enum cbm_type type)
++                uint64_t new_val, enum psr_type type)
+ {
+     unsigned int old_cos, array_len;
+     int cos, ret;
+@@ -1192,7 +1196,7 @@ int psr_set_val(struct domain *d, unsigned int socket,
+     if ( new_val != val )
+         return -EINVAL;
+ 
+-    feat_type = psr_cbm_type_to_feat_type(type);
++    feat_type = psr_type_to_feat_type(type);
+     if ( feat_type >= ARRAY_SIZE(info->features) ||
+          !info->features[feat_type] )
+         return -ENOENT;
+diff --git a/xen/arch/x86/sysctl.c b/xen/arch/x86/sysctl.c
+index e44d8ad..9dee163 100644
+--- a/xen/arch/x86/sysctl.c
++++ b/xen/arch/x86/sysctl.c
+@@ -179,7 +179,7 @@ long arch_do_sysctl(
+         case XEN_SYSCTL_PSR_get_l3_info:
+         {
+             ret = psr_get_info(sysctl->u.psr_alloc.target,
+-                               PSR_CBM_TYPE_L3, data, ARRAY_SIZE(data));
++                               PSR_TYPE_L3_CBM, data, ARRAY_SIZE(data));
+             if ( ret )
+                 break;
+ 
+@@ -198,7 +198,7 @@ long arch_do_sysctl(
+         case XEN_SYSCTL_PSR_get_l2_info:
+         {
+             ret = psr_get_info(sysctl->u.psr_alloc.target,
+-                               PSR_CBM_TYPE_L2, data, ARRAY_SIZE(data));
++                               PSR_TYPE_L2_CBM, data, ARRAY_SIZE(data));
+             if ( ret )
+                 break;
+ 
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index 18a42f3..cb3f067 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -53,12 +53,12 @@ struct psr_cmt {
+     struct psr_cmt_l3 l3;
+ };
+ 
+-enum cbm_type {
+-    PSR_CBM_TYPE_L3,
+-    PSR_CBM_TYPE_L3_CODE,
+-    PSR_CBM_TYPE_L3_DATA,
+-    PSR_CBM_TYPE_L2,
+-    PSR_CBM_TYPE_UNKNOWN,
++enum psr_type {
++    PSR_TYPE_L3_CBM,
++    PSR_TYPE_L3_CODE,
++    PSR_TYPE_L3_DATA,
++    PSR_TYPE_L2_CBM,
++    PSR_TYPE_UNKNOWN,
+ };
+ 
+ extern struct psr_cmt *psr_cmt;
+@@ -72,12 +72,12 @@ int psr_alloc_rmid(struct domain *d);
+ void psr_free_rmid(struct domain *d);
+ void psr_ctxt_switch_to(struct domain *d);
+ 
+-int psr_get_info(unsigned int socket, enum cbm_type type,
++int psr_get_info(unsigned int socket, enum psr_type type,
+                  uint32_t data[], unsigned int array_len);
+ int psr_get_val(struct domain *d, unsigned int socket,
+-                uint32_t *val, enum cbm_type type);
++                uint32_t *val, enum psr_type type);
+ int psr_set_val(struct domain *d, unsigned int socket,
+-                uint64_t val, enum cbm_type type);
++                uint64_t val, enum psr_type type);
+ 
+ void psr_domain_init(struct domain *d);
+ void psr_domain_free(struct domain *d);

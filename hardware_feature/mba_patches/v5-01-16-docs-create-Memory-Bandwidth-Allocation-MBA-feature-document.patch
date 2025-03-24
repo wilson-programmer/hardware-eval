@@ -1,0 +1,473 @@
+From patchwork Sat Sep 30 01:39:11 2017
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+X-Patchwork-Submitter: Yi Sun <yi.y.sun@linux.intel.com>
+X-Patchwork-Id: 9979037
+Return-Path: <xen-devel-bounces@lists.xen.org>
+Received: from mail.wl.linuxfoundation.org (pdx-wl-mail.web.codeaurora.org
+	[172.30.200.125])
+	by pdx-korg-patchwork.web.codeaurora.org (Postfix) with ESMTP id
+	B32AD6037F for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:02:04 +0000 (UTC)
+Received: from mail.wl.linuxfoundation.org (localhost [127.0.0.1])
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTP id A078A298CE
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:02:04 +0000 (UTC)
+Received: by mail.wl.linuxfoundation.org (Postfix, from userid 486)
+	id 9569D298D1; Sat, 30 Sep 2017 02:02:04 +0000 (UTC)
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	pdx-wl-mail.web.codeaurora.org
+X-Spam-Level: 
+X-Spam-Status: No, score=-4.2 required=2.0 tests=BAYES_00, RCVD_IN_DNSWL_MED
+	autolearn=ham version=3.3.1
+Received: from lists.xenproject.org (lists.xenproject.org [192.237.175.120])
+	(using TLSv1.2 with cipher AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTPS id AB64D298CF
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:02:03 +0000 (UTC)
+Received: from localhost ([127.0.0.1] helo=lists.xenproject.org)
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <xen-devel-bounces@lists.xen.org>)
+	id 1dy73h-0004MD-Oa; Sat, 30 Sep 2017 01:59:13 +0000
+Received: from mail6.bemta3.messagelabs.com ([195.245.230.39])
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <yi.y.sun@linux.intel.com>) id 1dy73f-0004Ll-Vk
+	for xen-devel@lists.xenproject.org; Sat, 30 Sep 2017 01:59:12 +0000
+Received: from [85.158.137.68] by server-17.bemta-3.messagelabs.com id
+	75/C9-01911-F6AFEC95; Sat, 30 Sep 2017 01:59:11 +0000
+X-Brightmail-Tracker: H4sIAAAAAAAAA+NgFjrAIsWRWlGSWpSXmKPExsXS1taRopv361y
+	kwYW/chbft0xmcmD0OPzhCksAYxRrZl5SfkUCa8aK1h6Wgtf5FXv6tjI2MJ4P7GLk4BASqJC4
+	/sm+i5GTQ0KAV+LIshmsEHaAxPWn95i7GLmAShoYJZ6/essMkmATUJd4/LWHCcQWEVCSuLdqM
+	hNIEbPAMmaJjy9WgXULC0RKfOnbAmazCKhKdL+7wghi8wq4S/z/t4ERYoOcxMljk8FqOAU8JK
+	71NLGB2EJANVda1kLVC0qcnPmEBeRQZqDF6+cJgYSZBeQlmrfOZp7AKDALSdUshKpZSKoWMDK
+	vYtQoTi0qSy3SNTTVSyrKTM8oyU3MzNE1NDDWy00tLk5MT81JTCrWS87P3cQIDE0GINjBuGa7
+	5yFGSQ4mJVHe5d/ORQrxJeWnVGYkFmfEF5XmpBYfYpTh4FCS4I34CZQTLEpNT61Iy8wBRglMW
+	oKDR0mElwEkzVtckJhbnJkOkTrFqMvRcfPuHyYhlrz8vFQpcd4CkCIBkKKM0jy4EbCIvcQoKy
+	XMywh0lBBPQWpRbmYJqvwrRnEORiVhXneQKTyZeSVwm14BHcEEdMTkiWdAjihJREhJNTDurjF
+	Ilg2o6918ZMOVIPbvMTX+74+xPPXVvjejZbdkvNmi2potWU4nF0c23Xkw5aBR6dEV5gXzX4tM
+	fPpqg5whR9TFAOUHGx5vVkss1J7+idXimkF0kPkEsfPr5zwQNtuU8oWtXaRHSGRyR8g021CZn
+	P2L1wXd9b4cNsnAgXG2zrYTyf+sXk5RYinOSDTUYi4qTgQA8u3jHdMCAAA=
+X-Env-Sender: yi.y.sun@linux.intel.com
+X-Msg-Ref: server-10.tower-31.messagelabs.com!1506736747!116548416!2
+X-Originating-IP: [134.134.136.100]
+X-SpamReason: No, hits=0.0 required=7.0 tests=
+X-StarScan-Received: 
+X-StarScan-Version: 9.4.45; banners=-,-,-
+X-VirusChecked: Checked
+Received: (qmail 49008 invoked from network); 30 Sep 2017 01:59:10 -0000
+Received: from mga07.intel.com (HELO mga07.intel.com) (134.134.136.100)
+	by server-10.tower-31.messagelabs.com with DHE-RSA-AES256-GCM-SHA384
+	encrypted SMTP; 30 Sep 2017 01:59:10 -0000
+Received: from orsmga003.jf.intel.com ([10.7.209.27])
+	by orsmga105.jf.intel.com with ESMTP; 29 Sep 2017 18:59:08 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos; i="5.42,455,1500966000"; d="scan'208";
+	a="1020038968"
+Received: from vmmmba-s2600wft.bj.intel.com ([10.240.193.75])
+	by orsmga003.jf.intel.com with ESMTP; 29 Sep 2017 18:59:06 -0700
+From: Yi Sun <yi.y.sun@linux.intel.com>
+To: xen-devel@lists.xenproject.org
+Date: Sat, 30 Sep 2017 09:39:11 +0800
+Message-Id: <1506735566-5706-2-git-send-email-yi.y.sun@linux.intel.com>
+X-Mailer: git-send-email 1.9.1
+In-Reply-To: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+References: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+MIME-Version: 1.0
+Cc: Yi Sun <yi.y.sun@linux.intel.com>,
+	Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>,
+	Andrew Cooper <andrew.cooper3@citrix.com>,
+	Ian Jackson <ian.jackson@eu.citrix.com>,
+	Julien Grall <julien.grall@arm.com>, Jan Beulich <jbeulich@suse.com>,
+	Chao Peng <chao.p.peng@linux.intel.com>,
+	Wei Liu <wei.liu2@citrix.com>, Daniel De Graaf <dgdegra@tycho.nsa.gov>,
+	=?UTF-8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Subject: [Xen-devel] [PATCH v5 01/16] docs: create Memory Bandwidth
+	Allocation (MBA) feature document
+X-BeenThere: xen-devel@lists.xen.org
+X-Mailman-Version: 2.1.18
+Precedence: list
+List-Id: Xen developer discussion <xen-devel.lists.xen.org>
+List-Unsubscribe: <https://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <https://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Errors-To: xen-devel-bounces@lists.xen.org
+Sender: "Xen-devel" <xen-devel-bounces@lists.xen.org>
+X-Virus-Scanned: ClamAV using ClamSMTP
+
+This patch creates MBA feature document in doc/features/. It describes
+key points to implement MBA which is described in details in Intel SDM
+"Introduction to Memory Bandwidth Allocation".
+
+Signed-off-by: Yi Sun <yi.y.sun@linux.intel.com>
+Reviewed-by: Roger Pau Monné <roger.pau@citrix.com>
+---
+CC: Jan Beulich <jbeulich@suse.com>
+CC: Andrew Cooper <andrew.cooper3@citrix.com>
+CC: Wei Liu <wei.liu2@citrix.com>
+CC: Ian Jackson <ian.jackson@eu.citrix.com>
+CC: Daniel De Graaf <dgdegra@tycho.nsa.gov>
+CC: Roger Pau Monné <roger.pau@citrix.com>
+CC: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+CC: Chao Peng <chao.p.peng@linux.intel.com>
+CC: Julien Grall <julien.grall@arm.com>
+
+v5:
+    - correct some words.
+      (suggested by Roger Pau Monné)
+    - change 'xl psr-mba-set 1 0xa' to 'xl psr-mba-set 1 10'.
+      (suggested by Roger Pau Monné)
+v4:
+    - add 'domain-name' as parameter of 'psr-mba-show/psr-mba-set'.
+      (suggested by Roger Pau Monné)
+    - fix some wordings.
+      (suggested by Roger Pau Monné)
+    - explain how user can know the MBA_MAX.
+      (suggested by Roger Pau Monné)
+    - move the description of 'Linear mode/Non-linear mode' into section
+      of 'psr-mba-show'.
+      (suggested by Roger Pau Monné)
+    - change 'per-thread' to 'per-hyper-thread' to make it clearer.
+      (suggested by Roger Pau Monné)
+    - upgrade revision number.
+v3:
+    - remove 'closed-loop' related description.
+      (suggested by Roger Pau Monné)
+    - explain 'linear' and 'non-linear' before mentioning them.
+      (suggested by Roger Pau Monné)
+    - adjust desription of 'psr-mba-set'.
+      (suggested by Roger Pau Monné)
+    - explain 'MBA_MAX'.
+      (suggested by Roger Pau Monné)
+    - remove 'n<64'.
+      (suggested by Roger Pau Monné)
+    - fix some wordings.
+      (suggested by Roger Pau Monné)
+    - add context in 'Testing' part to make things more clear.
+      (suggested by Roger Pau Monné)
+v2:
+    - declare 'HW' in Terminology.
+      (suggested by Chao Peng)
+    - replace 'COS ID of VCPU' to 'COS ID of domain'.
+      (suggested by Chao Peng)
+    - replace 'COS register' to 'Thrtl MSR'.
+      (suggested by Chao Peng)
+    - add description for 'psr-mba-show' to state that the decimal value is
+      shown for linear mode but hexadecimal value is shown for non-linear mode.
+      (suggested by Chao Peng)
+    - remove content in 'Areas for improvement'.
+      (suggested by Chao Peng)
+    - use '<>' to specify mandatory argument to a command.
+      (suggested by Wei Liu)
+v1:
+    - remove a special character to avoid the error when building pandoc.
+---
+ docs/features/intel_psr_mba.pandoc | 295 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 295 insertions(+)
+ create mode 100644 docs/features/intel_psr_mba.pandoc
+
+diff --git a/docs/features/intel_psr_mba.pandoc b/docs/features/intel_psr_mba.pandoc
+new file mode 100644
+index 0000000..57bd4dc
+--- /dev/null
++++ b/docs/features/intel_psr_mba.pandoc
+@@ -0,0 +1,295 @@
++% Intel Memory Bandwidth Allocation (MBA) Feature
++% Revision 1.7
++
++\clearpage
++
++# Basics
++
++---------------- ----------------------------------------------------
++         Status: **Tech Preview**
++
++Architecture(s): Intel x86
++
++   Component(s): Hypervisor, toolstack
++
++       Hardware: MBA is supported on Skylake Server and beyond
++---------------- ----------------------------------------------------
++
++# Terminology
++
++* CAT         Cache Allocation Technology
++* CBM         Capacity BitMasks
++* CDP         Code and Data Prioritization
++* COS/CLOS    Class of Service
++* HW          Hardware
++* MBA         Memory Bandwidth Allocation
++* MSRs        Machine Specific Registers
++* PSR         Intel Platform Shared Resource
++* THRTL       Throttle value or delay value
++
++# Overview
++
++The Memory Bandwidth Allocation (MBA) feature provides indirect and approximate
++control over memory bandwidth available per-core. This feature provides OS/
++hypervisor the ability to slow misbehaving apps/domains by using a credit-based
++throttling mechanism.
++
++# User details
++
++* Feature Enabling:
++
++  Add "psr=mba" to boot line parameter to enable MBA feature.
++
++* xl interfaces:
++
++  1. `psr-mba-show [domain-id|domain-name]`:
++
++     Show memory bandwidth throttling for domain. Under different modes, it
++     shows different type of data.
++
++     There are two modes:
++     Linear mode: the input precision is defined as 100-(MBA_MAX). For instance,
++     if the MBA_MAX value is 90, the input precision is 10%. Values not an even
++     multiple of the precision (e.g., 12%) will be rounded down (e.g., to 10%
++     delay applied) by HW automatically. The response of throttling value is
++     linear.
++
++     Non-linear mode: input delay values are powers-of-two from zero to the
++     MBA_MAX value from CPUID. In this case any values not a power of two will
++     be rounded down the next nearest power of two by HW automatically. The
++     response of throttling value is non-linear.
++
++     For linear mode, it shows the decimal value. For non-linear mode, it shows
++     hexadecimal value.
++
++  2. `psr-mba-set [OPTIONS] <domain-id|domain-name> <throttling>`:
++
++     Set memory bandwidth throttling for domain.
++
++     Options:
++     '-s': Specify the socket to process, otherwise all sockets are processed.
++
++     Throttling value set in register implies the approximate amount of delaying
++     the traffic between core and memory. Higher throttling value result in
++     lower bandwidth. The max throttling value (MBA_MAX) supported can be
++     obtained through CPUID inside hypervisor. Users can fetch the MBA_MAX value
++     using the `psr-hwinfo` xl command.
++
++# Technical details
++
++MBA is a member of Intel PSR features, it shares the base PSR infrastructure
++in Xen.
++
++## Hardware perspective
++
++  MBA defines a range of MSRs to support specifying a delay value (Thrtl) per
++  COS, with details below.
++
++  ```
++   +----------------------------+----------------+
++   | MSR (per socket)           |    Address     |
++   +----------------------------+----------------+
++   | IA32_L2_QOS_Ext_BW_Thrtl_0 |     0xD50      |
++   +----------------------------+----------------+
++   | ...                        |  ...           |
++   +----------------------------+----------------+
++   | IA32_L2_QOS_Ext_BW_Thrtl_n |     0xD50+n    |
++   +----------------------------+----------------+
++  ```
++
++  When context switch happens, the COS ID of domain is written to per-hyper-
++  thread MSR `IA32_PQR_ASSOC`, and then hardware enforces bandwidth allocation
++  according to the throttling value stored in the Thrtl MSR register.
++
++## The relationship between MBA and CAT/CDP
++
++  Generally speaking, MBA is completely independent of CAT/CDP, and any
++  combination may be applied at any time, e.g. enabling MBA with CAT
++  disabled.
++
++  But it needs to be noticed that MBA shares COS infrastructure with CAT,
++  although MBA is enumerated by different CPUID leaf from CAT (which
++  indicates that the max COS of MBA may be different from CAT). In some
++  cases, a domain is permitted to have a COS that is beyond one (or more)
++  of PSR features but within the others. For instance, let's assume the max
++  COS of MBA is 8 but the max COS of L3 CAT is 16, when a domain is assigned
++  9 as COS, the L3 CAT CBM associated to COS 9 would be enforced, but for MBA,
++  the HW works as default value is set since COS 9 is beyond the max COS (8)
++  of MBA.
++
++## Design Overview
++
++* Core COS/Thrtl association
++
++  When enforcing Memory Bandwidth Allocation, all cores of domains have
++  the same default Thrtl MSR (COS0) which stores the same Thrtl (0). The
++  default Thrtl MSR is used only in hypervisor and is transparent to tool stack
++  and user.
++
++  System administrators can change PSR allocation policy at runtime by
++  using the tool stack. Since MBA shares COS ID with CAT/CDP, a COS ID
++  corresponds to a 2-tuple, like [CBM, Thrtl] with only-CAT enabled, when CDP
++  is enabled, the COS ID corresponds to a 3-tuple, like [Code_CBM, Data_CBM,
++  Thrtl]. If neither CAT nor CDP is enabled, things are easier, since one COS
++  ID corresponds to one Thrtl.
++
++* VCPU schedule
++
++  This part reuses CAT COS infrastructure.
++
++* Multi-sockets
++
++  Different sockets may have different MBA capabilities (like max COS)
++  although it is consistent on the same socket. So the capability
++  of per-socket MBA is specified.
++
++  This part reuses CAT COS infrastructure.
++
++## Implementation Description
++
++* Hypervisor interfaces:
++
++  1. Boot line param: "psr=mba" to enable the feature.
++
++  2. SYSCTL:
++          - XEN_SYSCTL_PSR_MBA_get_info: Get system MBA information.
++
++  3. DOMCTL:
++          - XEN_DOMCTL_PSR_MBA_OP_GET_THRTL: Get throttling for a domain.
++          - XEN_DOMCTL_PSR_MBA_OP_SET_THRTL: Set throttling for a domain.
++
++* xl interfaces:
++
++  1. psr-mba-show [domain-id]
++          Show system/domain runtime MBA throttling value. For linear mode,
++          it shows the decimal value. For non-linear mode, it shows hexadecimal
++          value.
++          => XEN_SYSCTL_PSR_MBA_get_info/XEN_DOMCTL_PSR_MBA_OP_GET_THRTL
++
++  2. psr-mba-set [OPTIONS] <domain-id> <throttling>
++          Set bandwidth throttling for a domain.
++          => XEN_DOMCTL_PSR_MBA_OP_SET_THRTL
++
++  3. psr-hwinfo
++          Show PSR HW information, including L3 CAT/CDP/L2 CAT/MBA.
++          => XEN_SYSCTL_PSR_MBA_get_info
++
++* Key data structure:
++
++  1. Feature HW info
++
++     ```
++     struct {
++         unsigned int thrtl_max;
++         bool linear;
++     } mba;
++
++     - Member `thrtl_max`
++
++       `thrtl_max` is the max throttling value to be set, i.e. MBA_MAX.
++
++     - Member `linear`
++
++       `linear` means the response of delay value is linear or not.
++
++     As mentioned above, MBA is a member of Intel PSR features, it would
++     share the base PSR infrastructure in Xen. For example, the 'cos_max'
++     is a common HW property for all features. So, for other data structure
++     details, please refer to 'intel_psr_cat_cdp.pandoc'.
++
++# Limitations
++
++MBA can only work on HW which supports it (check by CPUID).
++
++# Testing
++
++We can execute these commands to verify MBA on different HWs supporting them.
++
++For example:
++  1. User can get the MBA hardware info through 'psr-hwinfo' command. From
++     result, user can know if this hardware works under linear mode or non-
++     linear mode, the max throttling value (MBA_MAX) and so on.
++
++    root@:~$ xl psr-hwinfo --mba
++    Memory Bandwidth Allocation (MBA):
++    Socket ID       : 0
++    Linear Mode     : Enabled
++    Maximum COS     : 7
++    Maximum Throttling Value: 90
++    Default Throttling Value: 0
++
++  2. Then, user can set a throttling value to a domain. For example, set '0xa',
++     i.e 10% delay.
++
++    root@:~$ xl psr-mba-set 1 10
++
++  3. User can check the current configuration of the domain through
++     'psr-mab-show'. For linear mode, the decimal value is shown.
++
++    root@:~$ xl psr-mba-show 1
++    Socket ID       : 0
++    Default THRTL   : 0
++       ID                     NAME            THRTL
++        1                 ubuntu14             10
++
++# Areas for improvement
++
++N/A
++
++# Known issues
++
++N/A
++
++# References
++
++"INTEL RESOURCE DIRECTOR TECHNOLOGY (INTEL RDT) ALLOCATION FEATURES" [Intel 64 and IA-32 Architectures Software Developer Manuals, vol3](http://www.intel.com/content/www/us/en/processors/architectures-software-developer-manuals.html)
++
++# History
++
++------------------------------------------------------------------------
++Date       Revision Version  Notes
++---------- -------- -------- -------------------------------------------
++2017-01-10 1.0      Xen 4.9  Design document written
++2017-07-10 1.1      Xen 4.10 Changes:
++                             1. Modify data structure according to latest
++                                codes;
++                             2. Add content for 'Areas for improvement';
++                             3. Other minor changes.
++2017-08-09 1.2      Xen 4.10 Changes:
++                             1. Remove a special character to avoid error when
++                                building pandoc.
++2017-08-15 1.3      Xen 4.10 Changes:
++                             1. Add terminology 'HW'.
++                             2. Change 'COS ID of VCPU' to 'COS ID of domain'.
++                             3. Change 'COS register' to 'Thrtl MSR'.
++                             4. Explain the value shown for 'psr-mba-show' under
++                                different modes.
++                             5. Remove content in 'Areas for improvement'.
++2017-08-16 1.4      Xen 4.10 Changes:
++                             1. Add '<>' for mandatory argument.
++2017-08-30 1.5      Xen 4.10 Changes:
++                             1. Modify words in 'Overview' to make it easier to
++                                understand.
++                             2. Explain 'linear/non-linear' modes before mention
++                                them.
++                             3. Explain throttling value more accurate.
++                             4. Explain 'MBA_MAX'.
++                             5. Correct some words in 'Design Overview'.
++                             6. Change 'mba_info' to 'mba' according to code
++                                changes. Also, modify contents of it.
++                             7. Add context in 'Testing' part to make things
++                                more clear.
++                             8. Remove 'n<64' to avoid out-of-sync.
++2017-09-21 1.6      Xen 4.10 Changes:
++                             1. Add 'domain-name' as parameter of 'psr-mba-show/
++                                psr-mba-set'.
++                             2. Fix some wordings.
++                             3. Explain how user can know the MBA_MAX.
++                             4. Move the description of 'Linear mode/Non-linear
++                                mode' into section of 'psr-mba-show'.
++                             5. Change 'per-thread' to 'per-hyper-thread'.
++2017-09-29 1.7      Xen 4.10 Changes:
++                             1. Correct some words.
++                             2. Change 'xl psr-mba-set 1 0xa' to
++                                'xl psr-mba-set 1 10'
++---------- -------- -------- -------------------------------------------

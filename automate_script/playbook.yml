@@ -1,0 +1,27 @@
+---
+- name: "[WILSON]"
+  hosts: all
+  tasks:
+          - name: "[WILSON] Copie du fichier"
+            copy:
+                    src: /tmp/monfichier
+                    dest: /home/wilson/test.txt
+
+          - name: "[WILSON] Add Emmanuel"
+            lineinfile:
+                    path: /home/wilson/test.txt
+                    line: "Et moi je suis Emmanuel"
+         
+          - name: "[WILSON] Change wilson"
+            lineinfile:
+                    path: /home/wilson/test.txt
+                    regexp: '(.*)wilson(.*)'
+                    line: '\1Leon\2'
+                    backrefs: yes
+         
+          - name: "[WILSON] change emmanuel"
+            lineinfile:
+                    path: /home/wilson/test.txt
+                    insertbefore: '(.*)emmanuel(.*)'
+                    line: "Mon prenom c'est jacky" 
+

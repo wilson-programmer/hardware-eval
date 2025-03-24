@@ -1,0 +1,23 @@
+---
+- name: "[RUN COLLECT VM CREATION TIME]"
+  hosts: all
+  tasks:
+          - name: "[Create vm_creation_result directory]"
+            file:
+                    path: /home/wilson/vm_creation_result
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Copy bench_vm_creation.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/bench_vm_creation.sh
+                    dest: /home/wilson/vm_creation_result/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run bench_vm_creation.sh]"
+            command: bash /home/wilson/vm_creation_result/bench_vm_creation.sh
+            become: yes

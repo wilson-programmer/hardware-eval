@@ -1,0 +1,346 @@
+From patchwork Sat Sep 30 01:39:20 2017
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+X-Patchwork-Submitter: Yi Sun <yi.y.sun@linux.intel.com>
+X-Patchwork-Id: 9979033
+Return-Path: <xen-devel-bounces@lists.xen.org>
+Received: from mail.wl.linuxfoundation.org (pdx-wl-mail.web.codeaurora.org
+	[172.30.200.125])
+	by pdx-korg-patchwork.web.codeaurora.org (Postfix) with ESMTP id
+	8389E6037F for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:55 +0000 (UTC)
+Received: from mail.wl.linuxfoundation.org (localhost [127.0.0.1])
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTP id 7159E298AA
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:55 +0000 (UTC)
+Received: by mail.wl.linuxfoundation.org (Postfix, from userid 486)
+	id 65C8E298C5; Sat, 30 Sep 2017 02:01:55 +0000 (UTC)
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	pdx-wl-mail.web.codeaurora.org
+X-Spam-Level: 
+X-Spam-Status: No, score=-4.2 required=2.0 tests=BAYES_00, RCVD_IN_DNSWL_MED
+	autolearn=ham version=3.3.1
+Received: from lists.xenproject.org (lists.xenproject.org [192.237.175.120])
+	(using TLSv1.2 with cipher AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTPS id C634D298AA
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:54 +0000 (UTC)
+Received: from localhost ([127.0.0.1] helo=lists.xenproject.org)
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <xen-devel-bounces@lists.xen.org>)
+	id 1dy73y-0004Zl-Bg; Sat, 30 Sep 2017 01:59:30 +0000
+Received: from mail6.bemta6.messagelabs.com ([193.109.254.103])
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <yi.y.sun@linux.intel.com>) id 1dy73w-0004XN-WA
+	for xen-devel@lists.xenproject.org; Sat, 30 Sep 2017 01:59:29 +0000
+Received: from [193.109.254.147] by server-5.bemta-6.messagelabs.com id
+	9B/9C-03454-08AFEC95; Sat, 30 Sep 2017 01:59:28 +0000
+X-Brightmail-Tracker: H4sIAAAAAAAAA+NgFjrGIsWRWlGSWpSXmKPExsXS1taRolv/61y
+	kwbevohbft0xmcmD0OPzhCksAYxRrZl5SfkUCa8b5Z1dYCtqcK1avnMrcwDjXsIuRk0NIoEKi
+	4/hsNhBbQoBX4siyGawQdoDE3te3GLsYuYBqGhglfi9bDVbEJqAu8fhrDxOILSKgJHFv1WQwm
+	1ngOqNEz9xYEFtYwE+i5dpTsDiLgKrEnmU7wWxeAQ+JR5ePQS2Qkzh5bDKYzQkUv9bTxAZxkL
+	vElZa1jBD1ghInZz5h6WLkAJqvLrF+nhDEKnmJ5q2zmScwCsxCUjULoWoWkqoFjMyrGDWKU4v
+	KUot0jYz0kooy0zNKchMzc3QNDcz0clOLixPTU3MSk4r1kvNzNzECQ5MBCHYwrpkfeIhRkoNJ
+	SZR3+bdzkUJ8SfkplRmJxRnxRaU5qcWHGGU4OJQkeCN+AuUEi1LTUyvSMnOAUQKTluDgURLht
+	QVJ8xYXJOYWZ6ZDpE4xGnMc23T5DxNHx827f5iEWPLy81KlxHkLQEoFQEozSvPgBsGi9xKjrJ
+	QwLyPQaUI8BalFuZklqPKvGMU5GJWEeWtBpvBk5pXA7XsFdAoT0CmTJ54BOaUkESEl1cCoM2P
+	F7yN3y+caG0WdZHBIeX3gtdnN8oiK+IrdkoHzOeYevv3lqNuSY19WBIexRTHsV5h+7OWFtCat
+	Tysv9luwxjLvKfR191xw5Pet+msWqn16z7b6SOy2mjHTLyWQ13Vj2OyZN26s8914evGvFYlfb
+	rhMVHXuYlyzLItrRQDn5+LNhwL4TzFfUGIpzkg01GIuKk4EAF6xq07ZAgAA
+X-Env-Sender: yi.y.sun@linux.intel.com
+X-Msg-Ref: server-15.tower-27.messagelabs.com!1506736764!66398328!2
+X-Originating-IP: [134.134.136.100]
+X-SpamReason: No, hits=0.0 required=7.0 tests=
+X-StarScan-Received: 
+X-StarScan-Version: 9.4.45; banners=-,-,-
+X-VirusChecked: Checked
+Received: (qmail 35736 invoked from network); 30 Sep 2017 01:59:26 -0000
+Received: from mga07.intel.com (HELO mga07.intel.com) (134.134.136.100)
+	by server-15.tower-27.messagelabs.com with DHE-RSA-AES256-GCM-SHA384
+	encrypted SMTP; 30 Sep 2017 01:59:26 -0000
+Received: from orsmga003.jf.intel.com ([10.7.209.27])
+	by orsmga105.jf.intel.com with ESMTP; 29 Sep 2017 18:59:25 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos; i="5.42,455,1500966000"; d="scan'208";
+	a="1020039078"
+Received: from vmmmba-s2600wft.bj.intel.com ([10.240.193.75])
+	by orsmga003.jf.intel.com with ESMTP; 29 Sep 2017 18:59:23 -0700
+From: Yi Sun <yi.y.sun@linux.intel.com>
+To: xen-devel@lists.xenproject.org
+Date: Sat, 30 Sep 2017 09:39:20 +0800
+Message-Id: <1506735566-5706-11-git-send-email-yi.y.sun@linux.intel.com>
+X-Mailer: git-send-email 1.9.1
+In-Reply-To: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+References: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+MIME-Version: 1.0
+Cc: Wei Liu <wei.liu2@citrix.com>, Chao Peng <chao.p.peng@linux.intel.com>,
+	Yi Sun <yi.y.sun@linux.intel.com>,
+	Ian Jackson <ian.jackson@eu.citrix.com>,
+	=?UTF-8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Subject: [Xen-devel] [PATCH v5 10/16] tools: implement the new libxc get hw
+	info interface
+X-BeenThere: xen-devel@lists.xen.org
+X-Mailman-Version: 2.1.18
+Precedence: list
+List-Id: Xen developer discussion <xen-devel.lists.xen.org>
+List-Unsubscribe: <https://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <https://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Errors-To: xen-devel-bounces@lists.xen.org
+Sender: "Xen-devel" <xen-devel-bounces@lists.xen.org>
+X-Virus-Scanned: ClamAV using ClamSMTP
+
+This patch implements a new libxc get hw info interface and corresponding
+data structures. It also changes libxl_psr.c to call this new interface.
+
+Signed-off-by: Yi Sun <yi.y.sun@linux.intel.com>
+Acked-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Roger Pau Monné <roger.pau@citrix.com>
+---
+CC: Wei Liu <wei.liu2@citrix.com>
+CC: Ian Jackson <ian.jackson@eu.citrix.com>
+CC: Roger Pau Monné <roger.pau@citrix.com>
+CC: Chao Peng <chao.p.peng@linux.intel.com>
+
+v5:
+    - directly define 'xc_psr_hw_info' as union type.
+      (suggested by Roger Pau Monné)
+    - converge L2 and L3 cases in 'xc_psr_get_hw_info'.
+      (suggested by Roger Pau Monné)
+v4:
+    - remove 'ALLOC_' from macro names.
+      (suggested by Roger Pau Monné)
+    - remove 'XC_PSR_FEAT_UNKNOWN' which is not necessary.
+      (suggested by Roger Pau Monné)
+    - remove 'FEAT_' from enum item names.
+      (suggested by Roger Pau Monné)
+    - remove 'xc_' from struct name.
+      (suggested by Roger Pau Monné)
+    - adjust codes to reduce indentation.
+      (suggested by Roger Pau Monné)
+    - assert for not happened case.
+      (suggested by Roger Pau Monné)
+    - add LOGE to show errno.
+      (suggested by Roger Pau Monné)
+v3:
+    - rename 'psr_cat/PSR_CAT' to 'psr_alloc/PSR_ALLOC' and remove 'op/OP'
+      from name.
+      (suggested by Roger Pau Monné)
+    - remove 'info' from 'xc_cat_info' and 'xc_mba_info'.
+      (suggested by Roger Pau Monné)
+    - set errno in 'xc_psr_get_hw_info'.
+      (suggested by Roger Pau Monné)
+    - remove 'inline'.
+      (suggested by Roger Pau Monné)
+    - remove 'psr' from 'libxl__psr_feat_type_to_libxc_psr_feat_type' to make
+      function name shorter.
+      (suggested by Roger Pau Monné)
+    - check 'xc_type' in 'libxl_psr_cat_get_info'.
+      (suggested by Roger Pau Monné)
+v2:
+    - split this patch out from a big patch in v1.
+      (suggested by Wei Liu)
+    - change 'CAT_INFO' and 'MBA_INFO' to 'CAT' and 'MBA'.
+      (suggested by Chao Peng)
+---
+ tools/libxc/include/xenctrl.h | 27 ++++++++++++++++++---
+ tools/libxc/xc_psr.c          | 55 +++++++++++++++++++++++++++----------------
+ tools/libxl/libxl_psr.c       | 36 ++++++++++++++++++++++++++--
+ 3 files changed, 93 insertions(+), 25 deletions(-)
+
+diff --git a/tools/libxc/include/xenctrl.h b/tools/libxc/include/xenctrl.h
+index 43151cb..043c2bb 100644
+--- a/tools/libxc/include/xenctrl.h
++++ b/tools/libxc/include/xenctrl.h
+@@ -2459,6 +2459,28 @@ enum xc_psr_cat_type {
+ };
+ typedef enum xc_psr_cat_type xc_psr_cat_type;
+ 
++enum xc_psr_feat_type {
++    XC_PSR_CAT_L3,
++    XC_PSR_CAT_L2,
++    XC_PSR_MBA,
++};
++typedef enum xc_psr_feat_type xc_psr_feat_type;
++
++union xc_psr_hw_info {
++    struct {
++        uint32_t cos_max;
++        uint32_t cbm_len;
++        bool     cdp_enabled;
++    } cat;
++
++    struct {
++        uint32_t cos_max;
++        uint32_t thrtl_max;
++        bool     linear;
++    } mba;
++};
++typedef union xc_psr_hw_info xc_psr_hw_info;
++
+ int xc_psr_cmt_attach(xc_interface *xch, uint32_t domid);
+ int xc_psr_cmt_detach(xc_interface *xch, uint32_t domid);
+ int xc_psr_cmt_get_domain_rmid(xc_interface *xch, uint32_t domid,
+@@ -2480,9 +2502,8 @@ int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
+ int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
+                                xc_psr_cat_type type, uint32_t target,
+                                uint64_t *data);
+-int xc_psr_cat_get_info(xc_interface *xch, uint32_t socket, unsigned int lvl,
+-                        uint32_t *cos_max, uint32_t *cbm_len,
+-                        bool *cdp_enabled);
++int xc_psr_get_hw_info(xc_interface *xch, uint32_t socket,
++                       xc_psr_feat_type type, xc_psr_hw_info *hw_info);
+ 
+ int xc_get_cpu_levelling_caps(xc_interface *xch, uint32_t *caps);
+ int xc_get_cpu_featureset(xc_interface *xch, uint32_t index,
+diff --git a/tools/libxc/xc_psr.c b/tools/libxc/xc_psr.c
+index 5c54a35..6b84d45 100644
+--- a/tools/libxc/xc_psr.c
++++ b/tools/libxc/xc_psr.c
+@@ -323,37 +323,52 @@ int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
+     return rc;
+ }
+ 
+-int xc_psr_cat_get_info(xc_interface *xch, uint32_t socket, unsigned int lvl,
+-                        uint32_t *cos_max, uint32_t *cbm_len, bool *cdp_enabled)
++int xc_psr_get_hw_info(xc_interface *xch, uint32_t socket,
++                       xc_psr_feat_type type, xc_psr_hw_info *hw_info)
+ {
+     int rc = -1;
+     DECLARE_SYSCTL;
+ 
++    if ( !hw_info )
++    {
++        errno = EINVAL;
++        return rc;
++    }
++
+     sysctl.cmd = XEN_SYSCTL_psr_alloc;
+     sysctl.u.psr_alloc.target = socket;
+ 
+-    switch ( lvl )
++    switch ( type )
+     {
+-    case 2:
+-        sysctl.u.psr_alloc.cmd = XEN_SYSCTL_PSR_get_l2_info;
++    case XC_PSR_CAT_L2:
++    case XC_PSR_CAT_L3:
++        sysctl.u.psr_alloc.cmd = ( type  == XC_PSR_CAT_L2 ) ?
++                                 XEN_SYSCTL_PSR_get_l2_info :
++                                 XEN_SYSCTL_PSR_get_l3_info;
++
+         rc = xc_sysctl(xch, &sysctl);
+-        if ( !rc )
+-        {
+-            *cos_max = sysctl.u.psr_alloc.u.cat_info.cos_max;
+-            *cbm_len = sysctl.u.psr_alloc.u.cat_info.cbm_len;
+-            *cdp_enabled = false;
+-        }
++        if ( rc )
++            break;
++
++        hw_info->cat.cos_max = sysctl.u.psr_alloc.u.cat_info.cos_max;
++        hw_info->cat.cbm_len = sysctl.u.psr_alloc.u.cat_info.cbm_len;
++        hw_info->cat.cdp_enabled = ( type  == XC_PSR_CAT_L2 ) ?
++                                   false :
++                                   ( sysctl.u.psr_alloc.u.cat_info.flags &
++                                    XEN_SYSCTL_PSR_CAT_L3_CDP );
++
+         break;
+-    case 3:
+-        sysctl.u.psr_alloc.cmd = XEN_SYSCTL_PSR_get_l3_info;
++    case XC_PSR_MBA:
++        sysctl.u.psr_alloc.cmd = XEN_SYSCTL_PSR_get_mba_info;
+         rc = xc_sysctl(xch, &sysctl);
+-        if ( !rc )
+-        {
+-            *cos_max = sysctl.u.psr_alloc.u.cat_info.cos_max;
+-            *cbm_len = sysctl.u.psr_alloc.u.cat_info.cbm_len;
+-            *cdp_enabled = sysctl.u.psr_alloc.u.cat_info.flags &
+-                           XEN_SYSCTL_PSR_CAT_L3_CDP;
+-        }
++        if ( rc )
++            break;
++
++        hw_info->mba.cos_max = sysctl.u.psr_alloc.u.mba_info.cos_max;
++        hw_info->mba.thrtl_max = sysctl.u.psr_alloc.u.mba_info.thrtl_max;
++        hw_info->mba.linear = sysctl.u.psr_alloc.u.mba_info.flags &
++                              XEN_SYSCTL_PSR_MBA_LINEAR;
++
+         break;
+     default:
+         errno = EOPNOTSUPP;
+diff --git a/tools/libxl/libxl_psr.c b/tools/libxl/libxl_psr.c
+index d4f5f67..e8d62e1 100644
+--- a/tools/libxl/libxl_psr.c
++++ b/tools/libxl/libxl_psr.c
+@@ -361,6 +361,29 @@ int libxl_psr_cat_get_cbm(libxl_ctx *ctx, uint32_t domid,
+     return rc;
+ }
+ 
++static xc_psr_feat_type libxl__feat_type_to_libxc_feat_type(
++                            libxl_psr_feat_type type, unsigned int lvl)
++{
++    xc_psr_feat_type xc_type;
++
++    switch (type) {
++    case LIBXL_PSR_FEAT_TYPE_CAT:
++        if (lvl == 3)
++            xc_type = XC_PSR_CAT_L3;
++        if (lvl == 2)
++            xc_type = XC_PSR_CAT_L2;
++        break;
++    case LIBXL_PSR_FEAT_TYPE_MBA:
++        xc_type = XC_PSR_MBA;
++        break;
++    default:
++        /* Could not happen */
++        assert(0);
++    }
++
++    return xc_type;
++}
++
+ int libxl_psr_cat_get_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
+                            unsigned int *nr, unsigned int lvl)
+ {
+@@ -369,6 +392,8 @@ int libxl_psr_cat_get_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
+     int i = 0, socketid, nr_sockets;
+     libxl_bitmap socketmap;
+     libxl_psr_cat_info *ptr;
++    xc_psr_hw_info hw_info;
++    xc_psr_feat_type xc_type;
+ 
+     libxl_bitmap_init(&socketmap);
+ 
+@@ -385,16 +410,23 @@ int libxl_psr_cat_get_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
+         goto out;
+     }
+ 
++    xc_type = libxl__feat_type_to_libxc_feat_type(LIBXL_PSR_FEAT_TYPE_CAT, lvl);
++
+     ptr = libxl__malloc(NOGC, nr_sockets * sizeof(libxl_psr_cat_info));
+ 
+     libxl_for_each_set_bit(socketid, socketmap) {
+         ptr[i].id = socketid;
+-        if (xc_psr_cat_get_info(ctx->xch, socketid, lvl, &ptr[i].cos_max,
+-                                &ptr[i].cbm_len, &ptr[i].cdp_enabled)) {
++        if (xc_psr_get_hw_info(ctx->xch, socketid, xc_type, &hw_info)) {
++            LOGE(ERROR, "failed to get hw info");
+             rc = ERROR_FAIL;
+             free(ptr);
+             goto out;
+         }
++
++        ptr[i].cos_max = hw_info.cat.cos_max;
++        ptr[i].cbm_len = hw_info.cat.cbm_len;
++        ptr[i].cdp_enabled = hw_info.cat.cdp_enabled;
++
+         i++;
+     }
+ 

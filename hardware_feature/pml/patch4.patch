@@ -1,0 +1,156 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Kai Huang <kai.huang@linux.intel.com>
+Subject: [v2 04/11] vmx: add PML definition and feature
+	detection.
+Date: Wed, 15 Apr 2015 15:03:46 +0800
+Message-ID: <1429081433-9600-5-git-send-email-kai.huang@linux.intel.com>
+References: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: andrew.cooper3@citrix.com, tim@xen.org, jbeulich@suse.com, kevin.tian@intel.com, xen-devel@lists.xen.org
+Cc: Kai Huang <kai.huang@linux.intel.com>
+List-Id: xen-devel@lists.xenproject.org
+
+The patch adds PML definition and feature detection. Note PML won't be detected
+if PML is disabled from boot parameter. PML is also disabled in construct_vmcs,
+as it will only be enabled when domain is switched to log dirty mode.
+
+Signed-off-by: Kai Huang <kai.huang@linux.intel.com>
+---
+ xen/arch/x86/hvm/vmx/vmcs.c        | 22 ++++++++++++++++++++++
+ xen/include/asm-x86/hvm/vmx/vmcs.h |  6 ++++++
+ xen/include/asm-x86/hvm/vmx/vmx.h  |  1 +
+ 3 files changed, 29 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmcs.c b/xen/arch/x86/hvm/vmx/vmcs.c
+index 4fff46d..d120370 100644
+--- a/xen/arch/x86/hvm/vmx/vmcs.c
++++ b/xen/arch/x86/hvm/vmx/vmcs.c
+@@ -141,6 +141,7 @@ static void __init vmx_display_features(void)
+     P(cpu_has_vmx_virtual_intr_delivery, "Virtual Interrupt Delivery");
+     P(cpu_has_vmx_posted_intr_processing, "Posted Interrupt Processing");
+     P(cpu_has_vmx_vmcs_shadowing, "VMCS shadowing");
++    P(cpu_has_vmx_pml, "Page Modification Logging");
+ #undef P
+ 
+     if ( !printed )
+@@ -238,6 +239,8 @@ static int vmx_init_vmcs_config(void)
+             opt |= SECONDARY_EXEC_ENABLE_VPID;
+         if ( opt_unrestricted_guest_enabled )
+             opt |= SECONDARY_EXEC_UNRESTRICTED_GUEST;
++        if ( opt_pml_enabled )
++            opt |= SECONDARY_EXEC_ENABLE_PML;
+ 
+         /*
+          * "APIC Register Virtualization" and "Virtual Interrupt Delivery"
+@@ -284,6 +287,14 @@ static int vmx_init_vmcs_config(void)
+          */
+         if ( !(_vmx_ept_vpid_cap & VMX_VPID_INVVPID_ALL_CONTEXT) )
+             _vmx_secondary_exec_control &= ~SECONDARY_EXEC_ENABLE_VPID;
++
++        /*
++         * PML cannot be supported if EPT A/D bits is not supported. Actually,
++         * PML should not be detected if EPT A/D bits is not supported, but for
++         * sure we do the check anyway.
++         */
++        if ( !(_vmx_ept_vpid_cap & VMX_EPT_AD_BIT) )
++            _vmx_secondary_exec_control &= ~SECONDARY_EXEC_ENABLE_PML;
+     }
+ 
+     if ( _vmx_secondary_exec_control & SECONDARY_EXEC_ENABLE_EPT )
+@@ -304,6 +315,14 @@ static int vmx_init_vmcs_config(void)
+                   SECONDARY_EXEC_UNRESTRICTED_GUEST);
+     }
+ 
++    /* PML cannot be supported if EPT is not used */
++    if ( !(_vmx_secondary_exec_control & SECONDARY_EXEC_ENABLE_EPT) )
++        _vmx_secondary_exec_control &= ~SECONDARY_EXEC_ENABLE_PML;
++
++    /* Turn off opt_pml_enabled if PML feature is not present */
++    if ( !(_vmx_secondary_exec_control & SECONDARY_EXEC_ENABLE_PML) )
++        opt_pml_enabled = 0;
++
+     if ( (_vmx_secondary_exec_control & SECONDARY_EXEC_PAUSE_LOOP_EXITING) &&
+           ple_gap == 0 )
+     {
+@@ -1039,6 +1058,9 @@ static int construct_vmcs(struct vcpu *v)
+         __vmwrite(POSTED_INTR_NOTIFICATION_VECTOR, posted_intr_vector);
+     }
+ 
++    /* Disable PML anyway here as it will only be enabled in log dirty mode */
++    v->arch.hvm_vmx.secondary_exec_control &= ~SECONDARY_EXEC_ENABLE_PML;
++
+     /* Host data selectors. */
+     __vmwrite(HOST_SS_SELECTOR, __HYPERVISOR_DS);
+     __vmwrite(HOST_DS_SELECTOR, __HYPERVISOR_DS);
+diff --git a/xen/include/asm-x86/hvm/vmx/vmcs.h b/xen/include/asm-x86/hvm/vmx/vmcs.h
+index 6fce6aa..f831a78 100644
+--- a/xen/include/asm-x86/hvm/vmx/vmcs.h
++++ b/xen/include/asm-x86/hvm/vmx/vmcs.h
+@@ -215,6 +215,7 @@ extern u32 vmx_vmentry_control;
+ #define SECONDARY_EXEC_ENABLE_INVPCID           0x00001000
+ #define SECONDARY_EXEC_ENABLE_VMFUNC            0x00002000
+ #define SECONDARY_EXEC_ENABLE_VMCS_SHADOWING    0x00004000
++#define SECONDARY_EXEC_ENABLE_PML               0x00020000
+ extern u32 vmx_secondary_exec_control;
+ 
+ #define VMX_EPT_EXEC_ONLY_SUPPORTED             0x00000001
+@@ -226,6 +227,7 @@ extern u32 vmx_secondary_exec_control;
+ #define VMX_EPT_INVEPT_INSTRUCTION              0x00100000
+ #define VMX_EPT_INVEPT_SINGLE_CONTEXT           0x02000000
+ #define VMX_EPT_INVEPT_ALL_CONTEXT              0x04000000
++#define VMX_EPT_AD_BIT                          0x00200000
+ 
+ #define VMX_MISC_VMWRITE_ALL                    0x20000000
+ 
+@@ -274,6 +276,8 @@ extern u32 vmx_secondary_exec_control;
+     (vmx_pin_based_exec_control & PIN_BASED_POSTED_INTERRUPT)
+ #define cpu_has_vmx_vmcs_shadowing \
+     (vmx_secondary_exec_control & SECONDARY_EXEC_ENABLE_VMCS_SHADOWING)
++#define cpu_has_vmx_pml \
++    (vmx_secondary_exec_control & SECONDARY_EXEC_ENABLE_PML)
+ 
+ #define VMCS_RID_TYPE_MASK              0x80000000
+ 
+@@ -318,6 +322,7 @@ enum vmcs_field {
+     GUEST_LDTR_SELECTOR             = 0x0000080c,
+     GUEST_TR_SELECTOR               = 0x0000080e,
+     GUEST_INTR_STATUS               = 0x00000810,
++    GUEST_PML_INDEX                 = 0x00000812,
+     HOST_ES_SELECTOR                = 0x00000c00,
+     HOST_CS_SELECTOR                = 0x00000c02,
+     HOST_SS_SELECTOR                = 0x00000c04,
+@@ -331,6 +336,7 @@ enum vmcs_field {
+     VM_EXIT_MSR_STORE_ADDR          = 0x00002006,
+     VM_EXIT_MSR_LOAD_ADDR           = 0x00002008,
+     VM_ENTRY_MSR_LOAD_ADDR          = 0x0000200a,
++    PML_ADDRESS                     = 0x0000200e,
+     TSC_OFFSET                      = 0x00002010,
+     VIRTUAL_APIC_PAGE_ADDR          = 0x00002012,
+     APIC_ACCESS_ADDR                = 0x00002014,
+diff --git a/xen/include/asm-x86/hvm/vmx/vmx.h b/xen/include/asm-x86/hvm/vmx/vmx.h
+index 91c5e18..50f1bfc 100644
+--- a/xen/include/asm-x86/hvm/vmx/vmx.h
++++ b/xen/include/asm-x86/hvm/vmx/vmx.h
+@@ -185,6 +185,7 @@ static inline unsigned long pi_get_pir(struct pi_desc *pi_desc, int group)
+ #define EXIT_REASON_XSETBV              55
+ #define EXIT_REASON_APIC_WRITE          56
+ #define EXIT_REASON_INVPCID             58
++#define EXIT_REASON_PML_FULL            62
+ 
+ /*
+  * Interruption-information format
+-- 
+2.1.0
+

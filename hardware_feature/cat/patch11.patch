@@ -1,0 +1,693 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 11/12] tools: add tools support for Intel CAT
+Date: Thu,  9 Apr 2015 17:18:24 +0800
+Message-ID: <1428571105-3604-12-git-send-email-chao.p.peng@linux.intel.com>
+References: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+This is the xc/xl changes to support Intel Cache Allocation
+Technology(CAT). Two commands are introduced:
+- xl psr-cat-cbm-set [-s socket] <domain> <cbm>
+  Set cache capacity bitmasks(CBM) for a domain.
+- xl psr-cat-show <domain>
+  Show Cache Allocation Technology information.
+
+Examples:
+[root@vmm-psr]# xl psr-cat-cbm-set 0 0xff
+[root@vmm-psr]# xl psr-cat-show
+Socket ID       : 0
+L3 Cache        : 12288KB
+Maximum COS     : 15
+CBM length      : 12
+Default CBM     : 0xfff
+   ID                     NAME             CBM
+    0                 Domain-0            0xff
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+Changes in v4:
+* Add example output in commit message.
+* Make libxl__count_physical_sockets private to libxl_psr.c.
+* Set errno in several error cases.
+* Change libxl_psr_cat_get_l3_info to return all sockets information.
+* Remove unused libxl_domain_info call.
+Changes in v3:
+* Add manpage.
+* libxl_psr_cat_set/get_domain_data => libxl_psr_cat_set/get_cbm.
+* Move libxl_count_physical_sockets into seperate patch.
+* Support LIBXL_PSR_TARGET_ALL for libxl_psr_cat_set_cbm.
+* Clean up the print codes.
+---
+ docs/man/xl.pod.1             |  31 ++++++++
+ tools/libxc/include/xenctrl.h |  15 ++++
+ tools/libxc/xc_psr.c          |  76 +++++++++++++++++++
+ tools/libxl/libxl.h           |  26 +++++++
+ tools/libxl/libxl_psr.c       | 168 ++++++++++++++++++++++++++++++++++++++++--
+ tools/libxl/libxl_types.idl   |  10 +++
+ tools/libxl/xl.h              |   4 +
+ tools/libxl/xl_cmdimpl.c      | 140 +++++++++++++++++++++++++++++++++++
+ tools/libxl/xl_cmdtable.c     |  12 +++
+ 9 files changed, 475 insertions(+), 7 deletions(-)
+
+diff --git a/docs/man/xl.pod.1 b/docs/man/xl.pod.1
+index b016272..dfab921 100644
+--- a/docs/man/xl.pod.1
++++ b/docs/man/xl.pod.1
+@@ -1492,6 +1492,37 @@ monitor types are:
+ 
+ =back
+ 
++=head1 CACHE ALLOCATION TECHNOLOGY
++
++Intel Broadwell and later server platforms offer capabilities to configure and
++make use of the Cache Allocation Technology (CAT) mechanisms, which enable more
++cache resources (i.e. L3 cache) to be made available for high priority
++applications. In Xen implementation, CAT is used to control cache allocation
++on VM basis. To enforce cache on a specific domain, just set capacity bitmasks
++(CBM) for the domain.
++
++=over 4
++
++=item B<psr-cat-cbm-set> [I<OPTIONS>] [I<domain-id>] [I<cbm>]
++
++Set cache capacity bitmasks(CBM) for a domain.
++
++B<OPTIONS>
++
++=over 4
++
++=item B<-s SOCKET>, B<--socket=SOCKET>
++
++Specify the socket to process, otherwise all sockets are processed.
++
++=back
++
++=item B<psr-cat-show> [I<domain-id>]
++
++Show CAT settings for a certain domain or all domains.
++
++=back
++
+ =head1 TO BE DOCUMENTED
+ 
+ We need better documentation for:
+diff --git a/tools/libxc/include/xenctrl.h b/tools/libxc/include/xenctrl.h
+index df18292..1373a46 100644
+--- a/tools/libxc/include/xenctrl.h
++++ b/tools/libxc/include/xenctrl.h
+@@ -2692,6 +2692,12 @@ enum xc_psr_cmt_type {
+     XC_PSR_CMT_LOCAL_MEM_COUNT,
+ };
+ typedef enum xc_psr_cmt_type xc_psr_cmt_type;
++
++enum xc_psr_cat_type {
++    XC_PSR_CAT_L3_CBM = 1,
++};
++typedef enum xc_psr_cat_type xc_psr_cat_type;
++
+ int xc_psr_cmt_attach(xc_interface *xch, uint32_t domid);
+ int xc_psr_cmt_detach(xc_interface *xch, uint32_t domid);
+ int xc_psr_cmt_get_domain_rmid(xc_interface *xch, uint32_t domid,
+@@ -2706,6 +2712,15 @@ int xc_psr_cmt_get_data(xc_interface *xch, uint32_t rmid, uint32_t cpu,
+                         uint32_t psr_cmt_type, uint64_t *monitor_data,
+                         uint64_t *tsc);
+ int xc_psr_cmt_enabled(xc_interface *xch);
++
++int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
++                               xc_psr_cat_type type, uint32_t target,
++                               uint64_t data);
++int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
++                               xc_psr_cat_type type, uint32_t target,
++                               uint64_t *data);
++int xc_psr_cat_get_l3_info(xc_interface *xch, uint32_t socket,
++                           uint32_t *cos_max, uint32_t *cbm_len);
+ #endif
+ 
+ #endif /* XENCTRL_H */
+diff --git a/tools/libxc/xc_psr.c b/tools/libxc/xc_psr.c
+index e367a80..d8b3a51 100644
+--- a/tools/libxc/xc_psr.c
++++ b/tools/libxc/xc_psr.c
+@@ -248,6 +248,82 @@ int xc_psr_cmt_enabled(xc_interface *xch)
+ 
+     return 0;
+ }
++int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
++                               xc_psr_cat_type type, uint32_t target,
++                               uint64_t data)
++{
++    DECLARE_DOMCTL;
++    uint32_t cmd;
++
++    switch ( type )
++    {
++    case XC_PSR_CAT_L3_CBM:
++        cmd = XEN_DOMCTL_PSR_CAT_OP_SET_L3_CBM;
++        break;
++    default:
++        errno = EINVAL;
++        return -1;
++    }
++
++    domctl.cmd = XEN_DOMCTL_psr_cat_op;
++    domctl.domain = (domid_t)domid;
++    domctl.u.psr_cat_op.cmd = cmd;
++    domctl.u.psr_cat_op.target = target;
++    domctl.u.psr_cat_op.data = data;
++
++    return do_domctl(xch, &domctl);
++}
++
++int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
++                               xc_psr_cat_type type, uint32_t target,
++                               uint64_t *data)
++{
++    int rc;
++    DECLARE_DOMCTL;
++    uint32_t cmd;
++
++    switch ( type )
++    {
++    case XC_PSR_CAT_L3_CBM:
++        cmd = XEN_DOMCTL_PSR_CAT_OP_GET_L3_CBM;
++        break;
++    default:
++        errno = EINVAL;
++        return -1;
++    }
++
++    domctl.cmd = XEN_DOMCTL_psr_cat_op;
++    domctl.domain = (domid_t)domid;
++    domctl.u.psr_cat_op.cmd = cmd;
++    domctl.u.psr_cat_op.target = target;
++
++    rc = do_domctl(xch, &domctl);
++
++    if ( !rc )
++        *data = domctl.u.psr_cat_op.data;
++
++    return rc;
++}
++
++int xc_psr_cat_get_l3_info(xc_interface *xch, uint32_t socket,
++                           uint32_t *cos_max, uint32_t *cbm_len)
++{
++    int rc;
++    DECLARE_SYSCTL;
++
++    sysctl.cmd = XEN_SYSCTL_psr_cat_op;
++    sysctl.u.psr_cat_op.cmd = XEN_SYSCTL_PSR_CAT_get_l3_info;
++    sysctl.u.psr_cat_op.target = socket;
++
++    rc = xc_sysctl(xch, &sysctl);
++    if ( !rc )
++    {
++        *cos_max = sysctl.u.psr_cat_op.u.l3_info.cos_max;
++        *cbm_len = sysctl.u.psr_cat_op.u.l3_info.cbm_len;
++    }
++
++    return rc;
++}
+ 
+ /*
+  * Local variables:
+diff --git a/tools/libxl/libxl.h b/tools/libxl/libxl.h
+index 5eec092..3800738 100644
+--- a/tools/libxl/libxl.h
++++ b/tools/libxl/libxl.h
+@@ -718,6 +718,13 @@ void libxl_mac_copy(libxl_ctx *ctx, libxl_mac *dst, libxl_mac *src);
+  * If this is defined, the Memory Bandwidth Monitoring feature is supported.
+  */
+ #define LIBXL_HAVE_PSR_MBM 1
++
++/*
++ * LIBXL_HAVE_PSR_CAT
++ *
++ * If this is defined, the Cache Allocation Technology feature is supported.
++ */
++#define LIBXL_HAVE_PSR_CAT 1
+ #endif
+ 
+ typedef char **libxl_string_list;
+@@ -1513,6 +1520,25 @@ int libxl_psr_cmt_get_sample(libxl_ctx *ctx,
+                              uint64_t *tsc_r);
+ #endif
+ 
++#ifdef LIBXL_HAVE_PSR_CAT
++
++#define LIBXL_PSR_TARGET_ALL (~0U)
++int libxl_psr_cat_set_cbm(libxl_ctx *ctx, uint32_t domid,
++                          libxl_psr_cbm_type type, uint32_t target,
++                          uint64_t cbm);
++int libxl_psr_cat_get_cbm(libxl_ctx *ctx, uint32_t domid,
++                          libxl_psr_cbm_type type, uint32_t target,
++                          uint64_t *cbm_r);
++
++/*
++ * On success, the function returns an array of elements in 'info',
++ * and the length in 'nr'. 'info' is from malloc so it must be freed
++ * by the caller.
++ */
++int libxl_psr_cat_get_l3_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
++                              uint32_t *nr);
++#endif
++
+ /* misc */
+ 
+ /* Each of these sets or clears the flag according to whether the
+diff --git a/tools/libxl/libxl_psr.c b/tools/libxl/libxl_psr.c
+index 3e1c792..ac26876 100644
+--- a/tools/libxl/libxl_psr.c
++++ b/tools/libxl/libxl_psr.c
+@@ -19,14 +19,37 @@
+ 
+ #define IA32_QM_CTR_ERROR_MASK         (0x3ul << 62)
+ 
+-static void libxl__psr_cmt_log_err_msg(libxl__gc *gc, int err)
++static void libxl__psr_log_err_msg(libxl__gc *gc, int err)
+ {
+     char *msg;
+ 
+     switch (err) {
+     case ENOSYS:
++    case EOPNOTSUPP:
+         msg = "unsupported operation";
+         break;
++    case ESRCH:
++        msg = "invalid domain ID";
++        break;
++    case EBADSLT:
++        msg = "socket is not supported";
++        break;
++    case EFAULT:
++        msg = "failed to exchange data with Xen";
++        break;
++    default:
++        msg = "unknown error";
++        break;
++    }
++
++    LOGE(ERROR, "%s", msg);
++}
++
++static void libxl__psr_cmt_log_err_msg(libxl__gc *gc, int err)
++{
++    char *msg;
++
++    switch (err) {
+     case ENODEV:
+         msg = "CMT is not supported in this system";
+         break;
+@@ -39,15 +62,35 @@ static void libxl__psr_cmt_log_err_msg(libxl__gc *gc, int err)
+     case EUSERS:
+         msg = "no free RMID available";
+         break;
+-    case ESRCH:
+-        msg = "invalid domain ID";
++    default:
++        libxl__psr_log_err_msg(gc, err);
++        return;
++    }
++
++    LOGE(ERROR, "%s", msg);
++}
++
++static void libxl__psr_cat_log_err_msg(libxl__gc *gc, int err)
++{
++    char *msg;
++
++    switch (err) {
++    case ENODEV:
++        msg = "CAT is not supported in this system";
+         break;
+-    case EFAULT:
+-        msg = "failed to exchange data with Xen";
++    case ENOENT:
++        msg = "CAT is not enabled on the socket";
+         break;
+-    default:
+-        msg = "unknown error";
++    case EUSERS:
++        msg = "no free COS available";
++        break;
++    case EEXIST:
++        msg = "The same CBM is already set to this domain";
+         break;
++
++    default:
++        libxl__psr_log_err_msg(gc, err);
++        return;
+     }
+ 
+     LOGE(ERROR, "%s", msg);
+@@ -73,6 +116,24 @@ static int libxl__pick_socket_cpu(libxl__gc *gc, uint32_t socketid)
+     return cpu;
+ }
+ 
++static int libxl__count_physical_sockets(libxl__gc *gc, uint32_t *sockets)
++{
++    int rc;
++    libxl_physinfo info;
++
++    libxl_physinfo_init(&info);
++
++    rc = libxl_get_physinfo(CTX, &info);
++    if (rc)
++        return rc;
++
++    *sockets = info.nr_cpus / info.threads_per_core
++                            / info.cores_per_socket;
++
++    libxl_physinfo_dispose(&info);
++    return 0;
++}
++
+ int libxl_psr_cmt_attach(libxl_ctx *ctx, uint32_t domid)
+ {
+     GC_INIT(ctx);
+@@ -247,6 +308,99 @@ out:
+     return rc;
+ }
+ 
++int libxl_psr_cat_set_cbm(libxl_ctx *ctx, uint32_t domid,
++                          libxl_psr_cbm_type type, uint32_t target,
++                          uint64_t cbm)
++{
++    GC_INIT(ctx);
++    int rc;
++    uint32_t i, nr_sockets;
++
++    if (target != LIBXL_PSR_TARGET_ALL) {
++        rc = xc_psr_cat_set_domain_data(ctx->xch, domid, type, target, cbm);
++        if (rc < 0) {
++            libxl__psr_cat_log_err_msg(gc, errno);
++            rc = ERROR_FAIL;
++        }
++    } else {
++        rc = libxl__count_physical_sockets(gc, &nr_sockets);
++        if (rc) {
++            LOGE(ERROR, "failed to get system socket count");
++            rc = ERROR_FAIL;
++            goto out;
++        }
++        for (i = 0; i < nr_sockets; i++) {
++            rc = xc_psr_cat_set_domain_data(ctx->xch, domid, type, i, cbm);
++            if (rc < 0) {
++                libxl__psr_cat_log_err_msg(gc, errno);
++                rc = ERROR_FAIL;
++                goto out;
++            }
++        }
++    }
++
++out:
++    GC_FREE;
++    return rc;
++}
++
++int libxl_psr_cat_get_cbm(libxl_ctx *ctx, uint32_t domid,
++                          libxl_psr_cbm_type type, uint32_t target,
++                          uint64_t *cbm_r)
++{
++    GC_INIT(ctx);
++    int rc;
++
++    rc = xc_psr_cat_get_domain_data(ctx->xch, domid, type, target, cbm_r);
++    if (rc < 0) {
++        libxl__psr_cat_log_err_msg(gc, errno);
++        rc = ERROR_FAIL;
++    }
++
++    GC_FREE;
++    return rc;
++}
++
++int libxl_psr_cat_get_l3_info(libxl_ctx *ctx, libxl_psr_cat_info **info,
++                              uint32_t *nr)
++{
++    GC_INIT(ctx);
++    int rc;
++    uint32_t i, nr_sockets;
++    libxl_psr_cat_info *ptr;
++
++    rc = libxl__count_physical_sockets(gc, &nr_sockets);
++    if (rc) {
++        LOGE(ERROR, "failed to get system socket count");
++        rc = ERROR_FAIL;
++        goto out;
++    }
++
++    ptr = malloc(nr_sockets * sizeof(libxl_psr_cat_info));
++    if (!ptr) {
++        LOGE(ERROR, "failed to allocate cat info");
++        rc = ERROR_FAIL;
++        goto out;
++    }
++
++    for (i = 0; i < nr_sockets; i++) {
++        rc = xc_psr_cat_get_l3_info(ctx->xch, i, &ptr[i].cos_max,
++                                                 &ptr[i].cbm_len);
++        if (rc) {
++            libxl__psr_cat_log_err_msg(gc, errno);
++            rc = ERROR_FAIL;
++            free(ptr);
++            goto out;
++        }
++    }
++
++    *info = ptr;
++    *nr = nr_sockets;
++out:
++    GC_FREE;
++    return rc;
++}
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libxl/libxl_types.idl b/tools/libxl/libxl_types.idl
+index 47af340..a03ee04 100644
+--- a/tools/libxl/libxl_types.idl
++++ b/tools/libxl/libxl_types.idl
+@@ -699,3 +699,13 @@ libxl_psr_cmt_type = Enumeration("psr_cmt_type", [
+     (2, "TOTAL_MEM_COUNT"),
+     (3, "LOCAL_MEM_COUNT"),
+     ])
++
++libxl_psr_cbm_type = Enumeration("psr_cbm_type", [
++    (0, "UNKNOWN"),
++    (1, "L3_CBM"),
++    ])
++
++libxl_psr_cat_info = Struct("psr_cat_info", [
++    ("cos_max", uint32),
++    ("cbm_len", uint32),
++    ])
+diff --git a/tools/libxl/xl.h b/tools/libxl/xl.h
+index 5bc138c..85fa997 100644
+--- a/tools/libxl/xl.h
++++ b/tools/libxl/xl.h
+@@ -117,6 +117,10 @@ int main_psr_cmt_attach(int argc, char **argv);
+ int main_psr_cmt_detach(int argc, char **argv);
+ int main_psr_cmt_show(int argc, char **argv);
+ #endif
++#ifdef LIBXL_HAVE_PSR_CAT
++int main_psr_cat_cbm_set(int argc, char **argv);
++int main_psr_cat_show(int argc, char **argv);
++#endif
+ 
+ void help(const char *command);
+ 
+diff --git a/tools/libxl/xl_cmdimpl.c b/tools/libxl/xl_cmdimpl.c
+index 04faf98..0a5f436 100644
+--- a/tools/libxl/xl_cmdimpl.c
++++ b/tools/libxl/xl_cmdimpl.c
+@@ -8043,6 +8043,146 @@ int main_psr_cmt_show(int argc, char **argv)
+ }
+ #endif
+ 
++#ifdef LIBXL_HAVE_PSR_CAT
++static void psr_cat_print_one_domain_cbm(uint32_t domid, uint32_t socket)
++{
++    char *domain_name;
++    uint64_t cbm;
++
++    domain_name = libxl_domid_to_name(ctx, domid);
++    printf("%5d%25s", domid, domain_name);
++    free(domain_name);
++
++    if (!libxl_psr_cat_get_cbm(ctx, domid, LIBXL_PSR_CBM_TYPE_L3_CBM,
++                               socket, &cbm))
++         printf("%#16"PRIx64, cbm);
++
++    printf("\n");
++}
++
++static int psr_cat_print_domain_cbm(uint32_t domid, uint32_t socket)
++{
++    int i, nr_domains;
++    libxl_dominfo *list;
++
++    if (domid != INVALID_DOMID) {
++        psr_cat_print_one_domain_cbm(domid, socket);
++        return 0;
++    }
++
++    if (!(list = libxl_list_domain(ctx, &nr_domains))) {
++        fprintf(stderr, "Failed to get domain list for cbm display\n");
++        return -1;
++    }
++
++    for (i = 0; i < nr_domains; i++)
++        psr_cat_print_one_domain_cbm(list[i].domid, socket);
++    libxl_dominfo_list_free(list, nr_domains);
++
++    printf("\n");
++
++    return 0;
++}
++
++static int psr_cat_print_socket(uint32_t domid, uint32_t socket,
++                                libxl_psr_cat_info *info)
++{
++    uint32_t l3_cache_size;
++    int rc;
++
++    rc = libxl_psr_cmt_get_l3_cache_size(ctx, socket, &l3_cache_size);
++    if (rc) {
++        fprintf(stderr, "Failed to get l3 cache size for socket:%d\n", socket);
++        return -1;
++    }
++
++    /* Header */
++    printf("%-16s: %u\n", "Socket ID", socket);
++    printf("%-16s: %uKB\n", "L3 Cache", l3_cache_size);
++    printf("%-16s: %u\n", "Maximum COS", info->cos_max);
++    printf("%-16s: %u\n", "CBM length", info->cbm_len);
++    printf("%-16s: %#"PRIx64"\n", "Default CBM", (1ul << info->cbm_len) - 1);
++    printf("%5s%25s%16s\n", "ID", "NAME", "CBM");
++
++    return psr_cat_print_domain_cbm(domid, socket);
++}
++
++static int psr_cat_show(uint32_t domid)
++{
++    uint32_t socket, nr_sockets;
++    int rc;
++    libxl_psr_cat_info *info;
++
++    rc = libxl_psr_cat_get_l3_info(ctx, &info, &nr_sockets);
++    if (rc) {
++        fprintf(stderr, "Failed to get cat info\n");
++        return rc;
++    }
++
++    for (socket = 0; socket < nr_sockets; socket++) {
++        rc = psr_cat_print_socket(domid, socket, info + socket);
++        if (rc)
++            goto out;
++    }
++
++out:
++    free(info);
++    return rc;
++}
++
++int main_psr_cat_cbm_set(int argc, char **argv)
++{
++    uint32_t domid;
++    uint32_t target = LIBXL_PSR_TARGET_ALL;
++    libxl_psr_cbm_type type = LIBXL_PSR_CBM_TYPE_L3_CBM;
++    uint64_t cbm;
++    char *ptr;
++    int opt = 0;
++
++    static struct option opts[] = {
++        {"socket", 0, 0, 's'},
++        {0, 0, 0, 0}
++    };
++
++    SWITCH_FOREACH_OPT(opt, "s", opts, "psr-cat-cbm-set", 1) {
++    case 's':
++        target = strtol(optarg, NULL, 10);
++        break;
++    }
++
++    domid = find_domain(argv[optind]);
++    ptr = argv[optind + 1];
++    if (strlen(ptr) > 2 && ptr[0] == '0' && ptr[1] == 'x')
++        cbm = strtoll(ptr, NULL , 16);
++    else
++        cbm = strtoll(ptr, NULL , 10);
++
++    return libxl_psr_cat_set_cbm(ctx, domid, type, target, cbm);
++}
++
++int main_psr_cat_show(int argc, char **argv)
++{
++    int opt;
++    uint32_t domid;
++
++    SWITCH_FOREACH_OPT(opt, "", NULL, "psr-cat-show", 0) {
++        /* No options */
++    }
++
++    if (optind >= argc)
++        domid = INVALID_DOMID;
++    else if (optind == argc - 1)
++        domid = find_domain(argv[optind]);
++    else {
++        help("psr-cat-show");
++        return 2;
++    }
++
++    return psr_cat_show(domid);
++}
++
++#endif
++
+ /*
+  * Local variables:
+  * mode: C
+diff --git a/tools/libxl/xl_cmdtable.c b/tools/libxl/xl_cmdtable.c
+index 22ab63b..c83a60b 100644
+--- a/tools/libxl/xl_cmdtable.c
++++ b/tools/libxl/xl_cmdtable.c
+@@ -542,6 +542,18 @@ struct cmd_spec cmd_table[] = {
+       "\"total_mem_bandwidth\":     Show total memory bandwidth(KB/s)\n"
+       "\"local_mem_bandwidth\":     Show local memory bandwidth(KB/s)\n",
+     },
++    { "psr-cat-cbm-set",
++      &main_psr_cat_cbm_set, 0, 1,
++      "Set cache capacity bitmasks(CBM) for a domain",
++      "-s <socket>       Specify the socket to process, otherwise all sockets are processed\n"
++      "<Domain> <CBM>",
++    },
++    { "psr-cat-show",
++      &main_psr_cat_show, 0, 1,
++      "Show Cache Allocation Technology information",
++      "<Domain>",
++    },
++
+ #endif
+ };
+ 
+-- 
+1.9.1
+

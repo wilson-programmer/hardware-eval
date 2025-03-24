@@ -1,0 +1,104 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Chao Peng <chao.p.peng@linux.intel.com>
+Subject: [PATCH v4 01/12] x86: clean up psr boot parameter
+	parsing
+Date: Thu,  9 Apr 2015 17:18:14 +0800
+Message-ID: <1428571105-3604-2-git-send-email-chao.p.peng@linux.intel.com>
+References: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1428571105-3604-1-git-send-email-chao.p.peng@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xen.org
+Cc: keir@xen.org, Ian.Campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, Ian.Jackson@eu.citrix.com, will.auld@intel.com, JBeulich@suse.com, wei.liu2@citrix.com, dgdegra@tycho.nsa.gov
+List-Id: xen-devel@lists.xenproject.org
+
+Change type of opt_psr from bool to int so more psr features can fit.
+
+Introduce a new routine to parse bool parameter so that both cmt and
+future psr features like cat can use it.
+
+Signed-off-by: Chao Peng <chao.p.peng@linux.intel.com>
+---
+Changes in v4:
+* change 'int bit' to 'unsigned int mask'.
+* Remove printk that will never be called.
+Changes in v3:
+* Set "off" value explicity if requested.
+---
+ xen/arch/x86/psr.c | 39 +++++++++++++++++++++++----------------
+ 1 file changed, 23 insertions(+), 16 deletions(-)
+
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 2ef83df..344de3c 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -26,11 +26,30 @@ struct psr_assoc {
+ };
+ 
+ struct psr_cmt *__read_mostly psr_cmt;
+-static bool_t __initdata opt_psr;
++static unsigned int __initdata opt_psr;
+ static unsigned int __initdata opt_rmid_max = 255;
+ static uint64_t rmid_mask;
+ static DEFINE_PER_CPU(struct psr_assoc, psr_assoc);
+ 
++static void __init parse_psr_bool(char *s, char *value, char *feature,
++                                  unsigned int mask)
++{
++    if ( !strcmp(s, feature) )
++    {
++        if ( !value )
++            opt_psr |= mask;
++        else
++        {
++            int val_int = parse_bool(value);
++
++            if ( val_int == 0 )
++                opt_psr &= ~mask;
++            else if ( val_int == 1 )
++                opt_psr |= mask;
++        }
++    }
++}
++
+ static void __init parse_psr_param(char *s)
+ {
+     char *ss, *val_str;
+@@ -44,21 +63,9 @@ static void __init parse_psr_param(char *s)
+         if ( val_str )
+             *val_str++ = '\0';
+ 
+-        if ( !strcmp(s, "cmt") )
+-        {
+-            if ( !val_str )
+-                opt_psr |= PSR_CMT;
+-            else
+-            {
+-                int val_int = parse_bool(val_str);
+-                if ( val_int == 1 )
+-                    opt_psr |= PSR_CMT;
+-                else if ( val_int != 0 )
+-                    printk("PSR: unknown cmt value: %s - CMT disabled!\n",
+-                                    val_str);
+-            }
+-        }
+-        else if ( val_str && !strcmp(s, "rmid_max") )
++        parse_psr_bool(s, val_str, "cmt", PSR_CMT);
++
++        if ( val_str && !strcmp(s, "rmid_max") )
+             opt_rmid_max = simple_strtoul(val_str, NULL, 0);
+ 
+         s = ss + 1;
+-- 
+1.9.1
+

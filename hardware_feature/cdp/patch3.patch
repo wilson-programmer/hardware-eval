@@ -1,0 +1,327 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: He Chen <he.chen@linux.intel.com>
+Subject: [PATCH 3/5] x86: add domctl cmd to set/get CDP
+	code/data CBM
+Date: Wed,  2 Sep 2015 16:28:00 +0800
+Message-ID: <1441182482-7688-4-git-send-email-he.chen@linux.intel.com>
+References: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+Received: from mail6.bemta3.messagelabs.com ([195.245.230.39])
+	by lists.xen.org with esmtp (Exim 4.72)
+	(envelope-from <he.chen@linux.intel.com>) id 1ZX3Pg-0003mo-Uj
+	for xen-devel@lists.xenproject.org; Wed, 02 Sep 2015 08:29:01 +0000
+In-Reply-To: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xenproject.org
+Cc: wei.liu2@citrix.com, ian.campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, He Chen <he.chen@linux.intel.com>, ian.jackson@eu.citrix.com, jbeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+CDP extends CAT and provides the capacity to control L3 code & data
+cache. With CDP, one COS correspond to two CMBs(code & data). cbm_type
+is added to support distinguish different CBM operation. Besides, new
+domctl cmds are introdunced to support set/get CDP CBM. Some CAT
+functions to operation CBMs are extended to support CDP.
+
+Signed-off-by: He Chen <he.chen@linux.intel.com>
+---
+ xen/arch/x86/domctl.c       |  33 +++++++++-
+ xen/arch/x86/psr.c          | 142 ++++++++++++++++++++++++++++++++------------
+ xen/include/asm-x86/psr.h   |  12 +++-
+ xen/include/public/domctl.h |   4 ++
+ 4 files changed, 150 insertions(+), 41 deletions(-)
+
+diff --git a/xen/arch/x86/domctl.c b/xen/arch/x86/domctl.c
+index bf62a88..c2d771e 100644
+--- a/xen/arch/x86/domctl.c
++++ b/xen/arch/x86/domctl.c
+@@ -1167,12 +1167,41 @@ long arch_do_domctl(
+         {
+         case XEN_DOMCTL_PSR_CAT_OP_SET_L3_CBM:
+             ret = psr_set_l3_cbm(d, domctl->u.psr_cat_op.target,
+-                                 domctl->u.psr_cat_op.data);
++                                 domctl->u.psr_cat_op.data,
++                                 PSR_CBM_TYPE_L3);
+             break;
+ 
++        case XEN_DOMCTL_PSR_CAT_OP_SET_L3_CODE:
++            ret = psr_set_l3_cbm(d, domctl->u.psr_cat_op.target,
++                                 domctl->u.psr_cat_op.data,
++                                 PSR_CBM_TYPE_L3_CODE);
++            break;
++
++        case XEN_DOMCTL_PSR_CAT_OP_SET_L3_DATA:
++            ret = psr_set_l3_cbm(d, domctl->u.psr_cat_op.target,
++                                 domctl->u.psr_cat_op.data,
++                                 PSR_CBM_TYPE_L3_DATA);
++            break;
++
++
+         case XEN_DOMCTL_PSR_CAT_OP_GET_L3_CBM:
+             ret = psr_get_l3_cbm(d, domctl->u.psr_cat_op.target,
+-                                 &domctl->u.psr_cat_op.data);
++                                 &domctl->u.psr_cat_op.data,
++                                 PSR_CBM_TYPE_L3);
++            copyback = 1;
++            break;
++
++        case XEN_DOMCTL_PSR_CAT_OP_GET_L3_CODE:
++            ret = psr_get_l3_cbm(d, domctl->u.psr_cat_op.target,
++                                 &domctl->u.psr_cat_op.data,
++                                 PSR_CBM_TYPE_L3_CODE);
++            copyback = 1;
++            break;
++
++        case XEN_DOMCTL_PSR_CAT_OP_GET_L3_DATA:
++            ret = psr_get_l3_cbm(d, domctl->u.psr_cat_op.target,
++                                 &domctl->u.psr_cat_op.data,
++                                 PSR_CBM_TYPE_L3_DATA);
+             copyback = 1;
+             break;
+ 
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index 26596dd..8e92d24 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -285,14 +285,20 @@ int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
+     return 0;
+ }
+ 
+-int psr_get_l3_cbm(struct domain *d, unsigned int socket, uint64_t *cbm)
++int psr_get_l3_cbm(struct domain *d, unsigned int socket,
++                   uint64_t *cbm, enum cbm_type type)
+ {
+     struct psr_cat_socket_info *info = get_cat_socket_info(socket);
+ 
+     if ( IS_ERR(info) )
+         return PTR_ERR(info);
+ 
+-    *cbm = info->cos_to_cbm[d->arch.psr_cos_ids[socket]].u.cbm;
++    if ( type == PSR_CBM_TYPE_L3 )
++        *cbm = info->cos_to_cbm[d->arch.psr_cos_ids[socket]].u.cbm;
++    else if ( type == PSR_CBM_TYPE_L3_CODE )
++        *cbm = info->cos_to_cbm[d->arch.psr_cos_ids[socket]].u.cdp.code;
++    else
++        *cbm = info->cos_to_cbm[d->arch.psr_cos_ids[socket]].u.cdp.data;
+ 
+     return 0;
+ }
+@@ -365,10 +371,51 @@ static int write_l3_cbm(unsigned int socket, unsigned int cos,
+     return 0;
+ }
+ 
+-int psr_set_l3_cbm(struct domain *d, unsigned int socket, uint64_t cbm)
++static int exist_same_cos(struct psr_cat_cbm *map, int cos_max,
++                          uint64_t cbm_code, uint64_t cbm_data, bool_t cdp_enabled)
++{
++    int cos;
++
++    if ( !cdp_enabled )
++    {
++        for ( cos = 0; cos <= cos_max; cos++ )
++            if ( map[cos].ref && map[cos].u.cbm == cbm_code )
++                return cos;
++    }
++    else
++    {
++        for ( cos = 0; cos <= cos_max; cos++ )
++            if ( map[cos].ref && map[cos].u.cdp.code == cbm_code &&
++                 map[cos].u.cdp.data == cbm_data )
++                return cos;
++    }
++
++    return -ENOENT;
++}
++
++static int pick_avail_cos(struct psr_cat_cbm *map, int cos_max, int old_cos)
++{
++    int cos;
++
++    /* If old cos is referred only by the domain, then use it. */
++    if ( map[old_cos].ref == 1 )
++        return old_cos;
++
++    /* Then we pick an unused one, never pick 0 */
++    for ( cos = 1; cos <= cos_max; cos++ )
++        if ( map[cos].ref == 0 )
++            return cos;
++
++    return -EOVERFLOW;
++}
++
++int psr_set_l3_cbm(struct domain *d, unsigned int socket,
++                   uint64_t cbm, enum cbm_type type)
+ {
+-    unsigned int old_cos, cos;
+-    struct psr_cat_cbm *map, *found = NULL;
++    unsigned int old_cos, cos_max;
++    int cos, ret, need_write = 1;
++    uint64_t cbm_data, cbm_code;
++    struct psr_cat_cbm *map;
+     struct psr_cat_socket_info *info = get_cat_socket_info(socket);
+ 
+     if ( IS_ERR(info) )
+@@ -377,53 +424,74 @@ int psr_set_l3_cbm(struct domain *d, unsigned int socket, uint64_t cbm)
+     if ( !psr_check_cbm(info->cbm_len, cbm) )
+         return -EINVAL;
+ 
++    cos_max = info->cos_max;
++    if ( info->cdp_enabled )
++        cos_max = cos_max / 2;
++
+     old_cos = d->arch.psr_cos_ids[socket];
+     map = info->cos_to_cbm;
+ 
+-    spin_lock(&info->cbm_lock);
+-
+-    for ( cos = 0; cos <= info->cos_max; cos++ )
++    switch(type)
+     {
+-        /* If still not found, then keep unused one. */
+-        if ( !found && cos != 0 && map[cos].ref == 0 )
+-            found = map + cos;
+-        else if ( map[cos].u.cbm == cbm )
+-        {
+-            if ( unlikely(cos == old_cos) )
+-            {
+-                ASSERT(cos == 0 || map[cos].ref != 0);
+-                spin_unlock(&info->cbm_lock);
+-                return 0;
+-            }
+-            found = map + cos;
++        case PSR_CBM_TYPE_L3:
++            cbm_code = cbm;
++            cbm_data = cbm;
+             break;
+-        }
++        case PSR_CBM_TYPE_L3_CODE:
++            cbm_code = cbm;
++            cbm_data = map[old_cos].u.cdp.data;
++            break;
++        case PSR_CBM_TYPE_L3_DATA:
++            cbm_code = map[old_cos].u.cdp.code;
++            cbm_data = cbm;
++            break;
++        default:
++            return -EINVAL;
+     }
+ 
+-    /* If old cos is referred only by the domain, then use it. */
+-    if ( !found && map[old_cos].ref == 1 )
+-        found = map + old_cos;
+-
+-    if ( !found )
++    spin_lock(&info->cbm_lock);
++    cos = exist_same_cos(map, cos_max, cbm_code, cbm_data, info->cdp_enabled);
++    if ( cos >= 0 )
+     {
+-        spin_unlock(&info->cbm_lock);
+-        return -EOVERFLOW;
++        if ( unlikely(cos == old_cos) )
++        {
++            spin_unlock(&info->cbm_lock);
++            return 0;
++        }
+     }
+-
+-    cos = found - map;
+-    if ( found->u.cbm != cbm )
++    else
+     {
+-        int ret = write_l3_cbm(socket, cos, cbm, 0, 0);
+-
+-        if ( ret )
++        cos = pick_avail_cos(map, cos_max, old_cos);
++        if ( cos < 0 )
+         {
+             spin_unlock(&info->cbm_lock);
+-            return ret;
++            return -EOVERFLOW;
++        }
++
++        /* We try to avoid writing MSR */
++        if ( info->cdp_enabled )
++        {
++            if ( map[cos].u.cdp.code == cbm_code &&
++                 map[cos].u.cdp.data == cbm_data )
++                need_write = 0;
++        }
++        else
++            need_write = map[cos].u.cbm == cbm_code ? 0 : 1;
++
++        if ( need_write )
++        {
++            ret = write_l3_cbm(socket, cos, cbm_code, cbm_data, info->cdp_enabled);
++            if ( ret )
++            {
++                spin_unlock(&info->cbm_lock);
++                return ret;
++            }
++            map[cos].u.cdp.code = cbm_code;
++            map[cos].u.cdp.data = cbm_data;
+         }
+-        found->u.cbm = cbm;
+     }
+ 
+-    found->ref++;
++    map[cos].ref++;
+     map[old_cos].ref--;
+     spin_unlock(&info->cbm_lock);
+ 
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index 2b79a92..3af4ac2 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -49,6 +49,12 @@ struct psr_cmt {
+     struct psr_cmt_l3 l3;
+ };
+ 
++enum cbm_type {
++    PSR_CBM_TYPE_L3         = 1,
++    PSR_CBM_TYPE_L3_CODE    = 2,
++    PSR_CBM_TYPE_L3_DATA    = 3,
++};
++
+ extern struct psr_cmt *psr_cmt;
+ 
+ static inline bool_t psr_cmt_enabled(void)
+@@ -62,8 +68,10 @@ void psr_ctxt_switch_to(struct domain *d);
+ 
+ int psr_get_cat_l3_info(unsigned int socket, uint32_t *cbm_len,
+                         uint32_t *cos_max, uint8_t *cdp_enabled);
+-int psr_get_l3_cbm(struct domain *d, unsigned int socket, uint64_t *cbm);
+-int psr_set_l3_cbm(struct domain *d, unsigned int socket, uint64_t cbm);
++int psr_get_l3_cbm(struct domain *d, unsigned int socket,
++                   uint64_t *cbm, enum cbm_type type);
++int psr_set_l3_cbm(struct domain *d, unsigned int socket,
++                   uint64_t cbm, enum cbm_type type);
+ 
+ int psr_domain_init(struct domain *d);
+ void psr_domain_free(struct domain *d);
+diff --git a/xen/include/public/domctl.h b/xen/include/public/domctl.h
+index 675f021..f438cae 100644
+--- a/xen/include/public/domctl.h
++++ b/xen/include/public/domctl.h
+@@ -1056,6 +1056,10 @@ DEFINE_XEN_GUEST_HANDLE(xen_domctl_monitor_op_t);
+ struct xen_domctl_psr_cat_op {
+ #define XEN_DOMCTL_PSR_CAT_OP_SET_L3_CBM     0
+ #define XEN_DOMCTL_PSR_CAT_OP_GET_L3_CBM     1
++#define XEN_DOMCTL_PSR_CAT_OP_SET_L3_CODE    2
++#define XEN_DOMCTL_PSR_CAT_OP_SET_L3_DATA    3
++#define XEN_DOMCTL_PSR_CAT_OP_GET_L3_CODE    4
++#define XEN_DOMCTL_PSR_CAT_OP_GET_L3_DATA    5
+     uint32_t cmd;       /* IN: XEN_DOMCTL_PSR_CAT_OP_* */
+     uint32_t target;    /* IN */
+     uint64_t data;      /* IN/OUT */
+-- 
+1.9.1
+

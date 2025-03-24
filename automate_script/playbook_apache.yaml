@@ -1,0 +1,43 @@
+---
+- name: "[RUN APACHE BENCH]"
+  hosts: all
+  tasks:
+          - name: "[Create apache_result directory]"
+            file:
+                    path: /home/wilson/apache_result
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Create apache_bench directory]"
+            file:
+                    path: /home/wilson/apache_bench
+                    state: directory
+                    mode: 0777
+                    owner: wilson
+            become: yes  
+
+          - name: "[Copy bench_apache.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/bench_apache.sh
+                    dest: /home/wilson/apache_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run bench_apache.sh]"
+            command: bash /home/wilson/apache_bench/bench_apache.sh
+            become: yes
+
+          - name: "[Copy save_apache_output.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/save_apache_output.sh
+                    dest: /home/wilson/apache_bench/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run save_apache_output.sh]"
+            command: bash /home/wilson/apache_bench/save_apache_output.sh
+            become: yes

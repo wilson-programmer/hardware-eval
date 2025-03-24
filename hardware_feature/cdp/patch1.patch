@@ -1,0 +1,103 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: He Chen <he.chen@linux.intel.com>
+Subject: [PATCH 1/5] x86: detect Intel CDP feature
+Date: Wed,  2 Sep 2015 16:27:58 +0800
+Message-ID: <1441182482-7688-2-git-send-email-he.chen@linux.intel.com>
+References: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+Received: from mail6.bemta5.messagelabs.com ([195.245.231.135])
+	by lists.xen.org with esmtp (Exim 4.72)
+	(envelope-from <he.chen@linux.intel.com>) id 1ZX3Pu-0003sh-QC
+	for xen-devel@lists.xenproject.org; Wed, 02 Sep 2015 08:29:14 +0000
+In-Reply-To: <1441182482-7688-1-git-send-email-he.chen@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: xen-devel@lists.xenproject.org
+Cc: wei.liu2@citrix.com, ian.campbell@citrix.com, stefano.stabellini@eu.citrix.com, andrew.cooper3@citrix.com, He Chen <he.chen@linux.intel.com>, ian.jackson@eu.citrix.com, jbeulich@suse.com, keir@xen.org
+List-Id: xen-devel@lists.xenproject.org
+
+Detect Intel Code/Data Prioritization(CDP) feature and store cpuid
+information for later use. CDP feature is based on CAT, note that all
+sockets in the platform must have CDP either enabled or disabled, not
+a mix. cdp_socket_avail saves CDP capability of every socket so that
+we can determine if CDP is supported in the platform.
+
+Signed-off-by: He Chen <he.chen@linux.intel.com>
+---
+ xen/arch/x86/psr.c        | 13 ++++++++++++-
+ xen/include/asm-x86/psr.h |  4 ++++
+ 2 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/xen/arch/x86/psr.c b/xen/arch/x86/psr.c
+index c0daa2e..b357816 100644
+--- a/xen/arch/x86/psr.c
++++ b/xen/arch/x86/psr.c
+@@ -43,6 +43,7 @@ struct psr_cmt *__read_mostly psr_cmt;
+ 
+ static unsigned long *__read_mostly cat_socket_enable;
+ static struct psr_cat_socket_info *__read_mostly cat_socket_info;
++static unsigned long *__read_mostly cdp_socket_avail;
+ 
+ static unsigned int __initdata opt_psr;
+ static unsigned int __initdata opt_rmid_max = 255;
+@@ -498,6 +499,13 @@ static void cat_cpu_init(void)
+         printk(XENLOG_INFO "CAT: enabled on socket %u, cos_max:%u, cbm_len:%u\n",
+                socket, info->cos_max, info->cbm_len);
+     }
++
++    if ( ecx & PSR_CAT_CDP_CAPABILITY )
++    {
++        set_bit(socket, cdp_socket_avail);
++        printk(XENLOG_INFO "CDP: available on socket %u\n",  socket);
++    }
++
+ }
+ 
+ static void cat_cpu_fini(unsigned int cpu)
+@@ -523,6 +531,8 @@ static void __init psr_cat_free(void)
+     cat_socket_enable = NULL;
+     xfree(cat_socket_info);
+     cat_socket_info = NULL;
++    xfree(cdp_socket_avail);
++    cdp_socket_avail = NULL;
+ }
+ 
+ static void __init init_psr_cat(void)
+@@ -535,8 +545,9 @@ static void __init init_psr_cat(void)
+ 
+     cat_socket_enable = xzalloc_array(unsigned long, BITS_TO_LONGS(nr_sockets));
+     cat_socket_info = xzalloc_array(struct psr_cat_socket_info, nr_sockets);
++    cdp_socket_avail = xzalloc_array(unsigned long, BITS_TO_LONGS(nr_sockets));
+ 
+-    if ( !cat_socket_enable || !cat_socket_info )
++    if ( !cat_socket_enable || !cat_socket_info || !cdp_socket_avail )
+         psr_cat_free();
+ }
+ 
+diff --git a/xen/include/asm-x86/psr.h b/xen/include/asm-x86/psr.h
+index 081750f..a6b83df 100644
+--- a/xen/include/asm-x86/psr.h
++++ b/xen/include/asm-x86/psr.h
+@@ -27,6 +27,10 @@
+ /* L3 Monitoring Features */
+ #define PSR_CMT_L3_OCCUPANCY           0x1
+ 
++/* CDP Capability */
++#define PSR_CAT_CDP_CAPABILITY       0x4
++
++
+ struct psr_cmt_l3 {
+     unsigned int features;
+     unsigned int upscaling_factor;
+-- 
+1.9.1
+

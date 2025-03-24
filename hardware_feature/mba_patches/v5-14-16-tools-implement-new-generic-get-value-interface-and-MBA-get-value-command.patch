@@ -1,0 +1,616 @@
+From patchwork Sat Sep 30 01:39:24 2017
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+X-Patchwork-Submitter: Yi Sun <yi.y.sun@linux.intel.com>
+X-Patchwork-Id: 9979011
+Return-Path: <xen-devel-bounces@lists.xen.org>
+Received: from mail.wl.linuxfoundation.org (pdx-wl-mail.web.codeaurora.org
+	[172.30.200.125])
+	by pdx-korg-patchwork.web.codeaurora.org (Postfix) with ESMTP id
+	A1F7B60311 for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:25 +0000 (UTC)
+Received: from mail.wl.linuxfoundation.org (localhost [127.0.0.1])
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTP id 8F6CF29592
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:25 +0000 (UTC)
+Received: by mail.wl.linuxfoundation.org (Postfix, from userid 486)
+	id 8417A29899; Sat, 30 Sep 2017 02:01:25 +0000 (UTC)
+X-Spam-Checker-Version: SpamAssassin 3.3.1 (2010-03-16) on
+	pdx-wl-mail.web.codeaurora.org
+X-Spam-Level: 
+X-Spam-Status: No, score=-4.2 required=2.0 tests=BAYES_00, RCVD_IN_DNSWL_MED
+	autolearn=ham version=3.3.1
+Received: from lists.xenproject.org (lists.xenproject.org [192.237.175.120])
+	(using TLSv1.2 with cipher AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by mail.wl.linuxfoundation.org (Postfix) with ESMTPS id 9CB1429592
+	for <patchwork-xen-devel@patchwork.kernel.org>;
+	Sat, 30 Sep 2017 02:01:24 +0000 (UTC)
+Received: from localhost ([127.0.0.1] helo=lists.xenproject.org)
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <xen-devel-bounces@lists.xen.org>)
+	id 1dy744-0004in-Dy; Sat, 30 Sep 2017 01:59:36 +0000
+Received: from mail6.bemta6.messagelabs.com ([193.109.254.103])
+	by lists.xenproject.org with esmtp (Exim 4.84_2)
+	(envelope-from <yi.y.sun@linux.intel.com>) id 1dy742-0004gW-R7
+	for xen-devel@lists.xenproject.org; Sat, 30 Sep 2017 01:59:35 +0000
+Received: from [85.158.143.35] by server-6.bemta-6.messagelabs.com id
+	B6/C0-03423-68AFEC95; Sat, 30 Sep 2017 01:59:34 +0000
+X-Brightmail-Tracker: H4sIAAAAAAAAA+NgFjrCIsWRWlGSWpSXmKPExsXS1taRotvy61y
+	kwdQlVhbft0xmcmD0OPzhCksAYxRrZl5SfkUCa8aro2wF5zoYK7Zf4GpgfBbfxcjJISRQIbGy
+	9SsLiC0hwCtxZNkMVgg7QOL5kU42iJoGRommeUEgNpuAusTjrz1MILaIgJLEvVWTgWwuDmaB7
+	YwSG24fYwdJCAukSMyatgysmUVAVeL4pg2MIDavgIfE3RtN7BAL5CROHpsMtowTKH6tpwlqmb
+	vElZa1UPWCEidnPgE6jgNogbrE+nlCIGFmAXmJ5q2zmScwCsxCUjULoWoWkqoFjMyrGNWLU4v
+	KUot0DfWSijLTM0pyEzNzdA0NzPRyU4uLE9NTcxKTivWS83M3MQLDkgEIdjDufO50iFGSg0lJ
+	lHf3z3ORQnxJ+SmVGYnFGfFFpTmpxYcYZTg4lCR4I0BygkWp6akVaZk5wAiBSUtw8CiJ8NqCp
+	HmLCxJzizPTIVKnGI05jm26/IeJo+Pm3T9MQix5+XmpUuK8BSClAiClGaV5cINgkXuJUVZKmJ
+	cR6DQhnoLUotzMElT5V4ziHIxKwrzuIFN4MvNK4Pa9AjqFCeiUyRPPgJxSkoiQkmpgnM3vdEQ
+	jtfASr+mP4/wCkgyJX9bPUztoKyznxH5OOr+Zv0OfUbBX/YvV4kmiUX0//iqtmDBD+aX/cs2c
+	2Sd+yJ+4t9DgPFflizOZpnejtYN1LrtKV7RPu+nSbjWH7cB+y2v6MoWf/gtVvzxuma7fePN+8
+	rIDOyuf9Mcf/dAsW5FWWfFAVdVaiaU4I9FQi7moOBEAiSYPSNcCAAA=
+X-Env-Sender: yi.y.sun@linux.intel.com
+X-Msg-Ref: server-13.tower-21.messagelabs.com!1506736764!79487342!5
+X-Originating-IP: [134.134.136.100]
+X-SpamReason: No, hits=0.0 required=7.0 tests=
+X-StarScan-Received: 
+X-StarScan-Version: 9.4.45; banners=-,-,-
+X-VirusChecked: Checked
+Received: (qmail 58981 invoked from network); 30 Sep 2017 01:59:32 -0000
+Received: from mga07.intel.com (HELO mga07.intel.com) (134.134.136.100)
+	by server-13.tower-21.messagelabs.com with DHE-RSA-AES256-GCM-SHA384
+	encrypted SMTP; 30 Sep 2017 01:59:32 -0000
+Received: from orsmga003.jf.intel.com ([10.7.209.27])
+	by orsmga105.jf.intel.com with ESMTP; 29 Sep 2017 18:59:31 -0700
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos; i="5.42,455,1500966000"; d="scan'208";
+	a="1020039123"
+Received: from vmmmba-s2600wft.bj.intel.com ([10.240.193.75])
+	by orsmga003.jf.intel.com with ESMTP; 29 Sep 2017 18:59:30 -0700
+From: Yi Sun <yi.y.sun@linux.intel.com>
+To: xen-devel@lists.xenproject.org
+Date: Sat, 30 Sep 2017 09:39:24 +0800
+Message-Id: <1506735566-5706-15-git-send-email-yi.y.sun@linux.intel.com>
+X-Mailer: git-send-email 1.9.1
+In-Reply-To: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+References: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com>
+MIME-Version: 1.0
+Cc: Ian Jackson <ian.jackson@eu.citrix.com>,
+	Yi Sun <yi.y.sun@linux.intel.com>,
+	Chao Peng <chao.p.peng@linux.intel.com>,
+	=?UTF-8?q?Roger=20Pau=20Monn=C3=A9?= <roger.pau@citrix.com>
+Subject: [Xen-devel] [PATCH v5 14/16] tools: implement new generic get value
+	interface and MBA get value command
+X-BeenThere: xen-devel@lists.xen.org
+X-Mailman-Version: 2.1.18
+Precedence: list
+List-Id: Xen developer discussion <xen-devel.lists.xen.org>
+List-Unsubscribe: <https://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <https://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Errors-To: xen-devel-bounces@lists.xen.org
+Sender: "Xen-devel" <xen-devel-bounces@lists.xen.org>
+X-Virus-Scanned: ClamAV using ClamSMTP
+
+This patch implements generic get value interfaces in libxc and libxl.
+It also refactors the get value flow in xl to make it be suitable for all
+allocation features. Based on that, a new MBA get value command is added in xl.
+
+Signed-off-by: Yi Sun <yi.y.sun@linux.intel.com>
+Acked-by: Wei Liu <wei.liu2@citrix.com>
+Reviewed-by: Roger Pau Monné <roger.pau@citrix.com>
+---
+CC: Ian Jackson <ian.jackson@eu.citrix.com>
+CC: Roger Pau Monné <roger.pau@citrix.com>
+CC: Chao Peng <chao.p.peng@linux.intel.com>
+
+v5:
+    - start a newline for "CDP" because it exceeds 80 characters.
+      (suggested by Roger Pau Monné)
+    - remove a duplicated ';'.
+      (suggested by Roger Pau Monné)
+    - remove a extra newline.
+      (suggested by Roger Pau Monné)
+    - correct words in log message.
+      (suggested by Roger Pau Monné)
+v4:
+    - use designated initializers for 'feat_name[]'.
+      (suggested by Roger Pau Monné)
+    - use LOG in 'libxl__psr_alloc_log_err_msg'.
+      (suggested by Roger Pau Monné)
+v3:
+    - replace 'libxl_psr_cbm_type' to 'libxl_psr_type' in newly defined
+      interfaces.
+      (suggested by Roger Pau Monné)
+v2:
+    - change 'CAT_INFO'/'MBA_INFO' to 'CAT'/'MBA'. The related structure names
+      are changed too.
+      (suggested by Chao Peng)
+---
+ tools/libxc/include/xenctrl.h |   7 +-
+ tools/libxc/xc_psr.c          |   9 +-
+ tools/libxl/libxl_psr.c       |  58 ++++++++-----
+ tools/xl/xl.h                 |   1 +
+ tools/xl/xl_cmdtable.c        |   5 ++
+ tools/xl/xl_psr.c             | 186 ++++++++++++++++++++++++++++++------------
+ 6 files changed, 184 insertions(+), 82 deletions(-)
+
+diff --git a/tools/libxc/include/xenctrl.h b/tools/libxc/include/xenctrl.h
+index 1953950..0629a25 100644
+--- a/tools/libxc/include/xenctrl.h
++++ b/tools/libxc/include/xenctrl.h
+@@ -2456,6 +2456,7 @@ enum xc_psr_type {
+     XC_PSR_CAT_L3_CBM_CODE = 2,
+     XC_PSR_CAT_L3_CBM_DATA = 3,
+     XC_PSR_CAT_L2_CBM      = 4,
++    XC_PSR_MBA_THRTL       = 5,
+ };
+ typedef enum xc_psr_type xc_psr_type;
+ 
+@@ -2499,9 +2500,9 @@ int xc_psr_cmt_enabled(xc_interface *xch);
+ int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
+                                xc_psr_type type, uint32_t target,
+                                uint64_t data);
+-int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
+-                               xc_psr_type type, uint32_t target,
+-                               uint64_t *data);
++int xc_psr_get_domain_data(xc_interface *xch, uint32_t domid,
++                           xc_psr_type type, uint32_t target,
++                           uint64_t *data);
+ int xc_psr_get_hw_info(xc_interface *xch, uint32_t socket,
+                        xc_psr_feat_type type, xc_psr_hw_info *hw_info);
+ 
+diff --git a/tools/libxc/xc_psr.c b/tools/libxc/xc_psr.c
+index 7d994e9..b001664 100644
+--- a/tools/libxc/xc_psr.c
++++ b/tools/libxc/xc_psr.c
+@@ -283,9 +283,9 @@ int xc_psr_cat_set_domain_data(xc_interface *xch, uint32_t domid,
+     return do_domctl(xch, &domctl);
+ }
+ 
+-int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
+-                               xc_psr_type type, uint32_t target,
+-                               uint64_t *data)
++int xc_psr_get_domain_data(xc_interface *xch, uint32_t domid,
++                           xc_psr_type type, uint32_t target,
++                           uint64_t *data)
+ {
+     int rc;
+     DECLARE_DOMCTL;
+@@ -305,6 +305,9 @@ int xc_psr_cat_get_domain_data(xc_interface *xch, uint32_t domid,
+     case XC_PSR_CAT_L2_CBM:
+         cmd = XEN_DOMCTL_PSR_GET_L2_CBM;
+         break;
++    case XC_PSR_MBA_THRTL:
++        cmd = XEN_DOMCTL_PSR_GET_MBA_THRTL;
++        break;
+     default:
+         errno = EINVAL;
+         return -1;
+diff --git a/tools/libxl/libxl_psr.c b/tools/libxl/libxl_psr.c
+index 6c87105..9c47d34 100644
+--- a/tools/libxl/libxl_psr.c
++++ b/tools/libxl/libxl_psr.c
+@@ -71,16 +71,30 @@ static void libxl__psr_cmt_log_err_msg(libxl__gc *gc, int err)
+     LOGE(ERROR, "%s", msg);
+ }
+ 
+-static void libxl__psr_cat_log_err_msg(libxl__gc *gc, int err)
++static void libxl__psr_alloc_log_err_msg(libxl__gc *gc,
++                                         int err,
++                                         libxl_psr_type type)
+ {
++    /*
++     * Index is 'libxl_psr_type' so we set two 'CDP' to correspond to
++     * DATA and CODE.
++     */
++    const char * const feat_name[] = {
++        [LIBXL_PSR_CBM_TYPE_UNKNOWN] = "UNKNOWN",
++        [LIBXL_PSR_CBM_TYPE_L3_CBM] = "L3 CAT",
++        [LIBXL_PSR_CBM_TYPE_L3_CBM_CODE...LIBXL_PSR_CBM_TYPE_L3_CBM_DATA] =
++                                      "CDP",
++        [LIBXL_PSR_CBM_TYPE_L2_CBM] = "L2 CAT",
++        [LIBXL_PSR_CBM_TYPE_MBA_THRTL] = "MBA",
++    };
+     char *msg;
+ 
+     switch (err) {
+     case ENODEV:
+-        msg = "CAT is not supported in this system";
++        msg = "is not supported in this system";
+         break;
+     case ENOENT:
+-        msg = "CAT is not enabled on the socket";
++        msg = "is not enabled on the socket";
+         break;
+     case EOVERFLOW:
+         msg = "no free COS available";
+@@ -106,7 +120,7 @@ static void libxl__psr_cat_log_err_msg(libxl__gc *gc, int err)
+         return;
+     }
+ 
+-    LOGE(ERROR, "%s", msg);
++    LOG(ERROR, "%s: %s", feat_name[type], msg);
+ }
+ 
+ static int libxl__pick_socket_cpu(libxl__gc *gc, uint32_t socketid)
+@@ -303,10 +317,10 @@ out:
+     return rc;
+ }
+ 
+-static inline xc_psr_type libxl__psr_cbm_type_to_libxc_psr_type(
+-    libxl_psr_cbm_type type)
++static inline xc_psr_type libxl__psr_type_to_libxc_psr_type(
++    libxl_psr_type type)
+ {
+-    BUILD_BUG_ON(sizeof(libxl_psr_cbm_type) != sizeof(xc_psr_type));
++    BUILD_BUG_ON(sizeof(libxl_psr_type) != sizeof(xc_psr_type));
+     return (xc_psr_type)type;
+ }
+ 
+@@ -325,14 +339,14 @@ int libxl_psr_cat_set_cbm(libxl_ctx *ctx, uint32_t domid,
+     }
+ 
+     libxl_for_each_set_bit(socketid, *target_map) {
+-        xc_psr_type xc_type = libxl__psr_cbm_type_to_libxc_psr_type(type);
++        xc_psr_type xc_type = libxl__psr_type_to_libxc_psr_type(type);
+ 
+         if (socketid >= nr_sockets)
+             break;
+ 
+         if (xc_psr_cat_set_domain_data(ctx->xch, domid, xc_type,
+                                        socketid, cbm)) {
+-            libxl__psr_cat_log_err_msg(gc, errno);
++            libxl__psr_alloc_log_err_msg(gc, errno, type);
+             rc = ERROR_FAIL;
+         }
+     }
+@@ -346,18 +360,7 @@ int libxl_psr_cat_get_cbm(libxl_ctx *ctx, uint32_t domid,
+                           libxl_psr_cbm_type type, uint32_t target,
+                           uint64_t *cbm_r)
+ {
+-    GC_INIT(ctx);
+-    int rc = 0;
+-    xc_psr_type xc_type = libxl__psr_cbm_type_to_libxc_psr_type(type);
+-
+-    if (xc_psr_cat_get_domain_data(ctx->xch, domid, xc_type,
+-                                   target, cbm_r)) {
+-        libxl__psr_cat_log_err_msg(gc, errno);
+-        rc = ERROR_FAIL;
+-    }
+-
+-    GC_FREE;
+-    return rc;
++    return libxl_psr_get_val(ctx, domid, type, target, cbm_r);
+ }
+ 
+ static xc_psr_feat_type libxl__feat_type_to_libxc_feat_type(
+@@ -455,7 +458,18 @@ int libxl_psr_get_val(libxl_ctx *ctx, uint32_t domid,
+                       libxl_psr_type type, unsigned int target,
+                       uint64_t *val)
+ {
+-    return ERROR_FAIL;
++    GC_INIT(ctx);
++    int rc = 0;
++    xc_psr_type xc_type = libxl__psr_type_to_libxc_psr_type(type);
++
++    if (xc_psr_get_domain_data(ctx->xch, domid, xc_type,
++                               target, val)) {
++        libxl__psr_alloc_log_err_msg(gc, errno, type);
++        rc = ERROR_FAIL;
++    }
++
++    GC_FREE;
++    return rc;
+ }
+ 
+ static void libxl__xc_hw_info_to_libxl_hw_info(
+diff --git a/tools/xl/xl.h b/tools/xl/xl.h
+index 01c2af6..464831e 100644
+--- a/tools/xl/xl.h
++++ b/tools/xl/xl.h
+@@ -205,6 +205,7 @@ int main_psr_cmt_detach(int argc, char **argv);
+ int main_psr_cmt_show(int argc, char **argv);
+ int main_psr_cat_cbm_set(int argc, char **argv);
+ int main_psr_cat_show(int argc, char **argv);
++int main_psr_mba_show(int argc, char **argv);
+ #endif
+ int main_qemu_monitor_command(int argc, char **argv);
+ 
+diff --git a/tools/xl/xl_cmdtable.c b/tools/xl/xl_cmdtable.c
+index a1679e9..3136d70 100644
+--- a/tools/xl/xl_cmdtable.c
++++ b/tools/xl/xl_cmdtable.c
+@@ -565,6 +565,11 @@ struct cmd_spec cmd_table[] = {
+       "[options] <Domain>",
+       "-l <level>        Specify the cache level to process, otherwise L3 cache is processed\n"
+     },
++    { "psr-mba-show",
++      &main_psr_mba_show, 0, 1,
++      "Show Memory Bandwidth Allocation information",
++      "<Domain>",
++    },
+ #endif
+     { "usbctrl-attach",
+       &main_usbctrl_attach, 0, 1,
+diff --git a/tools/xl/xl_psr.c b/tools/xl/xl_psr.c
+index ab47d96..4fed71e 100644
+--- a/tools/xl/xl_psr.c
++++ b/tools/xl/xl_psr.c
+@@ -327,19 +327,27 @@ out:
+     return rc;
+ }
+ 
+-static void psr_cat_print_one_domain_cbm_type(uint32_t domid, uint32_t socketid,
+-                                              libxl_psr_cbm_type type)
++static void psr_print_one_domain_val_type(uint32_t domid,
++                                          libxl_psr_hw_info *info,
++                                          libxl_psr_type type)
+ {
+-    uint64_t cbm;
++    uint64_t val;
+ 
+-    if (!libxl_psr_cat_get_cbm(ctx, domid, type, socketid, &cbm))
+-        printf("%#16"PRIx64, cbm);
++    if (!libxl_psr_get_val(ctx, domid, type, info->id, &val))
++    {
++        if (type == LIBXL_PSR_CBM_TYPE_MBA_THRTL && info->u.mba.linear)
++            printf("%16"PRIu64, val);
++        else
++            printf("%#16"PRIx64, val);
++    }
+     else
+         printf("%16s", "error");
+ }
+ 
+-static void psr_cat_print_one_domain_cbm(uint32_t domid, uint32_t socketid,
+-                                         bool cdp_enabled, unsigned int lvl)
++static void psr_print_one_domain_val(uint32_t domid,
++                                     libxl_psr_hw_info *info,
++                                     libxl_psr_feat_type type,
++                                     unsigned int lvl)
+ {
+     char *domain_name;
+ 
+@@ -347,106 +355,155 @@ static void psr_cat_print_one_domain_cbm(uint32_t domid, uint32_t socketid,
+     printf("%5d%25s", domid, domain_name);
+     free(domain_name);
+ 
+-    switch (lvl) {
+-    case 3:
+-        if (!cdp_enabled) {
+-            psr_cat_print_one_domain_cbm_type(domid, socketid,
++    switch (type) {
++    case LIBXL_PSR_FEAT_TYPE_CAT:
++        switch (lvl) {
++        case 3:
++            if (!info->u.cat.cdp_enabled) {
++                psr_print_one_domain_val_type(domid, info,
+                                               LIBXL_PSR_CBM_TYPE_L3_CBM);
+-        } else {
+-            psr_cat_print_one_domain_cbm_type(domid, socketid,
++            } else {
++                psr_print_one_domain_val_type(domid, info,
+                                               LIBXL_PSR_CBM_TYPE_L3_CBM_CODE);
+-            psr_cat_print_one_domain_cbm_type(domid, socketid,
++                psr_print_one_domain_val_type(domid, info,
+                                               LIBXL_PSR_CBM_TYPE_L3_CBM_DATA);
+-        }
+-        break;
+-    case 2:
+-        psr_cat_print_one_domain_cbm_type(domid, socketid,
++            }
++            break;
++
++        case 2:
++            psr_print_one_domain_val_type(domid, info,
+                                           LIBXL_PSR_CBM_TYPE_L2_CBM);
++            break;
++
++        default:
++            printf("Input lvl %d is wrong!", lvl);
++        }
+         break;
+-    default:
+-        printf("Input lvl %d is wrong!", lvl);
++
++    case LIBXL_PSR_FEAT_TYPE_MBA:
++        psr_print_one_domain_val_type(domid, info,
++                                      LIBXL_PSR_CBM_TYPE_MBA_THRTL);
+         break;
+     }
+ 
+     printf("\n");
+ }
+ 
+-static int psr_cat_print_domain_cbm(uint32_t domid, uint32_t socketid,
+-                                    bool cdp_enabled, unsigned int lvl)
++static int psr_print_domain_val(uint32_t domid,
++                                libxl_psr_hw_info *info,
++                                libxl_psr_feat_type type,
++                                unsigned int lvl)
+ {
+     int i, nr_domains;
+     libxl_dominfo *list;
+ 
+     if (domid != INVALID_DOMID) {
+-        psr_cat_print_one_domain_cbm(domid, socketid, cdp_enabled, lvl);
++        psr_print_one_domain_val(domid, info, type, lvl);
+         return 0;
+     }
+ 
+     if (!(list = libxl_list_domain(ctx, &nr_domains))) {
+-        fprintf(stderr, "Failed to get domain list for cbm display\n");
+-        return -1;
++        fprintf(stderr, "Failed to get domain list for value display\n");
++        return EXIT_FAILURE;
+     }
+ 
+     for (i = 0; i < nr_domains; i++)
+-        psr_cat_print_one_domain_cbm(list[i].domid, socketid, cdp_enabled, lvl);
++        psr_print_one_domain_val(list[i].domid, info, type, lvl);
+     libxl_dominfo_list_free(list, nr_domains);
+ 
+     return 0;
+ }
+ 
+-static int psr_cat_print_socket(uint32_t domid, libxl_psr_cat_info *info,
+-                                unsigned int lvl)
++static int psr_print_socket(uint32_t domid,
++                            libxl_psr_hw_info *info,
++                            libxl_psr_feat_type type,
++                            unsigned int lvl)
+ {
+-    int rc;
+-    uint32_t l3_cache_size;
+-
+     printf("%-16s: %u\n", "Socket ID", info->id);
+ 
+-    /* So far, CMT only supports L3 cache. */
+-    if (lvl == 3) {
+-        rc = libxl_psr_cmt_get_l3_cache_size(ctx, info->id, &l3_cache_size);
+-        if (rc) {
+-            fprintf(stderr, "Failed to get l3 cache size for socket:%d\n",
+-                    info->id);
+-            return -1;
++    switch (type) {
++    case LIBXL_PSR_FEAT_TYPE_CAT:
++    {
++        int rc;
++        uint32_t l3_cache_size;
++
++        /* So far, CMT only supports L3 cache. */
++        if (lvl == 3) {
++            rc = libxl_psr_cmt_get_l3_cache_size(ctx, info->id, &l3_cache_size);
++            if (rc) {
++                fprintf(stderr, "Failed to get l3 cache size for socket:%d\n",
++                        info->id);
++                return -1;
++            }
++            printf("%-16s: %uKB\n", "L3 Cache", l3_cache_size);
+         }
+-        printf("%-16s: %uKB\n", "L3 Cache", l3_cache_size);
++
++        printf("%-16s: %#llx\n", "Default CBM",
++               (1ull << info->u.cat.cbm_len) - 1);
++        if (info->u.cat.cdp_enabled)
++            printf("%5s%25s%16s%16s\n", "ID", "NAME", "CBM (code)", "CBM (data)");
++        else
++            printf("%5s%25s%16s\n", "ID", "NAME", "CBM");
++
++        break;
+     }
+ 
+-    printf("%-16s: %#llx\n", "Default CBM", (1ull << info->cbm_len) - 1);
+-    if (info->cdp_enabled)
+-        printf("%5s%25s%16s%16s\n", "ID", "NAME", "CBM (code)", "CBM (data)");
+-    else
+-        printf("%5s%25s%16s\n", "ID", "NAME", "CBM");
++    case LIBXL_PSR_FEAT_TYPE_MBA:
++        printf("%-16s: %u\n", "Default THRTL", 0);
++        printf("%5s%25s%16s\n", "ID", "NAME", "THRTL");
++        break;
+ 
+-    return psr_cat_print_domain_cbm(domid, info->id, info->cdp_enabled, lvl);
++    default:
++        fprintf(stderr, "Input feature type %d is wrong\n", type);
++        return EXIT_FAILURE;
++    }
++
++    return psr_print_domain_val(domid, info, type, lvl);
+ }
+ 
+-static int psr_cat_show(uint32_t domid, unsigned int lvl)
++static int psr_val_show(uint32_t domid,
++                        libxl_psr_feat_type type,
++                        unsigned int lvl)
+ {
+     unsigned int i, nr;
+     int rc;
+-    libxl_psr_cat_info *info;
++    libxl_psr_hw_info *info;
+ 
+-    if (lvl != 2 && lvl != 3) {
+-        fprintf(stderr, "Input lvl %d is wrong\n", lvl);
++    switch (type) {
++    case LIBXL_PSR_FEAT_TYPE_CAT:
++        if (lvl != 2 && lvl != 3) {
++            fprintf(stderr, "Input lvl %d is wrong\n", lvl);
++            return EXIT_FAILURE;
++        }
++        break;
++
++    case LIBXL_PSR_FEAT_TYPE_MBA:
++        if (lvl) {
++            fprintf(stderr,
++                    "Unexpected lvl parameter %d for MBA feature\n", lvl);
++            return EXIT_FAILURE;
++        }
++        break;
++
++    default:
++        fprintf(stderr, "Input feature type %d is wrong\n", type);
+         return EXIT_FAILURE;
+     }
+ 
+-    rc = libxl_psr_cat_get_info(ctx, &info, &nr, lvl);
++    rc = libxl_psr_get_hw_info(ctx, type, lvl, &nr, &info);
+     if (rc) {
+-        fprintf(stderr, "Failed to get %s cat info\n", (lvl == 3)?"L3":"L2");
++        fprintf(stderr, "Failed to get info\n");
+         return rc;
+     }
+ 
+     for (i = 0; i < nr; i++) {
+-        rc = psr_cat_print_socket(domid, info + i, lvl);
++        rc = psr_print_socket(domid, info + i, type, lvl);
+         if (rc)
+             goto out;
+     }
+ 
+ out:
+-    libxl_psr_cat_info_list_free(info, nr);
++    libxl_psr_hw_info_list_free(info, nr);
+     return rc;
+ }
+ 
+@@ -475,6 +532,27 @@ static int psr_l2_cat_hwinfo(void)
+     return rc;
+ }
+ 
++int main_psr_mba_show(int argc, char **argv)
++{
++    int opt;
++    uint32_t domid;
++
++    SWITCH_FOREACH_OPT(opt, "", NULL, "psr-mba-show", 0) {
++        /* No options */
++    }
++
++    if (optind >= argc)
++        domid = INVALID_DOMID;
++    else if (optind == argc - 1)
++        domid = find_domain(argv[optind]);
++    else {
++        help("psr-mba-show");
++        return 2;
++    }
++
++    return psr_val_show(domid, LIBXL_PSR_FEAT_TYPE_MBA, 0);
++}
++
+ static int psr_mba_hwinfo(void)
+ {
+     int rc;
+@@ -612,7 +690,7 @@ int main_psr_cat_show(int argc, char **argv)
+         return 2;
+     }
+ 
+-    return psr_cat_show(domid, lvl);
++    return psr_val_show(domid, LIBXL_PSR_FEAT_TYPE_CAT, lvl);
+ }
+ 
+ int main_psr_hwinfo(int argc, char **argv)

@@ -1,0 +1,180 @@
+From: Yi Sun <yi.y.sun@linux.intel.com>
+To: xen-devel@lists.xenproject.org
+Cc: "Yi Sun" <yi.y.sun@linux.intel.com>,
+	"Konrad Rzeszutek Wilk" <konrad.wilk@oracle.com>,
+	"Andrew Cooper" <andrew.cooper3@citrix.com>,
+	"Ian Jackson" <ian.jackson@eu.citrix.com>,
+	"Julien Grall" <julien.grall@arm.com>,
+	"Jan Beulich" <jbeulich@suse.com>,
+	"Chao Peng" <chao.p.peng@linux.intel.com>,
+	"Wei Liu" <wei.liu2@citrix.com>,
+	"Daniel De Graaf" <dgdegra@tycho.nsa.gov>,
+	"Roger Pau Monné" <roger.pau@citrix.com>
+Subject: [PATCH v5 00/16] Enable Memory Bandwidth Allocation in Xen
+Date: Sat, 30 Sep 2017 09:39:10 +0800	[thread overview]
+Message-ID: <1506735566-5706-1-git-send-email-yi.y.sun@linux.intel.com> (raw)
+
+Hi, all,
+
+We plan to bring a new PSR (Platform Shared Resource) feature called
+Intel Memory Bandwidth Allocation (MBA) to Xen.
+
+Besides the MBA enabling, we change some interfaces to make them more
+general but not only for CAT.
+
+Any comments are welcome!
+
+You can find this series at:
+https://github.com/yisun-git/xen_mba mba_v5
+
+CC: Jan Beulich <jbeulich@suse.com>
+CC: Andrew Cooper <andrew.cooper3@citrix.com>
+CC: Wei Liu <wei.liu2@citrix.com>
+CC: Ian Jackson <ian.jackson@eu.citrix.com>
+CC: Daniel De Graaf <dgdegra@tycho.nsa.gov>
+CC: Roger Pau Monné <roger.pau@citrix.com>
+CC: Konrad Rzeszutek Wilk <konrad.wilk@oracle.com>
+CC: Chao Peng <chao.p.peng@linux.intel.com>
+CC: Julien Grall <julien.grall@arm.com>
+
+---
+Acked and Reviewed list before V5:
+
+a - Acked-by
+r - Reviewed-by
+
+  ar patch 3  - x86: rename 'cbm_type' to 'psr_type' to make it general
+  ar patch 7  - x86: implement get value interface for MBA
+  r  patch 11 - tools: implement the new libxl get hw info interface
+  r  patch 12 - tools: implement the new xl get hw info interface
+  ar patch 13 - tools: rename 'xc_psr_cat_type' to 'xc_psr_type'
+  a  patch 14 - tools: implement new generic get value interface and MBA get value command
+  ar patch 16 - docs: add MBA description in docs
+
+---
+V5 change list:
+
+Patch 1:
+    - correct some words.
+      (suggested by Roger Pau Monné)
+    - change 'xl psr-mba-set 1 0xa' to 'xl psr-mba-set 1 10'.
+      (suggested by Roger Pau Monné)
+Patch 2:
+    - remove domctl version number upgrade.
+      (suggested by Jan Beulich)
+    - restore 'XEN_SYSCTL_PSR_CAT_L3_CDP'.
+      (suggested by Jan Beulich)
+    - define a local macro to complete psr get value flow.
+      (suggested by Roger Pau Monné)
+    - remove 'Reviewed-by' and 'Acked-by'.
+      (suggested by Wei Liu)
+Patch 3:
+    - correct character of reviewer's name.
+      (suggested by Jan Beulich)
+Patch 4:
+    - create this patch to make codes clearer.
+      (suggested by Jan Beulich and Roger Pau Monné)
+Patch 5:
+    - move out some CAT codes optimization to a new patch.
+      (suggested by Jan Beulich)
+    - modify commit message.
+      (suggested by Jan Beulich)
+    - change print type of 'linear' to be %d.
+      (suggested by Jan Beulich)
+    - change type of 'mba_write_msr' to uint32_t.
+    - move printk in 'mba_init_feature' to reduce one return path.
+      (suggested by Roger Pau Monné)
+    - move the MBA format string in printk to a new line.
+      (suggested by Roger Pau Monné)
+Patch 6:
+    - use ASSERT in 'mba_get_feat_info'.
+      (suggested by Roger Pau Monné)
+    - correct initialization format of 'data[PSR_INFO_ARRAY_SIZE]'.
+      (suggested by Roger Pau Monné and Jan Beulich)
+Patch 7:
+    - use newly defined macro to get MBA thrtl.
+      (suggested by Roger Pau Monné)
+Patch 8:
+    - adjust position of 'cat_check_cbm' to not to make changes so big.
+      (suggested by Roger Pau Monné)
+    - remove 'props' from 'struct cos_write_info'.
+      (suggested by Roger Pau Monné)
+    - make a single return statement in 'mba_check_thrtl'.
+      (suggested by Jan Beulich)
+Patch 9:
+    - adjust parameters position in 'libxl_psr_get_hw_info'.
+      (suggested by Roger Pau Monné)
+Patch 10:
+    - directly define 'xc_psr_hw_info' as union type.
+      (suggested by Roger Pau Monné)
+    - converge L2 and L3 cases in 'xc_psr_get_hw_info'.
+      (suggested by Roger Pau Monné)
+Patch 11:
+    - change 'if (rc < 0)' to 'if (rc)'.
+      (suggested by Roger Pau Monné)
+Patch 13:
+    - remove a duplicated ';'.
+      (suggested by Roger Pau Monné)
+Patch 14:
+    - start a newline for "CDP" because it exceeds 80 characters.
+      (suggested by Roger Pau Monné)
+    - remove a duplicated ';'.
+      (suggested by Roger Pau Monné)
+    - remove a extra newline.
+      (suggested by Roger Pau Monné)
+    - correct words in log message.
+      (suggested by Roger Pau Monné)
+Patch 15:
+    - move xc_type definition and value get out of the loop.
+      (suggested by Roger Pau Monné)
+Patch 16:
+    - remove 'closed-loop' in 'xl-psr.markdown'
+      (suggested by Roger Pau Monné)
+
+Yi Sun (16):
+  docs: create Memory Bandwidth Allocation (MBA) feature document
+  Rename PSR sysctl/domctl interfaces and xsm policy to make them be
+    general
+  x86: rename 'cbm_type' to 'psr_type' to make it general
+  x86: a few optimizations to psr codes
+  x86: implement data structure and CPU init flow for MBA
+  x86: implement get hw info flow for MBA
+  x86: implement get value interface for MBA
+  x86: implement set value flow for MBA
+  tools: create general interfaces to support psr allocation features
+  tools: implement the new libxc get hw info interface
+  tools: implement the new libxl get hw info interface
+  tools: implement the new xl get hw info interface
+  tools: rename 'xc_psr_cat_type' to 'xc_psr_type'
+  tools: implement new generic get value interface and MBA get value
+    command
+  tools: implement new generic set value interface and MBA set value
+    command
+  docs: add MBA description in docs
+
+ docs/features/intel_psr_mba.pandoc  | 295 ++++++++++++++++++++++++++++++++
+ docs/man/xl.pod.1.in                |  33 ++++
+ docs/misc/xl-psr.markdown           |  62 +++++++
+ tools/flask/policy/modules/dom0.te  |   4 +-
+ tools/libxc/include/xenctrl.h       |  44 +++--
+ tools/libxc/xc_psr.c                | 109 +++++++-----
+ tools/libxl/libxl.h                 |  37 ++++
+ tools/libxl/libxl_psr.c             | 221 ++++++++++++++++++------
+ tools/libxl/libxl_types.idl         |  22 +++
+ tools/xl/xl.h                       |   2 +
+ tools/xl/xl_cmdtable.c              |  12 ++
+ tools/xl/xl_psr.c                   | 280 +++++++++++++++++++++++-------
+ xen/arch/x86/domctl.c               |  84 ++++-----
+ xen/arch/x86/psr.c                  | 327 +++++++++++++++++++++++++-----------
+ xen/arch/x86/sysctl.c               |  53 ++++--
+ xen/include/asm-x86/msr-index.h     |   1 +
+ xen/include/asm-x86/psr.h           |  22 ++-
+ xen/include/public/domctl.h         |  30 ++--
+ xen/include/public/sysctl.h         |  26 ++-
+ xen/xsm/flask/hooks.c               |   8 +-
+ xen/xsm/flask/policy/access_vectors |   8 +-
+ 21 files changed, 1326 insertions(+), 354 deletions(-)
+ create mode 100644 docs/features/intel_psr_mba.pandoc
+
+-- 
+1.9.1

@@ -1,0 +1,70 @@
+From mboxrd@z Thu Jan  1 00:00:00 1970
+From: Kai Huang <kai.huang@linux.intel.com>
+Subject: [v2 08/11] vmx: handle PML enabling in
+	vmx_vcpu_initialise
+Date: Wed, 15 Apr 2015 15:03:50 +0800
+Message-ID: <1429081433-9600-9-git-send-email-kai.huang@linux.intel.com>
+References: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+Mime-Version: 1.0
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+Return-path: <xen-devel-bounces@lists.xen.org>
+In-Reply-To: <1429081433-9600-1-git-send-email-kai.huang@linux.intel.com>
+List-Unsubscribe: <http://lists.xen.org/cgi-bin/mailman/options/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=unsubscribe>
+List-Post: <mailto:xen-devel@lists.xen.org>
+List-Help: <mailto:xen-devel-request@lists.xen.org?subject=help>
+List-Subscribe: <http://lists.xen.org/cgi-bin/mailman/listinfo/xen-devel>,
+	<mailto:xen-devel-request@lists.xen.org?subject=subscribe>
+Sender: xen-devel-bounces@lists.xen.org
+Errors-To: xen-devel-bounces@lists.xen.org
+To: andrew.cooper3@citrix.com, tim@xen.org, jbeulich@suse.com, kevin.tian@intel.com, xen-devel@lists.xen.org
+Cc: Kai Huang <kai.huang@linux.intel.com>
+List-Id: xen-devel@lists.xenproject.org
+
+It's possible domain has already been in log-dirty mode when creating vcpu, in
+which case we should enable PML for this vcpu if PML has been enabled for the
+domain.
+
+Signed-off-by: Kai Huang <kai.huang@linux.intel.com>
+---
+ xen/arch/x86/hvm/vmx/vmx.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/xen/arch/x86/hvm/vmx/vmx.c b/xen/arch/x86/hvm/vmx/vmx.c
+index 279e745..ad9d7d4 100644
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -116,6 +116,29 @@ static int vmx_vcpu_initialise(struct vcpu *v)
+         return rc;
+     }
+ 
++    /*
++     * It's rare but still possible that domain has already been in log-dirty
++     * mode when vcpu is being created (commented by Tim), in which case we
++     * should enable PML for this vcpu if PML has been enabled for the domain,
++     * and failure to enable results in failure of creating this vcpu.
++     *
++     * Note even there's no vcpu created for the domain, vmx_domain_enable_pml
++     * will return successful in which case vmx_domain_pml_enabled will also
++     * return true. And even this is the first vcpu to be created with
++     * vmx_domain_pml_enabled being true, failure of enabling PML still results
++     * in failure of creating vcpu, to avoid complicated logic to revert PML
++     * style EPT table to non-PML style EPT table.
++     */
++    if ( vmx_domain_pml_enabled(v->domain) )
++    {
++        if ( (rc = vmx_vcpu_enable_pml(v)) != 0 )
++        {
++            dprintk(XENLOG_ERR, "%pv: Failed to enable PML.\n", v);
++            vmx_destroy_vmcs(v);
++            return rc;
++        }
++    }
++
+     vpmu_initialise(v);
+ 
+     vmx_install_vlapic_mapping(v);
+-- 
+2.1.0
+
