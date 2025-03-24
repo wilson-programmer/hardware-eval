@@ -1,0 +1,88 @@
+From: Jan Beulich <jbeulich@suse.com>
+Subject: x86/HVM: clear upper halves of GPRs upon entry from 32-bit code
+
+Hypercalls in particular can be the subject of continuations, and logic
+there checks updated state against incoming register values. If the
+guest manufactured a suitable argument register with a non-zero upper
+half before entering compatibility mode and issuing a hypercall from
+there, checks in hypercall_xlat_continuation() might trip.
+
+Since for HVM we want to also be sure to not hit a corner case in the
+emulator, initiate the clipping right from the top of
+{svm,vmx}_vmexit_handler(). Also rename the invoked function, as it no
+longer does only invalidation of fields.
+
+Note that architecturally the upper halves of registers are undefined
+after a switch between compatibility and 64-bit mode (either direction).
+Hence once having entered compatibility mode, the guest can't assume
+the upper half of any register to retain its value.
+
+This is part of XSA-454 / CVE-2023-46842.
+
+Fixes: b8a7efe8528a ("Enable compatibility mode operation for HYPERVISOR_memory_op")
+Reported-by: Manuel Andreas <manuel.andreas@tum.de>
+Signed-off-by: Jan Beulich <jbeulich@suse.com>
+Reviewed-by: Roger Pau Monné <roger.pau@citrix.com>
+
+--- a/xen/arch/x86/hvm/svm/svm.c
++++ b/xen/arch/x86/hvm/svm/svm.c
+@@ -2603,7 +2603,8 @@ void svm_vmexit_handler(void)
+     regs->rsp = vmcb->rsp;
+     regs->rflags = vmcb->rflags;
+ 
+-    hvm_invalidate_regs_fields(regs);
++    hvm_sanitize_regs_fields(
++        regs, !(vmcb_get_efer(vmcb) & EFER_LMA) || !(vmcb->cs.l));
+ 
+     if ( paging_mode_hap(v->domain) )
+         v->arch.hvm.guest_cr[3] = v->arch.hvm.hw_cr[3] = vmcb_get_cr3(vmcb);
+--- a/xen/arch/x86/hvm/vmx/vmx.c
++++ b/xen/arch/x86/hvm/vmx/vmx.c
+@@ -4041,6 +4041,7 @@ static void undo_nmis_unblocked_by_iret(
+ void vmx_vmexit_handler(struct cpu_user_regs *regs)
+ {
+     unsigned long exit_qualification, exit_reason, idtv_info, intr_info = 0;
++    unsigned long cs_ar_bytes = 0;
+     unsigned int vector = 0;
+     struct vcpu *v = current;
+     struct domain *currd = v->domain;
+@@ -4049,7 +4050,10 @@ void vmx_vmexit_handler(struct cpu_user_
+     __vmread(GUEST_RSP,    &regs->rsp);
+     __vmread(GUEST_RFLAGS, &regs->rflags);
+ 
+-    hvm_invalidate_regs_fields(regs);
++    if ( hvm_long_mode_active(v) )
++        __vmread(GUEST_CS_AR_BYTES, &cs_ar_bytes);
++
++    hvm_sanitize_regs_fields(regs, !(cs_ar_bytes & X86_SEG_AR_CS_LM_ACTIVE));
+ 
+     if ( paging_mode_hap(v->domain) )
+     {
+--- a/xen/arch/x86/include/asm/hvm/hvm.h
++++ b/xen/arch/x86/include/asm/hvm/hvm.h
+@@ -579,8 +579,24 @@ static inline unsigned int hvm_get_insn_
+             ? alternative_call(hvm_funcs.get_insn_bytes, v, buf) : 0);
+ }
+ 
+-static inline void hvm_invalidate_regs_fields(struct cpu_user_regs *regs)
++static inline void hvm_sanitize_regs_fields(struct cpu_user_regs *regs,
++                                            bool compat)
+ {
++    if ( compat )
++    {
++        /* Clear GPR upper halves, to counteract guests playing games. */
++        regs->rbp = regs->ebp;
++        regs->rbx = regs->ebx;
++        regs->rax = regs->eax;
++        regs->rcx = regs->ecx;
++        regs->rdx = regs->edx;
++        regs->rsi = regs->esi;
++        regs->rdi = regs->edi;
++        regs->rip = regs->eip;
++        regs->rflags = regs->eflags;
++        regs->rsp = regs->esp;
++    }
++
+ #ifndef NDEBUG
+     regs->error_code = 0xbeef;
+     regs->entry_vector = 0xbeef;
