@@ -1,0 +1,253 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    # - name: Copy the script to clients
+    #   copy:
+    #     src: /tmp/VMs_without_mba/automate_script/test_copy.sh
+    #     dest: /tmp/test_copy.sh
+    #     mode: '0777'
+
+    # - name: Run the script
+    #   command: /tmp/test_copy.sh
+
+    # - name: Fetch the script output
+    #   fetch:
+    #     src: /tmp/script_output.txt
+    #     dest: /var/general/nfs/{{ inventory_hostname }}_output.txt
+    #     flat: yes
+
+    - name: Create client directory on NFS share
+      file:
+        path: /var/general/nfs/{{ inventory_hostname }}
+        state: directory
+        mode: '0755'
+
+    - name: Fetch the script output
+      fetch:
+        src: /home/wilson/redis_result/redis_bench_result1.csv
+        dest: /var/general/nfs/{{ inventory_hostname }}/redis_bench_result1.csv
+        flat: yes
+
+
+
+
+
+---
+- hosts: all
+  become: yes
+  tasks:
+    # - name: Copy the script to clients
+    #   copy:
+    #     src: /tmp/VMs_without_mba/automate_script/test_copy.sh
+    #     dest: /tmp/test_copy.sh
+    #     mode: '0777'
+
+    # - name: Run the script
+    #   command: /tmp/test_copy.sh
+
+    - name: Fetch the script output
+      fetch:
+        src: /home/wilson/redis_result/redis_bench_result1.csv
+        dest: /var/general/nfs/{{ inventory_hostname }}/
+        flat: yes
+
+
+
+#Started here
+---
+- hosts: all
+  become: yes
+  tasks:
+    # - name: Copy the script to clients
+    #   copy:
+    #     src: /tmp/VMs_without_mba/automate_script/test_copy.sh
+    #     dest: /tmp/test_copy.sh
+    #     mode: '0777'
+
+    # - name: Run the script
+    #   command: /tmp/test_copy.sh
+
+    - name: Create client directory on NFS share
+      file:
+        path: /var/general/nfs/{{ inventory_hostname }}
+        state: directory
+        owner: wilson
+        mode: '0777'
+
+
+    # - name: Create redis_result directory
+    #   file:
+    #     path: /home/nfs/redis_result
+    #     state: directory
+    #     mode: '0777'
+    #     owner: wilson
+    #   become: yes
+
+
+    # - name: Change nfs right
+    #   command: 'chmod 777 /home/nfs/'
+    #   become: yes
+
+
+    # - name: Fetch the script output
+    #   command: 'cp -r /home/wilson/redis_result/ /home/nfs/'
+    #   become: yes
+
+    # - name: Copy local directory to NFS mount
+    #   fetch:
+    #     src: /home/wilson/redis_result/
+    #     dest: /var/general/nfs/{{ inventory_hostname }}/
+    #     owner: nfsnobody
+    #     group: nfsnobody
+    #     mode: '0777'
+    #     recursive: yes
+
+    - name: Copy directory from hosts to controller
+      fetch:
+        src: /home/wilson/redis_result/
+        dest: /var/general/nfs/{{ inventory_hostname }}/
+        flat: yes
+        owner: wilson
+        group: wilson
+        mode: '077'
+        recurse: yes
+
+
+
+#End here
+
+
+
+---
+- name: Fetch directories from remote hosts to the controller
+  hosts: all
+  vars:
+    remote_user: wilson  # Replace with the actual remote user
+  tasks:
+    - name: Ensure the local destination directory exists
+      delegate_to: localhost
+      file:
+        path: "{{ playbook_dir }}/ansible_dir/{{ inventory_hostname }}"
+        state: directory
+
+    - name: Synchronize the directory from the remote host to the controller
+      synchronize:
+        src: "/home/wilson/redis_result/"
+        dest: "{{ playbook_dir }}/ansible_dir/{{ inventory_hostname }}"
+        recursive: yes
+      delegate_to: localhost
+      become: yes
+
+
+
+---
+- hosts: all  # Replace with your host group
+  become: true  # Requires root privileges
+
+  tasks:
+    - name: Create client directory on NFS share
+      file:
+        path: /var/general/nfs/{{ inventory_hostname }}
+        state: directory
+        mode: '0777'
+        
+    - name: Find files to copy on remote host
+      command: "find /home/wilson/redis_result -type f"
+      register: files_to_copy
+
+    - name: Copy individual files to controller
+      loop: "{{ files_to_copy.stdout_lines }}"
+      loop_control: loop_var=item
+      copy:
+        src: "{{ item }}"
+        dest: "/var/general/nfs/{{ inventory_hostname }}"
+
+
+---
+- hosts: all  # Replace with your host group
+  become: true  # Requires root privileges
+
+  tasks:
+    - name: Create client directory on NFS share
+      file:
+        path: /var/general/nfs/{{ inventory_hostname }}
+        state: directory
+        mode: '0777'
+
+    - name: Find files to copy on remote host
+      command: "find /home/wilson/redis_result -type f"
+      register: files_to_copy
+
+    - name: Copy individual files to controller
+      loop: "{{ files_to_copy.stdout_lines }}"
+      loop_control: { label: "{{ item }}" }  # Corrected line
+      copy:
+        src: "{{ item }}"
+        dest: "/var/general/nfs/{{ inventory_hostname }}"
+
+
+
+
+
+
+
+
+
+
+
+
+
+cp -r /home/wilson/redis_result/ /var/general/nfs/{{ inventory_hostname }}
+
+
+
+#     - name: Create client directory on NFS share
+#       file:
+#         path: /var/general/nfs/{{ inventory_hostname }}
+#         state: directory
+#         mode: '0777'
+
+#     - name: Fetch the Redis output
+#       fetch:
+#         src: /home/wilson/redis_result
+#         dest: /var/general/nfs/{{ inventory_hostname }}
+      
+
+# ---
+# - hosts: all
+#   become: yes
+#   tasks:
+#     - name: Ensure NFS share is mounted
+#       mount:
+#         src: "172.16.20.2:/var/general/nfs/"
+#         path: /mnt/nfs
+#         fstype: nfs
+#         opts: defaults
+#         state: mounted
+
+
+#     - name: Copy directory to client's NFS directory
+#       synchronize:
+#         src: /home/wilson/redis_result/
+#         dest: /var/general/nfs/{{ inventory_hostname }}/redis_result/
+#         recursive: yes
+
+
+
+---
+- name: "[RUN SAVE BENCH OUTPUT]"
+  hosts: all
+  tasks:
+          
+          - name: "[Copy ssave_bench_output.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/save_bench_output.sh
+                    dest: /home/wilson/
+                    mode: 0777
+                    owner: wilson
+            become: yes
+
+          - name: "[Run save_apache_output.sh]"
+            command: bash /home/wilson/save_bench_output.sh
+            become: yes

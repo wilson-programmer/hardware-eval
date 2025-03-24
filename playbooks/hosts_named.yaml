@@ -1,0 +1,25 @@
+---
+# inventory.yml
+# inventory.yml
+all:
+  hosts:
+    vm1:
+      ansible_host: 10.132.0.1
+    vm2:
+      ansible_host: 10.132.0.2
+    vm3:
+      ansible_host: 10.132.0.3
+    vm4:
+      ansible_host: 10.132.0.4
+    vm5:
+      ansible_host: 10.132.0.5
+    vm6:
+      ansible_host: 10.132.0.6
+    vm7:
+      ansible_host: 10.132.0.7
+    vm8:
+      ansible_host: 10.132.0.8
+    vm9:
+      ansible_host: 10.132.0.9
+    vm10:
+      ansible_host: 10.132.0.10

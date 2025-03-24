@@ -1,0 +1,25 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Install NFS utilities
+      apt: 
+        name: nfs-common 
+        state: present
+
+    - name: Create mount point
+      file:
+        path: /home/wilson/nfs/
+        state: directory
+        mode: '0777'
+        owner: wilson
+      become: yes
+
+    - name: Mount NFS share
+      mount:
+        src: "172.16.20.2:/var/general/nfs"
+        path: /home/wilson/nfs/
+        fstype: nfs
+        opts: defaults
+        state: mounted
+      become: yes

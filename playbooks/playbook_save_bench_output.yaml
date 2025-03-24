@@ -1,0 +1,12 @@
+---
+- name: "[SAVE BENCH OUTPUT]"
+  hosts: all
+  tasks:
+
+          - name: "[Copy save_bench_output.sh]"
+            copy:
+                    src: /tmp/VMs_without_mba/automate_script/save_bench_output.sh
+                    dest: /home/wilson/
+                    mode: 0777
+                    owner: wilson
+            become: yes
