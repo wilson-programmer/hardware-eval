@@ -1,0 +1,22 @@
+netperf statistics for latency
+netperf -t UDP_RR -H 127.0.0.1 -- -o min_latency,max_latency,p50_latency,p90_latency,mean_latency,stddev_latency -m 64 -R 1 | awk 'NR==2,NR==3'> tota.csv 
+
+netperf -t UDP_STREAM -H <server ip> -l 10000 -- -m 64 -R 1 &
+
+netperf -t TCP_STREAM -H <server ip> -l 10000 -- -m 1500 -R 1 &
+
+netperf -t TCP_RR -H <server ip> -l 10000 -- -r 32,128 -R 1 &
+
+RR: for latency
+STREAM: for throughput
+
+Install and start netperf
+apt install -y sysstat wget tar automake make gcc 
+
+wget -O netperf-2.7.0.tar.gz -c  https://codeload.github.com/HewlettPackard/netperf/tar.gz/netperf-2.7.0
+tar zxf netperf-2.7.0.tar.gz
+cd netperf-netperf-2.7.0
+
+./configure && make && make install
+pkill netserver && pkill netperf
+netserver
