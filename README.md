@@ -4,45 +4,45 @@
 
 ### Overview
 
-**HaEvol** is a benchmark suite conçu pour faciliter l'analyse de l'impact des features intégrées par Intel au niveau de leur équipements (CPU, NIC, etc) sur les performances d'un des hyperviseurs les plus répandu sur le marché à savoir xen. Afin de simuler les conditions d'une plateforme de cloud, les expériences ont été effectuées sur [Grid'5000](https://www.grid5000.fr/w/Grid5000:Home) which is a large-scale and flexible testbed for experiment-driven research in all areas of computer science, with a focus on parallel and distributed computing including Cloud, HPC and Big Data and AI.
+**HaEvol** is a benchmark suite designed to facilitate analysis of the impact of features integrated by Intel into their hardware (CPU, NIC, etc.) on the performance of two of the most widespread hypervisors on the market, namely Xen and KVM. To simulate the conditions of a cloud platform, experiments were carried out on [Grid'5000](https://www.grid5000.fr/w/Grid5000:Home) which is a large-scale and flexible testbed for experiment-driven research in all areas of computer science, with a focus on parallel and distributed computing including Cloud, HPC and Big Data and AI.
 
-### Démarche à suivre 
+### How to proceed 
 
-- Faire le listing de toutes les feautures intégrées par Intel sur leur processeur pour améliorer les performances des systèmes de virtualisation depuis 2007
-- Acquérir toutes les versions des hyperviseurs à partir de celle dans laquelle la première feature matérielle (EPT) y a été intégrée
-- Ressortir une correspondance des versions des hyperviseurs Xen et KVM à partir de laquelle chaque feature d'Intel a été prise en compte par l'hyperviseur
-- Cibler pour chaque feature matérielle les processeurs Intel qui l'ntègre
-- Déterminer un ensemble de micro et macro benchmark que l'on effectuera sur chaque version de chaque hyperviseur (Un peu plus de 100 versions pour Xen)
-- Analyser les résultats
+- List all the features integrated by Intel on their processors to improve the performance of virtualization systems since 2007.
+- Acquire all hypervisor versions from the one in which the first hardware feature (EPT) was integrated.
+- extract a correspondence between Xen and KVM hypervisor versions, from which each Intel feature has been taken into account by the hypervisor
+- Target the Intel processors that support each hardware feature
+- Determine a set of micro and macro benchmarks to be run on each version of each hypervisor (just over 100 versions for Xen)
+- Analyze results
 
-### Fonctionnalités de HaEvol
+### HaEvol functionalities
 
-Pour faciliter notre étude, nous avons développé l'outil **HaEvol**.
+To facilitate our study, we developed the HaEvol tool.
 
-**HaEvol** permet : 
+**HaEvol allows:**
 
-1. pour chaque feature matérielle d'avoir la liste de tous les processeurs Intel de type serveur qui la supporte
-2. pour chaque feature matérielle d'avoir la liste des versions de xen sur lesquelle elle est supportée
-3. De créer et déployer automatiquement plusieurs VMs sur un serveur
-4. De lancer l'exécution des benchmarks (apche bench, unix bench, fio, redis ...) dans chaque VM
-5. De récupérer le résultat des benchmarks
-6. D'analyser ces résultat
+1. For each hardware feature, you can obtain a list of all Intel server processors that support it.
+2. For each hardware feature, you can obtain a list of the Xen versions on which it is supported.
+3. Automatically create and deploy multiple VMs on a server.
+4. Launch benchmarks (Apche Bench, Unix Bench, FIO, Redis, etc.) in each VM.
+5. Retrieve benchmark results.
+6. Analyze these results.
  
 
-**NB**: Pour mieux évaluer l'impact, nous effectuons chaque benchmark plusieurs fois dans chaque VM.
+**NB**: To better assess the impact, we run each benchmark several times in each VM.
 
-Les différents scénarios peuvent représenter:
+The different scenarios can represent:
     
-- **La variation du nombre de VMs**
-- **La variation de la charge CPU de chaque VM**
-- **La variation de la quantité de mémoire allouée à chaque VM**
-- **Le nombre d'application à exécuter dans une VM**
+- **Variation in the number of VMs**
+- **Variation in the CPU load of each VM**
+- **Variation in the amount of memory allocated to each VM** 
+- **The number of applications to run in a VM**
 
-Tous ces paramètre sont fournis en paramètre de notre outil. 
+All these parameters are supplied as parameters to our tool. 
 
 ### Hardware feature
 
-Nous considérons dans cette étude les features matérielles întroduites par Intel depuis 2007 pour améliorer les fonctionnalités de virtualisation. L'étude ne traite pas des features ayant trait au réseau (VMDQ et SRIOV). 
+In this study, we consider the hardware features introduced by Intel since 2007 to enhance virtualization functionalities. The study does not deal with network-related features (VMDQ and SRIOV). 
 
 | Feature | Meaning                          |
 |---------|----------------------------------|
